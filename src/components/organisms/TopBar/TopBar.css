@@ -1,0 +1,62 @@
+/* TopBar organism, from the source's .topbar. The source's #fbfcfd surface is
+ * --surface, as in the mobile reader bar. Brand, SearchField, SyncStatusButton
+ * and Avatar bring their own type, color, hover and focus; this sets the row.
+ * Token values live in src/styles/tokens.css. */
+.top-bar {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s1) var(--s4);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--surface);
+  font: var(--text-ui);
+}
+
+/* 172px lines the search up with the queue, past the navigation rail. */
+.top-bar__brand {
+  flex: 0 1 172px;
+}
+
+/* The source gives the search at most 420px; it gives way first. */
+.top-bar__search {
+  min-width: 0;
+  flex: 0 1 420px;
+  margin: 0;
+}
+
+.button.top-bar__sync {
+  flex: 0 1 auto;
+  margin-left: auto;
+}
+
+/* The source's mobile bar hides the search and the avatar. Here the search
+ * keeps working on its own row, so nothing is lost at 320px or 400% zoom, and
+ * both controls reach 44px. A grid keeps brand, sync and avatar on the first
+ * row. The brand takes at most 45%, so long sync text still has room to wrap. */
+@media (max-width: 600px) {
+  .top-bar {
+    min-height: 48px;
+    display: grid;
+    grid-template-columns: fit-content(45%) 1fr auto;
+    gap: var(--s1) var(--s3);
+    padding: 2px var(--s3) var(--s2);
+  }
+
+  .top-bar__search {
+    grid-row: 2;
+    grid-column: 1 / -1;
+  }
+
+  .top-bar__search .search-input {
+    height: 44px;
+  }
+
+  .button.top-bar__sync {
+    min-height: 44px;
+    justify-self: end;
+  }
+}
