@@ -65,7 +65,7 @@ Git hooks:
 - Storybook 10 with `@storybook/react-vite`. It uses `.storybook/vite.config.ts`
   with only the React plugin, so the TanStack Start plugin and server
   functions stay out of the browser bundle.
-- Stories and `.storybook/preview.ts` may not import `node:*`, `src/spark`,
+- Stories and `.storybook/preview.ts` may not import Node built-ins, `src/spark`,
   `src/jev`, `src/shadow`, or the TypeSafe SDK (ESLint `no-restricted-imports`).
 - The sidebar order is Foundations, Atoms, Molecules, Organisms, Templates,
   Pages. There are no stories yet.
