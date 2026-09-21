@@ -1,0 +1,60 @@
+/* QueueHeader molecule, from the source's .queue-head. Token values live in
+ * src/styles/tokens.css; rules for their use in src/styles/README.md. */
+.queue-header {
+  box-sizing: border-box;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+  padding: var(--s4);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--paper);
+  font: var(--text-ui);
+}
+
+/* Takes the free width; below about 10rem the action wraps under it. */
+.queue-header__text {
+  min-width: 0;
+  flex: 1 1 10rem;
+}
+
+/* A long title takes its own line and the count follows on the next. */
+.queue-header__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--s2);
+}
+
+.queue-header__title {
+  min-width: 0;
+  margin: 0;
+  font: var(--text-queue-title);
+  letter-spacing: var(--tracking-queue-title);
+  overflow-wrap: anywhere;
+}
+
+.queue-header__count,
+.queue-header__context {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.queue-header__count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.queue-header__context {
+  margin: var(--s1) 0 0;
+}
+
+.queue-header__action {
+  flex: none;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
