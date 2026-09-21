@@ -41,31 +41,31 @@ type Story = StoryObj<typeof meta>
 
 /** A workflow filter led by a 14px icon. The caller owns `active`. */
 export const WithIcon: Story = {
-  argTypes: { account: { table: { disable: true } } },
+  argTypes: { account: { control: false, table: { disable: true } } },
 }
 
 /** A mailbox filter led by the account's 8px marker. */
 export const WithAccount: Story = {
   args: { icon: undefined, account: 'studio', label: 'Studio Noord', count: 4 },
-  argTypes: { icon: { table: { disable: true } } },
+  argTypes: { icon: { control: false, table: { disable: true } } },
 }
 
 /** The applied filter: `aria-pressed="true"`, tinted surface, indigo text. */
 export const Active: Story = {
   args: { active: true },
-  argTypes: { account: { table: { disable: true } } },
+  argTypes: { account: { control: false, table: { disable: true } } },
 }
 
 /** Long labels truncate with an ellipsis; the count stays visible. */
 export const LongLabel: Story = {
   args: { label: 'Waiting for a reply from the customer', count: 128 },
-  argTypes: { account: { table: { disable: true } } },
+  argTypes: { account: { control: false, table: { disable: true } } },
 }
 
 /** Disabled rows cannot be focused or activated. */
 export const Disabled: Story = {
   args: { disabled: true },
-  argTypes: { account: { table: { disable: true } } },
+  argTypes: { account: { control: false, table: { disable: true } } },
 }
 
 const workflows = [
