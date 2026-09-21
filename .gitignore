@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.output/
+.tanstack/
+.nitro/
+.vinxi/
+*.log
+.env
+.env.*
+.DS_Store
