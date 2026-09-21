@@ -1,0 +1,41 @@
+/* Brand molecule, from the source's .brand and .brand-mark. The source's
+ * #7f8bbb border is not a token; it is --accent mixed toward --paper, which
+ * lands within a few RGB steps of it. The border is decorative: the glyph and
+ * the wordmark carry the brand. */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+  color: var(--ink);
+  font: var(--text-ui);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.brand__mark {
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 65%, var(--paper));
+  border-radius: var(--radius-control);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.brand--md .brand__mark {
+  width: 25px;
+  height: 25px;
+}
+
+.brand--sm .brand__mark {
+  width: 24px;
+  height: 24px;
+}
+
+/* Wraps instead of clipping when there is no room, e.g. at 400% zoom. */
+.brand__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
