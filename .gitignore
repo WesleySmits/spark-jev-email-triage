@@ -4,6 +4,7 @@ dist/
 .tanstack/
 .nitro/
 .vinxi/
+storybook-static/
 *.log
 .env
 .env.*

@@ -53,6 +53,7 @@ jobs:
         run: pnpm exec fallow audit --base "origin/$BASE_REF"
 
       - run: pnpm build
+      - run: pnpm build-storybook
 
       - name: Check whitespace
         run: git diff --check "$(git hash-object -t tree /dev/null)" HEAD

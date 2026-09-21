@@ -16,17 +16,17 @@ pnpm dev
 
 ## Quality commands
 
-| Command             | Purpose                                                |
-| ------------------- | ------------------------------------------------------ |
-| `pnpm format`       | Format files with Prettier                             |
-| `pnpm format:check` | Verify formatting                                      |
-| `pnpm lint`         | ESLint with type-aware rules, zero warnings            |
-| `pnpm typecheck`    | `tsc --noEmit` in strict mode                          |
-| `pnpm test`         | Run Vitest once                                        |
-| `pnpm fallow`       | Dead code, cycles, complexity, and duplication         |
-| `pnpm fallow:audit` | Fallow audit of changes against `origin/main`          |
-| `pnpm build`        | Production build                                       |
-| `pnpm check`        | Format check, lint, typecheck, test, Fallow, and build |
+| Command             | Purpose                                             |
+| ------------------- | --------------------------------------------------- |
+| `pnpm format`       | Format files with Prettier                          |
+| `pnpm format:check` | Verify formatting                                   |
+| `pnpm lint`         | ESLint with type-aware rules, zero warnings         |
+| `pnpm typecheck`    | `tsc --noEmit` in strict mode                       |
+| `pnpm test`         | Run Vitest once                                     |
+| `pnpm fallow`       | Dead code, cycles, complexity, and duplication      |
+| `pnpm fallow:audit` | Fallow audit of changes against `origin/main`       |
+| `pnpm build`        | Production build                                    |
+| `pnpm check`        | Format check, lint, typecheck, test, Fallow, builds |
 
 `pnpm eval:jev:live` runs the live Jev evaluation over synthetic fixtures. It
 calls the TypeSafe API, needs `TYPESAFE_API_KEY`, reports itself blocked
@@ -56,6 +56,24 @@ Git hooks:
 
 - `pre-commit`: lint-staged runs Prettier and ESLint on staged files.
 - `commit-msg`: commitlint enforces Conventional Commits.
+
+## Storybook
+
+`pnpm storybook` starts Storybook on http://localhost:6006.
+`pnpm build-storybook` writes a static build to `storybook-static/`; CI runs it.
+
+- Storybook 10 with `@storybook/react-vite`. It uses `.storybook/vite.config.ts`
+  with only the React plugin, so the TanStack Start plugin and server
+  functions stay out of the browser bundle.
+- Stories and `.storybook/preview.ts` may not import Node built-ins, `src/spark`,
+  `src/jev`, `src/shadow`, or the TypeSafe SDK (ESLint `no-restricted-imports`).
+- The sidebar order is Foundations, Atoms, Molecules, Organisms, Templates,
+  Pages. There are no stories yet.
+- No addons; Storybook's built-in controls, actions, and viewport are enough
+  for now.
+- Telemetry is off in `.storybook/main.ts` and, through
+  `STORYBOOK_DISABLE_TELEMETRY=true` in both scripts, also when `main.ts`
+  fails to load (Storybook otherwise reports that error).
 
 ## Safety status
 
