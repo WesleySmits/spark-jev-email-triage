@@ -70,7 +70,10 @@ Git hooks:
 - The sidebar order is Foundations, Atoms, Molecules, Organisms, Templates,
   Pages. There are no stories yet.
 - No addons; Storybook's built-in controls, actions, and viewport are enough
-  for now. Telemetry is off.
+  for now.
+- Telemetry is off in `.storybook/main.ts` and, through
+  `STORYBOOK_DISABLE_TELEMETRY=true` in both scripts, also when `main.ts`
+  fails to load (Storybook otherwise reports that error).
 
 ## Safety status
 
