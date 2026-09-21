@@ -105,7 +105,6 @@ describe('listRecentEmails', () => {
   })
 
   it.each([
-    ['an unrecognized date', '10 Jan 12:05    '],
     ['a blank date', ' '.repeat('2026-01-10 12:05'.length)],
     ['an impossible date', '2026-02-30 12:05'],
   ])('treats %s as unavailable and keeps every row', async (_, date) => {
@@ -134,6 +133,13 @@ describe('listRecentEmails', () => {
     ['output without a table', 'Emails in support@example.com:Inbox\n'],
     ['a table without rows', emailsOutput.replace(/^ {2}1\d{3} .*$/gm, '').replace(/\n+/g, '\n')],
     ['a misaligned row', emailsOutput.replace('  1003   ', '  1003 ')],
+    // Shifts larger than the cell padding, so values cross column boundaries.
+    ['a row shifted right', emailsOutput.replace('  1003   support', '  1003   xxxsupport')],
+    ['a row shifted left', emailsOutput.replace('org>  2026-01-10', 'org>2026-01-10')],
+    [
+      'a Date cell that is not a time',
+      emailsOutput.replace('2026-01-10 12:05', '10 Jan 12:05    '),
+    ],
   ])('rejects %s', async (_, output) => {
     const { reader } = setup(outputs({ emails: output }))
 

@@ -7,7 +7,8 @@
  * senders control, and one bad date must not fail a whole list or thread.
  */
 
-const wallTimePattern = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/
+/** The shape Spark prints times in, whether or not the date exists. */
+export const wallTimePattern = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/
 const minuteMs = 60_000
 const dayMs = 24 * 60 * minuteMs
 
