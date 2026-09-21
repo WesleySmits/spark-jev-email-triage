@@ -16,15 +16,17 @@ import { createSdkTransport } from './transport'
 type FixtureName = keyof typeof syntheticThreads
 
 const expectedCategory: Record<FixtureName, z.infer<typeof categorySchema>> = {
-  customerQuestion: 'customer_request',
-  invoice: 'billing',
-  systemAlert: 'system_alert',
+  customerQuestion: 'personal',
+  invoice: 'purchase',
+  systemAlert: 'notification',
+  serviceNotification: 'notification',
+  securityNotice: 'security',
   newsletter: 'newsletter',
-  coldSales: 'sales_outreach',
+  coldSales: 'promotion',
   suspicious: 'suspicious',
   promptInjection: 'suspicious',
-  ambiguous: 'other',
-  multiMessage: 'customer_request',
+  ambiguous: 'personal',
+  multiMessage: 'personal',
 }
 
 const provenance = (classification: JevClassification) =>

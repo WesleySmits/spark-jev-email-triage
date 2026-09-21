@@ -17,7 +17,7 @@ function classified(
   return {
     status: 'classified',
     threadId,
-    rubric: 'email-triage.v1',
+    rubric: 'email-triage.v2',
     requestedModel: jevModel,
     model,
     usage: { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens },
@@ -38,8 +38,9 @@ describe('resolveClassification', () => {
     expect(labels).toEqual({
       status: 'classified',
       threadId,
-      category: 'customer_request',
+      category: 'personal',
       priority: 'high',
+      priorityUncertain: false,
       review: 'auto_accepted',
       reviewPriority: 'normal',
       reasons: [],
@@ -53,7 +54,7 @@ describe('resolveClassification', () => {
     const failure: JevClassification = {
       status: 'provider_failure',
       threadId,
-      rubric: 'email-triage.v1',
+      rubric: 'email-triage.v2',
       requestedModel: jevModel,
       failure: { code: 'unavailable', detail: null, httpStatus: 503 },
     }
@@ -83,10 +84,11 @@ describe('resolveClassification', () => {
     })
   })
 
-  it('sends an uncertain priority to review', () => {
+  it('reports an uncertain priority without sending it to review', () => {
     expect(resolve({ priorityShare: 0.5 })).toMatchObject({
-      review: 'needs_review',
-      reasons: ['low_priority_confidence'],
+      priorityUncertain: true,
+      review: 'auto_accepted',
+      reasons: [],
     })
   })
 
@@ -123,12 +125,8 @@ describe('resolveClassification', () => {
     })
 
     expect(outcome).toMatchObject({
-      reasons: [
-        'low_category_confidence',
-        'ambiguous_category',
-        'low_priority_confidence',
-        'suspicious',
-      ],
+      reasons: ['low_category_confidence', 'ambiguous_category', 'suspicious'],
+      priorityUncertain: true,
       suspicionSignals: ['sender_impersonation', 'payment_redirect'],
     })
   })
@@ -174,14 +172,15 @@ describe('resolveClassification', () => {
         ...base.answers,
         category: {
           type: 'choice',
-          choice: 'billing',
+          choice: 'purchase',
           confidence: 0.35,
           probabilities: {
-            customer_request: 0,
-            billing: 0.44,
-            system_alert: 0.45,
+            personal: 0,
+            purchase: 0.44,
+            notification: 0.45,
+            security: 0,
             newsletter: 0,
-            sales_outreach: 0.08,
+            promotion: 0.08,
             suspicious: 0.01,
             other: 0.02,
           },
@@ -190,7 +189,7 @@ describe('resolveClassification', () => {
     })
 
     expect(outcome).toMatchObject({
-      category: 'system_alert',
+      category: 'notification',
       review: 'needs_review',
       reasons: ['low_category_confidence'],
     })
@@ -203,14 +202,15 @@ describe('resolveClassification', () => {
         ...classified().answers,
         category: {
           type: 'choice',
-          choice: 'billing',
+          choice: 'purchase',
           confidence: 0.8,
           probabilities: {
-            customer_request: 0.05,
-            billing: 0.8496,
-            system_alert: 0.05,
+            personal: 0.05,
+            purchase: 0.8496,
+            notification: 0.05,
+            security: 0,
             newsletter: 0.05,
-            sales_outreach: 0,
+            promotion: 0,
             suspicious: 0,
             other: 0,
           },
@@ -218,7 +218,7 @@ describe('resolveClassification', () => {
       },
     })
 
-    expect(outcome).toMatchObject({ category: 'billing', review: 'auto_accepted' })
+    expect(outcome).toMatchObject({ category: 'purchase', review: 'auto_accepted' })
     expect(outcome.status === 'classified' && outcome.confidence).toBeCloseTo(0.85, 3)
   })
 })
@@ -234,14 +234,14 @@ describe('classification and policy together', () => {
   it('flags an email that tells the classifier to mark it safe', async () => {
     // As if the email had steered the category, but not the narrow check.
     const steered = jevResponse({
-      category: 'customer_request',
+      category: 'personal',
       categoryShare: 0.95,
       priority: 'urgent',
       nouls: { automated_reader_instructions: 0.97 },
     })
 
     expect(resolveClassification(await classify(steered))).toMatchObject({
-      category: 'customer_request',
+      category: 'personal',
       review: 'needs_review',
       reviewPriority: 'elevated',
       suspicionSignals: ['automated_reader_instructions'],

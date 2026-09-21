@@ -97,7 +97,7 @@ describe('createJevClassifier', () => {
     expect(result).toEqual({
       status: 'classified',
       threadId: injection.id,
-      rubric: 'email-triage.v1',
+      rubric: 'email-triage.v2',
       requestedModel: jevModel,
       model: 'jev-1.13.0',
       usage: { inputTokens: 812, outputTokens: 64 },
@@ -214,7 +214,7 @@ describe('createJevClassifier', () => {
     expect(await classifyWith(body)).toEqual({
       status: 'provider_failure',
       threadId: injection.id,
-      rubric: 'email-triage.v1',
+      rubric: 'email-triage.v2',
       requestedModel: jevModel,
       failure: { code: 'malformed_response', detail, httpStatus: null },
     })
