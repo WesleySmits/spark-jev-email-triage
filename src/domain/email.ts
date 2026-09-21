@@ -24,7 +24,7 @@ const timestamp = z.iso.datetime({ offset: true })
 
 const address = z.string().trim().toLowerCase().pipe(z.email())
 
-const participantSchema = z.strictObject({
+export const participantSchema = z.strictObject({
   address,
   name: text,
 })
@@ -50,6 +50,19 @@ const messageSchema = z.strictObject({
 export const mailboxSchema = z.strictObject({
   id,
   address,
+})
+
+/**
+ * One message in a provider's recent-mail list, used to pick a thread to
+ * read. Lists can shorten values, so shortened or missing values are `null`.
+ */
+export const emailListingSchema = z.strictObject({
+  messageId: id,
+  mailboxId: id,
+  from: participantSchema.nullable(),
+  subject: text,
+  /** The time the list shows for the message. */
+  date: timestamp.nullable(),
 })
 
 /** A thread as listed in a mailbox, before its messages are fetched. */
