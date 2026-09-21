@@ -1,0 +1,8 @@
+/* IconButton atom. Shape, focus, hover and disabled states come from Button;
+ * this only makes the square 44px target of the source's mobile icon buttons.
+ * Token values live in src/styles/tokens.css. */
+.button.icon-button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+}
