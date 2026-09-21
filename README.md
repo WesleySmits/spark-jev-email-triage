@@ -28,6 +28,10 @@ pnpm dev
 | `pnpm build`        | Production build                                       |
 | `pnpm check`        | Format check, lint, typecheck, test, Fallow, and build |
 
+`pnpm eval:jev:live` runs the live Jev evaluation over synthetic fixtures. It
+calls the TypeSafe API, needs `TYPESAFE_API_KEY`, reports itself blocked
+without it, and is never part of `pnpm test` or CI.
+
 Git hooks:
 
 - `pre-commit`: lint-staged runs Prettier and ESLint on staged files.
@@ -35,12 +39,23 @@ Git hooks:
 
 ## Safety status
 
-- No product features, persistence, or external services.
+- No product features or persistence.
 - `src/spark` reads mail through the local `spark` CLI, read-only. Its command
   type allows only `accounts`, `emails`, and `thread`. It never uses a shell,
   runs one call at a time with a timeout and output limit, and logs no mail
   content. Nothing in the app calls it yet.
-- No secrets or deployment configuration.
+- `src/jev` classifies one normalized thread with Jev through the official
+  TypeSafe SDK. It sends a minimized state: the latest five messages with
+  quoted history, URL queries, and long opaque tokens removed, bounded text,
+  and attachment names without contents. Email text is framed as untrusted
+  data. Every response is validated; a provider failure is reported apart
+  from model uncertainty. Policy in ordinary code sends ambiguous or
+  low-confidence results to review, and suspicion only raises review
+  priority. Nothing authorizes a mailbox action, and nothing in the app
+  calls it yet.
+- The only secret is `TYPESAFE_API_KEY`, read server-side from the
+  environment. The SDK's logging is off and its base URL is pinned. No
+  deployment configuration.
 - CI runs every quality command and the build on pull requests and `main`.
 - On pull requests, CI also runs commitlint and the Fallow changed-code audit.
 - CI fails on `git diff --check` errors or uncommitted generated files.

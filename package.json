@@ -18,11 +18,13 @@
     "fallow": "fallow --fail-on-issues",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm fallow && pnpm build",
     "prepare": "husky",
-    "fallow:audit": "fallow audit --base origin/main"
+    "fallow:audit": "fallow audit --base origin/main",
+    "eval:jev:live": "vitest run --config vitest.live.config.ts --reporter=verbose"
   },
   "dependencies": {
     "@tanstack/react-router": "1.170.38",
     "@tanstack/react-start": "1.168.56",
+    "@typesafe-ai/sdk": "0.6.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "zod": "4.6.5"
