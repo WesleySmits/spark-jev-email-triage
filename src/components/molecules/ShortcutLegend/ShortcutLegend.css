@@ -1,0 +1,30 @@
+/* ShortcutLegend molecule, from the source's .key-help and .key-row. The
+ * sidebar footer's padding and top border belong to its container. */
+.shortcut-legend {
+  display: grid;
+  gap: var(--s2);
+  margin: 0;
+  color: var(--muted);
+  font: var(--text-meta);
+}
+
+.shortcut-legend__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s1) var(--s2);
+}
+
+.shortcut-legend__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Keys stay together and at the end of the row, also after wrapping. They
+ * flow inline, so the space between two keys is rendered and announced. */
+.shortcut-legend__keys {
+  flex: none;
+  margin: 0 0 0 auto;
+  white-space: nowrap;
+}
