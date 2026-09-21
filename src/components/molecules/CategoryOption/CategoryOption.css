@@ -1,0 +1,130 @@
+/* CategoryOption molecule. Token values live in src/styles/tokens.css; rules
+ * for their use in src/styles/README.md. The source's in-between grays and
+ * blue border map to the nearest tokens. */
+.category-option {
+  box-sizing: border-box;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  color: var(--ink-soft);
+  background: var(--paper);
+  font: var(--text-ui);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-state) var(--ease-state),
+    border-color var(--duration-state) var(--ease-state),
+    box-shadow var(--duration-state) var(--ease-state);
+}
+
+.category-option:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+/* The native radio is the focus target; the ring surrounds the whole option. */
+.category-option:has(.category-option__input:focus-visible) {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+/* Selection: inset accent rule, soft fill, stronger text and a checked mark. */
+.category-option:has(.category-option__input:checked) {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  font-weight: 750;
+}
+
+.category-option__text {
+  min-width: 0;
+  display: grid;
+  overflow-wrap: anywhere;
+}
+
+/* The font shorthand also keeps the description at weight 400 when checked. */
+.category-option__description {
+  color: var(--muted);
+  font: var(--text-meta);
+}
+
+.category-option__mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  margin-left: auto;
+}
+
+.category-option__mark > * {
+  grid-area: 1 / 1;
+}
+
+.category-option__input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1px solid var(--border-control);
+  border-radius: 50%;
+  background: var(--paper);
+  appearance: none;
+  cursor: inherit;
+}
+
+.category-option__input:focus-visible {
+  outline: none;
+}
+
+.category-option__input:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.category-option__mark .icon {
+  width: 12px;
+  height: 12px;
+  color: transparent;
+  pointer-events: none;
+}
+
+.category-option__input:checked + .icon {
+  color: var(--paper);
+}
+
+.category-option:has(.category-option__input:disabled) {
+  border-color: var(--line);
+  box-shadow: none;
+  color: var(--muted);
+  background: var(--surface-2);
+  cursor: not-allowed;
+}
+
+.category-option__input:checked:disabled {
+  border-color: var(--muted);
+  background: var(--muted);
+}
+
+@media (max-width: 600px) {
+  .category-option {
+    min-height: 46px;
+  }
+}
+
+@media (forced-colors: active) {
+  .category-option__input:checked {
+    background: Highlight;
+  }
+
+  .category-option__input:checked + .icon {
+    color: HighlightText;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .category-option {
+    transition: none;
+  }
+}
