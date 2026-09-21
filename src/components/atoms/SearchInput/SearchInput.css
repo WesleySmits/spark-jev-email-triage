@@ -1,0 +1,53 @@
+/* SearchInput atom. Shape comes from the source's .search. Following
+ * src/styles/README.md, the border uses --border-control and the placeholder
+ * --muted instead of the decorative --line and --faint. */
+.search-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 0 var(--s3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  color: var(--muted);
+  background: var(--paper);
+  cursor: text;
+}
+
+/* The ring goes around the whole field, icon included. */
+.search-input:has(.search-input__field:focus-visible) {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.search-input__field {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  color: var(--ink);
+  background: transparent;
+  font: var(--text-ui);
+}
+
+.search-input__field:focus-visible {
+  outline: none;
+}
+
+.search-input__field::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+.search-input:has(.search-input__field:disabled) {
+  background: var(--surface-2);
+  cursor: not-allowed;
+}
+
+.search-input__field:disabled {
+  color: var(--muted);
+  cursor: inherit;
+}
