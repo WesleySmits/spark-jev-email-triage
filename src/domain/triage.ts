@@ -74,7 +74,7 @@ export const triageCorrectionSchema = z.strictObject({
   correctedAt: z.iso.datetime({ offset: true }),
 })
 
-type TriageDecision = z.infer<typeof triageDecisionSchema>
+export type TriageDecision = z.infer<typeof triageDecisionSchema>
 type TriageCorrection = z.infer<typeof triageCorrectionSchema>
 
 interface TriageSubject {
