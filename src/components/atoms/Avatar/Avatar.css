@@ -1,0 +1,20 @@
+/* Avatar atom. Size and type come from the source's .avatar. */
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 50%;
+  color: var(--paper);
+  background: var(--ink-soft);
+  font: 800 11px / 1 var(--font-body);
+}
+
+.avatar--sm {
+  width: 30px;
+  height: 30px;
+}
+
+.avatar--md {
+  width: 36px;
+  height: 36px;
+}

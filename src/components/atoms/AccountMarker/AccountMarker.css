@@ -1,0 +1,20 @@
+/* Account colors are 8px markers only, never fills (src/styles/README.md). */
+.account-marker {
+  width: 8px;
+  height: 8px;
+  display: inline-block;
+  flex: none;
+  border-radius: 2px;
+}
+
+.account-marker--studio {
+  background: var(--account-studio);
+}
+
+.account-marker--atelier {
+  background: var(--account-atelier);
+}
+
+.account-marker--personal {
+  background: var(--account-personal);
+}
