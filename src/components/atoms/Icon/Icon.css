@@ -1,4 +1,4 @@
-.st-icon {
+.icon {
   flex: none;
   fill: none;
   stroke: currentColor;
@@ -7,12 +7,12 @@
   stroke-linejoin: round;
 }
 
-.st-icon--md {
+.icon--md {
   width: 18px;
   height: 18px;
 }
 
-.st-icon--sm {
+.icon--sm {
   width: 14px;
   height: 14px;
 }

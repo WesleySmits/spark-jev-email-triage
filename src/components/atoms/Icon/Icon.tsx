@@ -67,7 +67,7 @@ type IconProps = Readonly<{
  * A line icon in the current text color.
  *
  * @example
- * import { Icon } from '../atoms/Icon/Icon'
+ * import { Icon } from '../components/atoms/Icon/Icon'
  *
  * <Icon name="check" />
  * <Icon name="alert" size="sm" label="Needs review" />
@@ -75,7 +75,7 @@ type IconProps = Readonly<{
 export function Icon({ name, size = 'md', label }: IconProps) {
   const a11y = label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true }
   return (
-    <svg className={`st-icon st-icon--${size}`} viewBox="0 0 24 24" {...a11y}>
+    <svg className={`icon icon--${size}`} viewBox="0 0 24 24" {...a11y}>
       {paths[name]}
     </svg>
   )

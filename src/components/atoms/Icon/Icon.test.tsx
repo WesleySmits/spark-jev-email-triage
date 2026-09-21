@@ -23,8 +23,8 @@ describe('Icon', () => {
   })
 
   it('sizes through a class', () => {
-    expect(svg(Icon({ name: 'search', size: 'sm' })).className).toBe('st-icon st-icon--sm')
-    expect(svg(Icon({ name: 'search' })).className).toBe('st-icon st-icon--md')
+    expect(svg(Icon({ name: 'search', size: 'sm' })).className).toBe('icon icon--sm')
+    expect(svg(Icon({ name: 'search' })).className).toBe('icon icon--md')
   })
 
   it('draws every icon from the selected direction', () => {
