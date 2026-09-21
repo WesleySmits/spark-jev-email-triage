@@ -1,0 +1,50 @@
+/* EmptyState molecule, from the source's .empty. Button owns the focus and
+ * hover states. Token values live in src/styles/tokens.css; rules for their
+ * use in src/styles/README.md. */
+.empty-state {
+  box-sizing: border-box;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--s8) var(--s5);
+  color: var(--muted);
+  font: var(--text-ui);
+  text-align: center;
+  container-type: inline-size;
+}
+
+.empty-state__icon {
+  display: inline-flex;
+  margin-bottom: var(--s3);
+}
+
+.empty-state__title,
+.empty-state__description {
+  max-width: 40ch;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.empty-state__title {
+  margin-bottom: var(--s1);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 750;
+}
+
+/* A long label wraps inside the button instead of widening the column.
+ * Doubled with .button so these win over Button's own rules. */
+.button.empty-state__action {
+  max-width: 100%;
+  margin-top: var(--s4);
+  padding-block: var(--s2);
+  overflow-wrap: anywhere;
+}
+
+/* Narrow column, like the source's mobile footer: a 44px target. */
+@container (max-width: 30rem) {
+  .button.empty-state__action {
+    min-height: 44px;
+  }
+}
