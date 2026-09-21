@@ -1,16 +1,15 @@
 import { readFileSync } from 'node:fs'
+import { parse } from 'postcss'
 import { describe, expect, it } from 'vitest'
 import { contrastRatio } from './contrast'
 import { contrastPairs } from './contrast-pairs'
 
-// Read the maintained token file itself; no values are copied into this test.
-const css = readFileSync(new URL('../styles/tokens.css', import.meta.url), 'utf8')
-const tokens = new Map(
-  [...css.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)].map(([, name = '', value = '']) => [
-    name,
-    value.trim(),
-  ]),
-)
+// Parse the maintained token file itself; no values are copied into this test.
+const stylesheet = parse(readFileSync(new URL('../styles/tokens.css', import.meta.url), 'utf8'))
+const tokens = new Map<string, string>()
+stylesheet.walkDecls(/^--/, (declaration) => {
+  tokens.set(declaration.prop, declaration.value)
+})
 
 function token(name: string): string {
   const value = tokens.get(name)
@@ -29,13 +28,16 @@ describe('maintained token pairs', () => {
 
 describe('tokens.css', () => {
   it('declares custom properties on :root and nothing else', () => {
-    const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '')
-    const blocks = [...withoutComments.matchAll(/([^{}]+)\{([^}]*)\}/g)]
-    expect(blocks.map(([, selector = '']) => selector.trim())).toEqual([':root'])
-    const declarations = (blocks[0]?.[2] ?? '')
-      .split(';')
-      .map((declaration) => declaration.trim())
-      .filter(Boolean)
-    expect(declarations.filter((declaration) => !declaration.startsWith('--'))).toEqual([])
+    const nodes = stylesheet.nodes.filter((node) => node.type !== 'comment')
+    expect(nodes.map((node) => (node.type === 'rule' ? node.selector : node.type))).toEqual([
+      ':root',
+    ])
+    const declarations = nodes.flatMap((node) =>
+      node.type === 'rule' ? node.nodes.filter((child) => child.type !== 'comment') : [],
+    )
+    const others = declarations.filter(
+      (child) => child.type !== 'decl' || !child.prop.startsWith('--'),
+    )
+    expect(others.map((child) => child.toString())).toEqual([])
   })
 })
