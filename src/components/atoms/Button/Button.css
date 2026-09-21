@@ -1,0 +1,67 @@
+/* Button atom. Token values live in src/styles/tokens.css; rules for their use
+ * in src/styles/README.md. */
+.button {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  padding: 0 var(--s4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  font: var(--text-control);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-state) var(--ease-state),
+    border-color var(--duration-state) var(--ease-state);
+}
+
+.button:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.button--primary {
+  border-color: var(--accent-dark);
+  color: var(--paper);
+  background: var(--accent);
+}
+
+.button--primary:hover:enabled {
+  background: var(--accent-dark);
+}
+
+.button--secondary {
+  border-color: var(--border-control);
+  color: var(--ink-soft);
+  background: var(--paper);
+}
+
+.button--secondary:hover:enabled {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.button--quiet {
+  color: var(--ink-soft);
+  background: transparent;
+}
+
+.button--quiet:hover:enabled {
+  background: var(--surface-2);
+}
+
+/* Every variant looks the same when disabled. --muted stays readable on
+ * --surface-2, unlike the source's lighter gray. */
+.button:disabled {
+  border-color: var(--line);
+  color: var(--muted);
+  background: var(--surface-2);
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition: none;
+  }
+}
