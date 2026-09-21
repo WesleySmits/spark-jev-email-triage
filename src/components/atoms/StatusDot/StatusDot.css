@@ -1,0 +1,33 @@
+/* StatusDot atom. Size, shape and the danger ring come from the source's
+ * .sync-dot; colors are state tokens from src/styles/tokens.css. */
+.status-dot {
+  width: 7px;
+  height: 7px;
+  display: inline-block;
+  flex: none;
+  border-radius: 50%;
+}
+
+.status-dot--success {
+  background: var(--success);
+}
+
+.status-dot--danger {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-soft);
+}
+
+/* Forced colors would erase the fill and the ring. Keep the dot visible in
+ * the text color and keep danger's ring as a real outline. */
+@media (forced-colors: active) {
+  .status-dot {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+
+  .status-dot--danger {
+    box-shadow: none;
+    outline: 1px solid CanvasText;
+    outline-offset: 2px;
+  }
+}
