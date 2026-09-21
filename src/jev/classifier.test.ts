@@ -113,6 +113,43 @@ describe('createJevClassifier', () => {
     expect((await classifyWith(body)).status).toBe('classified')
   })
 
+  it('accepts eight rounded category probabilities that sum to 0.99', async () => {
+    const body = mutated((b) => {
+      b.answers.category.probabilities = {
+        personal: 0.81,
+        notification: 0,
+        security: 0,
+        purchase: 0.01,
+        newsletter: 0,
+        promotion: 0.1,
+        suspicious: 0,
+        other: 0.07,
+      }
+    })
+
+    expect((await classifyWith(body)).status).toBe('classified')
+  })
+
+  it('rejects category probabilities beyond rounding error', async () => {
+    const body = mutated((b) => {
+      b.answers.category.probabilities = {
+        personal: 0.81,
+        notification: 0,
+        security: 0,
+        purchase: 0.01,
+        newsletter: 0,
+        promotion: 0.1,
+        suspicious: 0,
+        other: 0.03,
+      }
+    })
+
+    expect(await classifyWith(body)).toMatchObject({
+      status: 'provider_failure',
+      failure: { code: 'malformed_response', detail: 'answers.category.probabilities' },
+    })
+  })
+
   it('accepts a named choice in a near tie as a valid, uncertain answer', async () => {
     const body = mutated((b) => {
       b.answers.priority.choice = 'normal'
