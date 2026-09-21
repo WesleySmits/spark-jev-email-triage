@@ -9,10 +9,10 @@ type KeyboardHintProps = Readonly<{
  * A key the user can press, shown next to the action it triggers.
  *
  * @example
- * import { KeyboardHint } from '../atoms/KeyboardHint/KeyboardHint'
+ * import { KeyboardHint } from '../components/atoms/KeyboardHint/KeyboardHint'
  *
  * <KeyboardHint>E</KeyboardHint>
  */
 export function KeyboardHint({ children }: KeyboardHintProps) {
-  return <kbd className="st-keyboard-hint">{children}</kbd>
+  return <kbd className="keyboard-hint">{children}</kbd>
 }
