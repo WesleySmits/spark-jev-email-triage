@@ -1,0 +1,18 @@
+.st-icon {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.st-icon--md {
+  width: 18px;
+  height: 18px;
+}
+
+.st-icon--sm {
+  width: 14px;
+  height: 14px;
+}
