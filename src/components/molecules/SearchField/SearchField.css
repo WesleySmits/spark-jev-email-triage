@@ -1,0 +1,41 @@
+/* SearchField molecule. The hint sits over the end of the SearchInput box,
+ * where the source's .search puts its .shortcut. */
+.search-field {
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.search-field > * {
+  grid-area: 1 / 1;
+}
+
+.search-field__hint {
+  display: flex;
+  align-self: center;
+  justify-self: end;
+  margin-right: var(--s3);
+  pointer-events: none;
+}
+
+/* Keep typed text clear of the hint: the SearchInput's end padding plus the
+ * 22px minimum width of a one-key KeyboardHint and an --s2 gap. */
+.search-field .search-field__input--hint {
+  padding-right: calc(var(--s3) + 22px + var(--s2));
+}
+
+/* While focused, "/" types into the field instead. */
+.search-field:focus-within .search-field__hint {
+  display: none;
+}
+
+/* Too narrow for the placeholder and the hint. */
+@container (width < 240px) {
+  .search-field__hint {
+    display: none;
+  }
+
+  .search-field .search-field__input--hint {
+    padding-right: var(--s3);
+  }
+}
