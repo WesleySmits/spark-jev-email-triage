@@ -62,16 +62,7 @@ function parseRow(
   const [id, , from, date, subject] = offsets.map((start, column) =>
     row.slice(start, offsets[column + 1]).trim(),
   )
-  // Spark pads every cell, so a row whose columns shifted shows up as text
-  // running into a column boundary or as a Date cell that is not a time.
-  // A blank or impossible date is still well aligned and becomes unavailable.
-  if (
-    id === undefined ||
-    !idPattern.test(id) ||
-    date === undefined ||
-    !(date === '' || wallTimePattern.test(date)) ||
-    !paddedAtBoundaries(row, offsets)
-  ) {
+  if (id === undefined || date === undefined || !isAligned(row, offsets, id, date)) {
     throw malformed(`emails: row ${String(index + 1)} is misaligned`)
   }
   const listing = emailListingSchema.safeParse({
@@ -87,6 +78,13 @@ function parseRow(
 
 const isCut = (value: string) => value.endsWith(truncationMark)
 
-/** Whether a space precedes every column that the row reaches. */
-const paddedAtBoundaries = (row: string, offsets: number[]) =>
-  offsets.slice(1).every((start) => start >= row.length || row[start - 1] === ' ')
+/**
+ * Spark pads every cell, so a row whose columns shifted shows up as text
+ * running into a column boundary, or as an ID or Date cell of the wrong
+ * shape. A blank or impossible date is still aligned and becomes
+ * unavailable.
+ */
+function isAligned(row: string, offsets: number[], id: string, date: string): boolean {
+  const padded = offsets.slice(1).every((start) => start >= row.length || row[start - 1] === ' ')
+  return padded && idPattern.test(id) && (date === '' || wallTimePattern.test(date))
+}
