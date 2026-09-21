@@ -1,0 +1,376 @@
+/*
+ * Storybook-only specimen layout for the Foundations stories.
+ * Every value comes from src/styles/tokens.css. App styling does not live here.
+ */
+.fd-page {
+  box-sizing: border-box;
+  color-scheme: light;
+  width: min(1120px, 100%);
+  min-width: 320px;
+  margin: 0 auto;
+  padding: var(--s6);
+  color: var(--ink);
+  background: var(--paper);
+  font: var(--text-ui);
+}
+
+.fd-page *,
+.fd-page *::before,
+.fd-page *::after {
+  box-sizing: inherit;
+}
+
+.fd-page :where(button, input, select, textarea) {
+  font: inherit;
+}
+
+.fd-page :where(button, input, select, textarea, a, [tabindex]):focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.fd-head {
+  margin-bottom: var(--s6);
+}
+
+.fd-head h1 {
+  margin: 0;
+  font: var(--text-reader-title);
+  letter-spacing: var(--tracking-reader-title);
+}
+
+.fd-eyebrow {
+  margin: 0 0 var(--s2);
+  color: var(--accent-ink);
+  font: var(--text-overline);
+  letter-spacing: var(--tracking-overline);
+  text-transform: uppercase;
+}
+
+.fd-intro,
+.fd-note {
+  max-width: var(--measure-message);
+  margin: var(--s2) 0 0;
+  color: var(--muted);
+}
+
+.fd-section {
+  padding: var(--s6) 0;
+  border-top: 1px solid var(--line);
+}
+
+.fd-section h2 {
+  margin: 0;
+  font: var(--text-queue-title);
+  letter-spacing: var(--tracking-queue-title);
+}
+
+.fd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--s3);
+}
+
+.fd-tile {
+  min-width: 0;
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+}
+
+.fd-tile strong,
+.fd-tile > span {
+  display: block;
+}
+
+.fd-tile > span {
+  margin-top: var(--s1);
+  color: var(--muted);
+  font: var(--text-meta);
+  font-size: 12px;
+}
+
+.fd-swatch {
+  height: 56px;
+  margin-bottom: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.fd-token {
+  display: block;
+  margin-top: var(--s2);
+  overflow-wrap: anywhere;
+  font: var(--text-meta);
+}
+
+.fd-token code {
+  color: var(--accent-ink);
+  font-family: var(--font-mono);
+}
+
+.fd-token .fd-value {
+  color: var(--muted);
+}
+
+.fd-rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fd-row {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr) minmax(0, 240px);
+  gap: var(--s4);
+  align-items: center;
+  padding: var(--s3) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.fd-row:last-child {
+  border-bottom: 0;
+}
+
+.fd-row > * {
+  min-width: 0;
+  margin: 0;
+}
+
+.fd-row .fd-token {
+  margin-top: 0;
+}
+
+.fd-table-wrap {
+  overflow-x: auto;
+}
+
+.fd-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.fd-table caption {
+  padding-bottom: var(--s2);
+  color: var(--muted);
+  text-align: left;
+}
+
+.fd-table :where(th, td) {
+  padding: var(--s2) var(--s3) var(--s2) 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.fd-table th {
+  font-weight: 700;
+}
+
+.fd-table code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.fd-pair {
+  display: inline-block;
+  min-width: 72px;
+  padding: var(--s1) var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.fd-pair-edge {
+  border-width: 2px;
+  color: var(--ink);
+}
+
+.fd-note-box {
+  max-width: var(--measure-message);
+  margin: 0;
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  color: var(--ink);
+  background: var(--surface);
+}
+
+/* Colors */
+.fd-state {
+  padding: var(--s3);
+  border: 1px solid;
+  border-radius: var(--radius-control);
+  font-weight: 700;
+}
+
+.fd-marker {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: var(--s2);
+  border-radius: 2px;
+}
+
+/* Typography */
+.fd-meta-text {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.fd-message {
+  max-width: var(--measure-message);
+  margin: 0;
+  font: var(--text-message);
+}
+
+.fd-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Spacing and radii */
+.fd-bar {
+  height: 12px;
+  background: var(--accent);
+}
+
+.fd-shape {
+  height: 72px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+}
+
+/* Borders and elevation */
+.fd-stage {
+  padding: var(--s6);
+  border-radius: var(--radius-frame);
+  background: var(--canvas);
+}
+
+.fd-stage .fd-grid {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--s6);
+}
+
+.fd-lift {
+  padding: var(--s4);
+  border: 1px solid var(--line-strong);
+  background: var(--paper);
+}
+
+.fd-divider {
+  height: 0;
+  margin: var(--s2) 0;
+  border-top: 1px solid;
+}
+
+.fd-selected {
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  box-shadow: inset 3px 0 0 var(--accent);
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  font-weight: 750;
+}
+
+/* Focus and motion */
+.fd-focus-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4);
+  align-items: center;
+}
+
+.fd-native-button {
+  min-height: 44px;
+  padding: 0 var(--s4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  color: var(--ink);
+  background: var(--paper);
+  cursor: pointer;
+}
+
+.fd-native-input {
+  min-height: 44px;
+  padding: 0 var(--s3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.fd-check {
+  display: inline-flex;
+  gap: var(--s2);
+  align-items: center;
+  min-height: 44px;
+}
+
+.fd-check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.fd-page a {
+  color: var(--accent);
+}
+
+.fd-motion {
+  max-width: 360px;
+  margin-top: var(--s4);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity var(--duration-state) var(--ease-state),
+    transform var(--duration-state) var(--ease-state);
+}
+
+.fd-motion[data-shown='true'] {
+  opacity: 1;
+  transform: none;
+}
+
+/* Section rhythm. Last, so it wins over the element resets above. */
+.fd-section > * + * {
+  margin-top: var(--s4);
+}
+
+.fd-section > .fd-note,
+.fd-section > .fd-note-box + .fd-note-box {
+  margin-top: var(--s2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fd-page *,
+  .fd-page *::before,
+  .fd-page *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@media (max-width: 600px) {
+  .fd-page {
+    padding: var(--s4) var(--s3);
+  }
+
+  .fd-row {
+    grid-template-columns: 1fr;
+    gap: var(--s1);
+  }
+
+  .fd-stage {
+    padding: var(--s4);
+  }
+}
