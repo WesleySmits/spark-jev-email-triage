@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/fallow/schema.json",
+  "rules": {
+    "unused-dev-dependencies": "error",
+    "unused-optional-dependencies": "error",
+    "dev-dependencies-in-production": "error",
+    "test-only-dependencies": "error",
+    "re-export-cycle": "error",
+    "stale-suppressions": "error",
+    "require-suppression-reason": "error"
+  },
+  "health": {
+    "maxCyclomatic": 15,
+    "maxCognitive": 12,
+    "maxCrap": 30,
+    "maxUnitSize": 60,
+    "ignore": ["src/routeTree.gen.ts"]
+  },
+  "duplicates": {
+    "mode": "mild",
+    "minTokens": 50,
+    "minLines": 5
+  },
+  "audit": {
+    "gate": "new-only"
+  }
+}

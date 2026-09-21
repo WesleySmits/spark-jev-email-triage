@@ -14,7 +14,10 @@
     "format:check": "prettier --check .",
     "lint": "eslint --max-warnings=0 .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "fallow": "fallow --fail-on-issues",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm fallow && pnpm build",
+    "fallow:audit": "fallow audit --base origin/main"
   },
   "dependencies": {
     "@tanstack/react-router": "1.170.38",
@@ -31,6 +34,7 @@
     "eslint": "10.11.0",
     "eslint-config-prettier": "10.1.8",
     "eslint-plugin-react-hooks": "7.1.1",
+    "fallow": "3.27.0",
     "globals": "17.12.0",
     "prettier": "3.9.8",
     "typescript": "6.0.3",
