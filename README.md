@@ -49,10 +49,16 @@ Git hooks:
   quoted history, URL queries, and long opaque tokens removed, bounded text,
   and attachment names without contents. Email text is framed as untrusted
   data. Every response is validated; a provider failure is reported apart
-  from model uncertainty. Policy in ordinary code sends ambiguous or
-  low-confidence results to review, and suspicion only raises review
-  priority. Nothing authorizes a mailbox action, and nothing in the app
-  calls it yet.
+  from model uncertainty. Policy in ordinary code sends an ambiguous or
+  low-confidence category to review and reports an uncertain priority
+  without forcing review. Suspicion only raises review priority. Nothing
+  authorizes a mailbox action, and nothing in the app calls it yet.
+- `src/domain/rubric.ts` holds the opinionated default rubric for any Spark
+  inbox, personal or work: the categories `personal`, `notification`,
+  `security`, `purchase`, `newsletter`, `promotion`, `suspicious`, and
+  `other`, four priorities, and the policy thresholds. Ids and classifier
+  text are English; display labels will come from UI translations, with
+  English as the default and Dutch as a second locale.
 - The only secret is `TYPESAFE_API_KEY`, read server-side from the
   environment. The SDK's logging is off and its base URL is pinned. No
   deployment configuration.
