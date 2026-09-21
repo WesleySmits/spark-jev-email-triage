@@ -1,0 +1,31 @@
+/* Badge atom. Each tone uses its matched text, fill and border tokens from
+ * src/styles/tokens.css. Size and weight come from the source's .pill. */
+.badge {
+  box-sizing: border-box;
+  min-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border: 1px solid;
+  border-radius: var(--radius-pill);
+  font: 700 10px / 16px var(--font-body);
+  white-space: nowrap;
+}
+
+.badge--neutral {
+  border-color: var(--line);
+  color: var(--muted);
+  background: var(--paper);
+}
+
+.badge--review {
+  border-color: var(--attention-line);
+  color: var(--attention);
+  background: var(--attention-soft);
+}
+
+.badge--done {
+  border-color: var(--success-line);
+  color: var(--success);
+  background: var(--success-soft);
+}
