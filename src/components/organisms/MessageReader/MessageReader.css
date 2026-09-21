@@ -1,0 +1,82 @@
+/* MessageReader organism, from the source's .reader, .reader-scroll and
+ * .letter. The bar, header and footer bring their own styles. Token values
+ * live in src/styles/tokens.css; rules for their use in src/styles/README.md. */
+.message-reader {
+  box-sizing: border-box;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--ink);
+  background: var(--paper);
+  font: var(--text-ui);
+}
+
+/* Bar, header and footer keep their height; only the content region flexes. */
+.message-reader > * {
+  flex: none;
+}
+
+/* The source's desktop reader has no contextual bar. */
+.message-reader > .message-reader__mobile-bar {
+  display: none;
+}
+
+.message-reader__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--s6);
+  scroll-behavior: smooth;
+}
+
+/* Inset, so the outline stays visible where a caller's shell clips the reader. */
+.message-reader__scroll:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: calc(-1 * var(--focus-width));
+}
+
+/* The source's .letter: calm message text within the reading measure. Plain
+ * text keeps its line breaks, and long words wrap instead of scrolling. */
+.message-reader__body {
+  max-width: var(--measure-message);
+  color: var(--ink-soft);
+  font: var(--text-message);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.message-reader__body > * {
+  margin: 0 0 var(--s4);
+}
+
+.message-reader__body > :last-child {
+  margin-bottom: 0;
+}
+
+.message-reader__review {
+  max-width: 820px;
+  margin-top: var(--s6);
+}
+
+@media (max-width: 600px) {
+  .message-reader > .message-reader__mobile-bar {
+    display: grid;
+  }
+
+  .message-reader__scroll {
+    padding: var(--s4);
+  }
+
+  .message-reader__review {
+    margin-top: var(--s5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-reader__scroll {
+    scroll-behavior: auto;
+  }
+}
