@@ -1,0 +1,46 @@
+/* Checkbox atom. The box itself is the native control with the accent color,
+ * as in the source. Token values live in src/styles/tokens.css. */
+.checkbox {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  cursor: pointer;
+}
+
+.checkbox:has(.checkbox__label:not(.checkbox__label--hidden)) {
+  justify-content: flex-start;
+}
+
+.checkbox__input {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: inherit;
+}
+
+.checkbox__input:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.checkbox:has(.checkbox__input:disabled) {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.checkbox__label--hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
