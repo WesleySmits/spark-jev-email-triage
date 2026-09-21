@@ -1,0 +1,27 @@
+/* SyncStatusButton molecule, from the source's .sync-button. Focus, hover,
+ * disabled and motion come from the quiet Button; this sets the compact size
+ * and the status colors. Token values live in src/styles/tokens.css. */
+.button.sync-status-button {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 32px;
+  justify-content: flex-start;
+  padding: 0 var(--s2);
+  font: 400 12px / 16px var(--font-body);
+  text-align: start;
+}
+
+.button.sync-status-button--connected {
+  color: var(--muted);
+}
+
+.button.sync-status-button--disconnected {
+  color: var(--danger);
+}
+
+/* The source truncates on small screens. Wrapping keeps the whole status
+ * readable; two lines still fit a 48px top bar. */
+.sync-status-button__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

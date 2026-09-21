@@ -34,6 +34,7 @@ export const contrastPairs: readonly ContrastPair[] = [
   { foreground: '--attention', background: '--attention-soft', minimum: 4.5, use: 'Review' },
   { foreground: '--success', background: '--success-soft', minimum: 4.5, use: 'Completed' },
   { foreground: '--danger', background: '--danger-soft', minimum: 4.5, use: 'Disconnected' },
+  ...onEach('--danger', controlBackgrounds, 4.5, 'Disconnected status text'),
   ...onEach('--border-control', controlBackgrounds, 3, 'Control border'),
   ...onEach('--focus', [...controlBackgrounds, '--canvas', '--accent-soft'], 3, 'Focus outline'),
 ]
