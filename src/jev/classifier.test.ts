@@ -113,6 +113,15 @@ describe('createJevClassifier', () => {
     expect((await classifyWith(body)).status).toBe('classified')
   })
 
+  it('accepts a named choice in a near tie as a valid, uncertain answer', async () => {
+    const body = mutated((b) => {
+      b.answers.priority.choice = 'normal'
+      b.answers.priority.probabilities = { urgent: 0, high: 0.44, normal: 0.43, low: 0.13 }
+    })
+
+    expect((await classifyWith(body)).status).toBe('classified')
+  })
+
   it('ignores fields the contract does not use', async () => {
     const body = mutated((b) => {
       Object.assign(b, { request_id: 'req-1' })

@@ -166,6 +166,36 @@ describe('resolveClassification', () => {
     expect(resolve({ nouls: { reply_expected: noul } })).toMatchObject({ replyExpected })
   })
 
+  it('decides a near tie by the most probable label and sends it to review', () => {
+    const base = classified()
+    const outcome = resolveClassification({
+      ...base,
+      answers: {
+        ...base.answers,
+        category: {
+          type: 'choice',
+          choice: 'billing',
+          confidence: 0.35,
+          probabilities: {
+            customer_request: 0,
+            billing: 0.44,
+            system_alert: 0.45,
+            newsletter: 0,
+            sales_outreach: 0.08,
+            suspicious: 0.01,
+            other: 0.02,
+          },
+        },
+      },
+    })
+
+    expect(outcome).toMatchObject({
+      category: 'system_alert',
+      review: 'needs_review',
+      reasons: ['low_category_confidence'],
+    })
+  })
+
   it('rescales raw probabilities without changing the decision', () => {
     const outcome = resolveClassification({
       ...classified(),

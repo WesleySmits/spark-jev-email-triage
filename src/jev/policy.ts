@@ -10,9 +10,9 @@
  */
 import type { z } from 'zod'
 import {
+  categorySchema,
   resolveTriage,
   triageDecisionSchema,
-  type categorySchema,
   type prioritySchema,
   type TriageDecision,
 } from '../domain/triage'
@@ -122,16 +122,23 @@ export function resolveClassification(classification: JevClassification): Triage
   }
 }
 
-/** The domain decision, with category probabilities rescaled to sum to 1. */
+/**
+ * The domain decision, with category probabilities rescaled to sum to 1.
+ * In a near tie the most probable label wins over Jev's named choice.
+ */
 function toDecision(
   classification: Extract<JevClassification, { status: 'classified' }>,
 ): TriageDecision {
   const { category, priority } = classification.answers
   const total = Object.values(category.probabilities).reduce((sum, value) => sum + value, 0)
+  const top = categorySchema.options.reduce(
+    (best, label) => (category.probabilities[label] > category.probabilities[best] ? label : best),
+    category.choice,
+  )
   return triageDecisionSchema.parse({
     threadId: classification.threadId,
     rubric: classification.rubric,
-    category: category.choice,
+    category: top,
     priority: priority.choice,
     probabilities: Object.fromEntries(
       Object.entries(category.probabilities).map(([label, value]) => [label, value / total]),

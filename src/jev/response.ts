@@ -6,13 +6,21 @@
  * - Exactly the asked questions are answered, each with its question type.
  * - Choice labels and probability keys are the rubric's labels, no more.
  * - Probabilities and confidence lie in [0, 1]; a distribution sums to 1
- *   within `probabilitySumTolerance`, and the chosen label is most probable.
+ *   within `probabilitySumTolerance`.
+ * - The chosen label is most probable within `nearTieTolerance`. A near tie
+ *   is uncertainty, not a broken response; policy resolves it.
  */
 import { z } from 'zod'
 import { categorySchema, prioritySchema, sumsToOne } from '../domain/triage'
 
 /** Wider than the domain's tolerance, for rounding in the provider's JSON. */
 const probabilitySumTolerance = 1e-3
+
+/**
+ * Jev has named a label a few points below the most probable one in a near
+ * tie. A larger gap means the answer contradicts itself.
+ */
+const nearTieTolerance = 0.02
 
 const probability = z.number().min(0).max(1)
 
@@ -30,8 +38,10 @@ function choiceAnswer<L extends string>(labels: z.ZodEnum<Record<L, L>>) {
     })
     .refine(
       ({ choice, probabilities }) =>
-        Object.values<number>(probabilities).every((value) => value <= probabilities[choice]),
-      { message: 'The chosen label must have the highest probability', path: ['choice'] },
+        Object.values<number>(probabilities).every(
+          (value) => value - probabilities[choice] <= nearTieTolerance,
+        ),
+      { message: 'The chosen label must be the most probable', path: ['choice'] },
     )
 }
 
