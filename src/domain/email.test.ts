@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { z } from 'zod'
-import { emailSummarySchema, mailboxSchema, threadSchema } from './email'
+import { emailListingSchema, emailSummarySchema, mailboxSchema, threadSchema } from './email'
 
 type ThreadInput = z.input<typeof threadSchema>
 type MessageInput = ThreadInput['messages'][number]
@@ -71,6 +71,33 @@ describe('emailSummarySchema', () => {
     const result = emailSummarySchema.safeParse({ ...summary, labels: ['inbox'] })
 
     expect(result.error?.issues[0]?.code).toBe('unrecognized_keys')
+  })
+})
+
+describe('emailListingSchema', () => {
+  const listing = {
+    messageId: '1001',
+    mailboxId: 'mailbox-1',
+    from: { address: 'Sender@Example.com', name: 'Sender' },
+    subject: 'Subject',
+    date: '2026-01-05T09:00:00+01:00',
+  }
+
+  it('accepts a listing and normalizes the sender', () => {
+    expect(emailListingSchema.parse(listing).from?.address).toBe('sender@example.com')
+  })
+
+  it('accepts unavailable sender, subject, and date', () => {
+    const parsed = emailListingSchema.parse({ ...listing, from: null, subject: null, date: null })
+
+    expect(parsed).toMatchObject({ from: null, subject: null, date: null })
+  })
+
+  it.each([
+    ['a blank message id', { messageId: ' ' }, 'messageId'],
+    ['a timestamp without offset', { date: '2026-01-05T09:00' }, 'date'],
+  ])('rejects %s', (_, overrides, path) => {
+    expect(issuePaths(emailListingSchema.safeParse({ ...listing, ...overrides }))).toEqual([path])
   })
 })
 

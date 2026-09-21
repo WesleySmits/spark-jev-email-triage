@@ -35,7 +35,11 @@ Git hooks:
 
 ## Safety status
 
-- No product features, persistence, email access, or external services.
+- No product features, persistence, or external services.
+- `src/spark` reads mail through the local `spark` CLI, read-only. Its command
+  type allows only `accounts`, `emails`, and `thread`. It never uses a shell,
+  runs one call at a time with a timeout and output limit, and logs no mail
+  content. Nothing in the app calls it yet.
 - No secrets or deployment configuration.
 - CI runs every quality command and the build on pull requests and `main`.
 - On pull requests, CI also runs commitlint and the Fallow changed-code audit.
