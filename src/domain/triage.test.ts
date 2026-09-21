@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { z } from 'zod'
 import { syntheticThreads } from './fixtures'
+import { triageCategories } from './rubric'
 import {
   currentTriageRubric,
   resolveTriage,
@@ -11,35 +12,28 @@ import {
 type DecisionInput = z.input<typeof triageDecisionSchema>
 type Category = DecisionInput['category']
 
-/** `top` gets `share`; the six other categories split the remainder. */
+/** `top` gets `share`; the other categories split the remainder. */
 const probabilities = (top: Category, share: number) => {
-  const rest = (1 - share) / 6
-  return {
-    customer_request: rest,
-    billing: rest,
-    system_alert: rest,
-    newsletter: rest,
-    sales_outreach: rest,
-    suspicious: rest,
-    other: rest,
-    [top]: share,
-  }
+  const rest = (1 - share) / (triageCategories.length - 1)
+  return Object.fromEntries(
+    triageCategories.map((category) => [category, category === top ? share : rest]),
+  ) as Record<Category, number>
 }
 
 const decision = (overrides: Partial<DecisionInput> = {}) =>
   triageDecisionSchema.parse({
     threadId: syntheticThreads.customerQuestion.id,
     rubric: currentTriageRubric,
-    category: 'customer_request',
+    category: 'personal',
     priority: 'high',
-    probabilities: probabilities('customer_request', 0.9),
+    probabilities: probabilities('personal', 0.9),
     ...overrides,
   })
 
 const correction = {
   threadId: syntheticThreads.customerQuestion.id,
   rubric: currentTriageRubric,
-  category: 'billing',
+  category: 'purchase',
   priority: 'normal',
   correctedAt: '2026-01-05T10:00:00Z',
 } as const
@@ -49,12 +43,12 @@ const issueMessages = (input: unknown) =>
 
 describe('triageDecisionSchema', () => {
   it('pins the current rubric version', () => {
-    expect(currentTriageRubric).toBe('email-triage.v1')
-    expect(decision().rubric).toBe('email-triage.v1')
+    expect(currentTriageRubric).toBe('email-triage.v2')
+    expect(decision().rubric).toBe('email-triage.v2')
   })
 
   it.each([
-    ['an unknown rubric version', { rubric: 'email-triage.v0' }, 'rubric'],
+    ['an unknown rubric version', { rubric: 'email-triage.v1' }, 'rubric'],
     ['a missing rubric', { rubric: undefined }, 'rubric'],
     ['a blank thread id', { threadId: '' }, 'threadId'],
     ['an unknown category', { category: 'spam' }, 'category'],
@@ -67,10 +61,10 @@ describe('triageDecisionSchema', () => {
 
   it('accepts probabilities that sum to 1 within floating-point error', () => {
     const inexact = {
-      ...probabilities('customer_request', 1),
-      customer_request: 0.7,
-      billing: 0.1,
-      system_alert: 0.1,
+      ...probabilities('personal', 1),
+      personal: 0.7,
+      purchase: 0.1,
+      notification: 0.1,
       newsletter: 0.1,
     }
 
@@ -85,7 +79,7 @@ describe('triageDecisionSchema', () => {
   ])('rejects a probability %s', (_, value) => {
     const input = {
       ...decision(),
-      probabilities: { ...probabilities('customer_request', 0.9), other: value },
+      probabilities: { ...probabilities('personal', 0.9), other: value },
     }
 
     expect(triageDecisionSchema.safeParse(input).error?.issues[0]?.path).toEqual([
@@ -97,14 +91,14 @@ describe('triageDecisionSchema', () => {
   it('rejects probabilities that do not sum to 1', () => {
     const input = {
       ...decision(),
-      probabilities: { ...probabilities('customer_request', 0.9), other: 0 },
+      probabilities: { ...probabilities('personal', 0.9), other: 0 },
     }
 
     expect(issueMessages(input)).toEqual(['Category probabilities must sum to 1'])
   })
 
   it('rejects probabilities that omit a category', () => {
-    const partial: Partial<Record<Category, number>> = probabilities('customer_request', 0.9)
+    const partial: Partial<Record<Category, number>> = probabilities('personal', 0.9)
     delete partial.other
     const result = triageDecisionSchema.safeParse({ ...decision(), probabilities: partial })
 
@@ -114,7 +108,7 @@ describe('triageDecisionSchema', () => {
   it('rejects probabilities for an unknown category', () => {
     const input = {
       ...decision(),
-      probabilities: { ...probabilities('customer_request', 0.9), spam: 0 },
+      probabilities: { ...probabilities('personal', 0.9), spam: 0 },
     }
 
     expect(triageDecisionSchema.safeParse(input).error?.issues).toMatchObject([
@@ -123,15 +117,15 @@ describe('triageDecisionSchema', () => {
   })
 
   it('rejects a category that is not the most probable', () => {
-    const input = { ...decision(), category: 'billing' }
+    const input = { ...decision(), category: 'purchase' }
 
     expect(issueMessages(input)).toEqual(['The decided category must have the highest probability'])
   })
 
   it('accepts either category of a tie', () => {
-    const tie = { ...probabilities('customer_request', 1), customer_request: 0.5, billing: 0.5 }
+    const tie = { ...probabilities('personal', 1), personal: 0.5, purchase: 0.5 }
 
-    expect(decision({ category: 'billing', probabilities: tie }).category).toBe('billing')
+    expect(decision({ category: 'purchase', probabilities: tie }).category).toBe('purchase')
   })
 })
 
@@ -159,10 +153,10 @@ describe('resolveTriage', () => {
     [0.8, 'auto_accepted'],
     [0.79, 'needs_review'],
   ])('with confidence %d, the model decision is %s', (share, review) => {
-    const modelDecision = decision({ probabilities: probabilities('customer_request', share) })
+    const modelDecision = decision({ probabilities: probabilities('personal', share) })
 
     expect(resolveTriage(modelDecision, null)).toEqual({
-      category: 'customer_request',
+      category: 'personal',
       priority: 'high',
       confidence: share,
       review,
@@ -182,7 +176,7 @@ describe('resolveTriage', () => {
 
   it('lets a human correction override the model decision', () => {
     expect(resolveTriage(decision(), triageCorrectionSchema.parse(correction))).toEqual({
-      category: 'billing',
+      category: 'purchase',
       priority: 'normal',
       confidence: null,
       review: 'human_reviewed',
@@ -192,12 +186,12 @@ describe('resolveTriage', () => {
   it('records a confirmation of the model decision as human reviewed', () => {
     const confirmation = triageCorrectionSchema.parse({
       ...correction,
-      category: 'customer_request',
+      category: 'personal',
       priority: 'high',
     })
 
     expect(resolveTriage(decision(), confirmation)).toMatchObject({
-      category: 'customer_request',
+      category: 'personal',
       review: 'human_reviewed',
     })
   })

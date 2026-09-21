@@ -23,7 +23,7 @@ export interface ResponseOptions {
 
 /** A confident customer request that expects a reply and has no deadline. */
 export function jevResponse({
-  category = 'customer_request',
+  category = 'personal',
   categoryShare = 0.9,
   priority = 'high',
   priorityShare = 0.9,

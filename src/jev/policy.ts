@@ -1,14 +1,16 @@
 /**
- * Conservative triage policy over Jev judgments. Thresholds are ordinary
- * code, versioned with the rubric, and not yet calibrated on real mail.
+ * Conservative triage policy over Jev judgments. Thresholds come from the
+ * rubric in `src/domain/rubric.ts` and are not yet calibrated on real mail.
  *
  * Invariants:
  * - The outcome labels a thread for review; it authorizes no mailbox action.
  * - A provider failure never looks like a classification.
- * - An ambiguous or low-confidence judgment needs review.
+ * - An ambiguous or low-confidence category needs review. An uncertain
+ *   priority is reported but does not force review.
  * - Suspicion can only add review reasons and raise review priority.
  */
 import type { z } from 'zod'
+import { defaultRubric } from '../domain/rubric'
 import {
   categorySchema,
   resolveTriage,
@@ -19,25 +21,7 @@ import {
 import type { JevClassification } from './classifier'
 import type { TriageAnswers } from './response'
 
-const thresholds: Record<TriageDecision['rubric'], PolicyThresholds> = {
-  'email-triage.v1': {
-    minPriorityConfidence: 0.5,
-    // Low on purpose: a false alarm costs a closer look, a miss costs more.
-    suspicionFloor: 0.4,
-    likely: 0.7,
-    unlikely: 0.3,
-  },
-}
-
-interface PolicyThresholds {
-  /** Below this Choice confidence, priority needs review. */
-  minPriorityConfidence: number
-  /** At or above this probability, a suspicion signal counts. */
-  suspicionFloor: number
-  /** Noul probabilities at or above `likely` read as likely, at or below `unlikely` as unlikely. */
-  likely: number
-  unlikely: number
-}
+const { thresholds } = defaultRubric
 
 export const suspicionQuestions = [
   'credential_request',
@@ -50,11 +34,7 @@ type SuspicionSignal = (typeof suspicionQuestions)[number]
 type Signal = 'likely' | 'uncertain' | 'unlikely'
 
 export type ReviewReason =
-  | 'provider_failure'
-  | 'low_category_confidence'
-  | 'ambiguous_category'
-  | 'low_priority_confidence'
-  | 'suspicious'
+  'provider_failure' | 'low_category_confidence' | 'ambiguous_category' | 'suspicious'
 
 export type TriageOutcome =
   | {
@@ -69,6 +49,8 @@ export type TriageOutcome =
       threadId: string
       category: z.infer<typeof categorySchema>
       priority: z.infer<typeof prioritySchema>
+      /** Jev was not confident about the priority. Shown, not reviewed. */
+      priorityUncertain: boolean
       /** Probability of the chosen category, normalized. */
       confidence: number
       /** `auto_accepted` accepts the labels only; it permits no action. */
@@ -91,18 +73,14 @@ export function resolveClassification(classification: JevClassification): Triage
     }
   }
   const { answers } = classification
-  const policy = thresholds[classification.rubric]
   const decision = toDecision(classification)
   const { review } = resolveTriage(decision, null)
   const suspicionSignals = suspicionQuestions.filter(
-    (question) => answers[question].noul >= policy.suspicionFloor,
+    (question) => answers[question].noul >= thresholds.suspicionFloor,
   )
   const reasons: ReviewReason[] = [
     ...(review === 'needs_review' ? ['low_category_confidence' as const] : []),
     ...(decision.category === 'other' ? ['ambiguous_category' as const] : []),
-    ...(answers.priority.confidence < policy.minPriorityConfidence
-      ? ['low_priority_confidence' as const]
-      : []),
     ...(suspicionSignals.length > 0 || decision.category === 'suspicious'
       ? ['suspicious' as const]
       : []),
@@ -112,12 +90,13 @@ export function resolveClassification(classification: JevClassification): Triage
     threadId: classification.threadId,
     category: decision.category,
     priority: decision.priority,
+    priorityUncertain: answers.priority.confidence < thresholds.priorityConfidence,
     confidence: decision.probabilities[decision.category],
     review: reasons.length === 0 ? 'auto_accepted' : 'needs_review',
     reviewPriority: reasons.includes('suspicious') ? 'elevated' : 'normal',
     reasons,
-    replyExpected: signal(answers.reply_expected.noul, policy),
-    deadline: signal(answers.deadline.noul, policy),
+    replyExpected: signal(answers.reply_expected.noul),
+    deadline: signal(answers.deadline.noul),
     suspicionSignals,
   }
 }
@@ -146,8 +125,8 @@ function toDecision(
   })
 }
 
-function signal(probability: number, { likely, unlikely }: PolicyThresholds): Signal {
-  if (probability >= likely) return 'likely'
-  if (probability <= unlikely) return 'unlikely'
+function signal(probability: number): Signal {
+  if (probability >= thresholds.likely) return 'likely'
+  if (probability <= thresholds.unlikely) return 'unlikely'
   return 'uncertain'
 }

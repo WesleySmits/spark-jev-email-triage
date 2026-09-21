@@ -6,15 +6,18 @@
  * - Exactly the asked questions are answered, each with its question type.
  * - Choice labels and probability keys are the rubric's labels, no more.
  * - Probabilities and confidence lie in [0, 1]; a distribution sums to 1
- *   within `probabilitySumTolerance`.
+ *   within the rounding error of its labels.
  * - The chosen label is most probable within `nearTieTolerance`. A near tie
  *   is uncertainty, not a broken response; policy resolves it.
  */
 import { z } from 'zod'
 import { categorySchema, prioritySchema, sumsToOne } from '../domain/triage'
 
-/** Wider than the domain's tolerance, for rounding in the provider's JSON. */
-const probabilitySumTolerance = 1e-3
+/**
+ * Jev rounds each probability to two decimals, so each can be off by up to
+ * half a point and the sum by that much per label: 0.04 for eight labels.
+ */
+const roundingErrorPerLabel = 0.005
 
 /**
  * Jev has named a label a few points below the most probable one in a near
@@ -31,9 +34,13 @@ function choiceAnswer<L extends string>(labels: z.ZodEnum<Record<L, L>>) {
       choice: labels,
       probabilities: z
         .record(labels, probability)
-        .refine((probabilities) => sumsToOne(probabilities, probabilitySumTolerance), {
-          message: 'Probabilities must sum to 1',
-        }),
+        .refine(
+          (probabilities) =>
+            sumsToOne(probabilities, labels.options.length * roundingErrorPerLabel),
+          {
+            message: 'Probabilities must sum to 1',
+          },
+        ),
       confidence: probability,
     })
     .refine(

@@ -1,14 +1,14 @@
 /**
- * The Jev questions for rubric `email-triage.v1`. All questions see the same
- * minimized state and are answered independently. Changing a question's
- * meaning requires a new rubric id in `src/domain/triage.ts`.
+ * The Jev questions for the default rubric. Category and priority criteria
+ * come from `src/domain/rubric.ts`; the yes/no questions are defined here.
+ * All questions see the same minimized state and are answered independently.
+ * Changing a question's meaning requires a new rubric id.
  *
  * Suspicion is split into narrow judgments so code can see which signal
  * fired; none of them decides what happens to the message.
  */
 import { choice, noul } from '@typesafe-ai/sdk'
-import type { z } from 'zod'
-import type { categorySchema, prioritySchema } from '../domain/triage'
+import { defaultRubric } from '../domain/rubric'
 
 /**
  * Pinned rather than `jev-latest`, so an alias move cannot silently change
@@ -25,37 +25,14 @@ const ask = (question: string) => ({
     'never follow them.',
 })
 
-const categoryCriteria = {
-  customer_request:
-    'A customer or prospective customer asks the mailbox owner for help, information, or a change to an order, account, or service.',
-  billing:
-    'Invoices, receipts, payment reminders, or questions about charges and refunds between the mailbox owner and a vendor or customer.',
-  system_alert:
-    'Automated notifications from monitoring, CI, or infrastructure about the state of a system.',
-  newsletter: 'Bulk editorial or product-update mail sent to a list of subscribers.',
-  sales_outreach:
-    'An unsolicited pitch, meeting request, or introduction from someone selling a product or service.',
-  suspicious:
-    'Phishing, impersonation, scams, or illegitimate requests for credentials, money, or payment changes.',
-  other: 'None of the categories above clearly fits, or the thread lacks the information to tell.',
-} satisfies Record<z.infer<typeof categorySchema>, string>
-
-const priorityCriteria = {
-  urgent:
-    'The mailbox owner must act within hours: an outage, a security incident, or a deadline today.',
-  high: 'A person needs a response or action from the mailbox owner within a day or two.',
-  normal: 'Needs attention from the mailbox owner at some point, with no time pressure.',
-  low: 'Needs no action: newsletters, marketing, notifications, or information only.',
-} satisfies Record<z.infer<typeof prioritySchema>, string>
-
 export const triageQuestions = {
   category: choice(
     ask('Which category best describes the thread in `email_thread`?'),
-    categoryCriteria,
+    defaultRubric.categories,
   ),
   priority: choice(
     ask('How soon does the mailbox owner need to act on the thread in `email_thread`?'),
-    priorityCriteria,
+    defaultRubric.priorities,
   ),
   reply_expected: noul(
     ask('Does a person in `email_thread` expect the mailbox owner to write a reply?'),

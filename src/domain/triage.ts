@@ -11,34 +11,19 @@
  */
 import { z } from 'zod'
 import { threadSchema } from './email'
-
-const triageCategories = [
-  'customer_request',
-  'billing',
-  'system_alert',
-  'newsletter',
-  'sales_outreach',
-  'suspicious',
-  'other',
-] as const
+import { defaultRubric, triageCategories, triagePriorities } from './rubric'
 
 export const categorySchema = z.enum(triageCategories)
-export const prioritySchema = z.enum(['urgent', 'high', 'normal', 'low'])
+export const prioritySchema = z.enum(triagePriorities)
 
 /**
- * Add a new id whenever triage questions or policy change. Keep old ids so
- * stored decisions and corrections stay parseable. The questions for
- * `email-triage.v1` are in `src/jev/questions.ts`.
+ * Only the current rubric. `email-triage.v1` (support-desk categories) was
+ * dropped before anything was stored; once decisions are persisted, keep old
+ * ids here so stored decisions and corrections stay parseable.
  */
-const triageRubricIds = ['email-triage.v1'] as const
-const rubricSchema = z.enum(triageRubricIds)
+const rubricSchema = z.enum([defaultRubric.id])
 
-export const currentTriageRubric: z.infer<typeof rubricSchema> = 'email-triage.v1'
-
-/** Minimum model confidence to accept a decision without human review. */
-const autoAcceptConfidence: Record<z.infer<typeof rubricSchema>, number> = {
-  'email-triage.v1': 0.8,
-}
+export const currentTriageRubric: z.infer<typeof rubricSchema> = defaultRubric.id
 
 const probabilitySumTolerance = 1e-6
 
@@ -97,7 +82,7 @@ export function resolveTriage(decision: TriageDecision, correction: TriageCorrec
       priority: decision.priority,
       confidence,
       review:
-        confidence >= autoAcceptConfidence[decision.rubric]
+        confidence >= defaultRubric.thresholds.autoAccept
           ? ('auto_accepted' as const)
           : ('needs_review' as const),
     }

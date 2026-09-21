@@ -97,7 +97,7 @@ describe('createJevClassifier', () => {
     expect(result).toEqual({
       status: 'classified',
       threadId: injection.id,
-      rubric: 'email-triage.v1',
+      rubric: 'email-triage.v2',
       requestedModel: jevModel,
       model: 'jev-1.13.0',
       usage: { inputTokens: 812, outputTokens: 64 },
@@ -111,6 +111,43 @@ describe('createJevClassifier', () => {
     })
 
     expect((await classifyWith(body)).status).toBe('classified')
+  })
+
+  it('accepts eight rounded category probabilities that sum to 0.99', async () => {
+    const body = mutated((b) => {
+      b.answers.category.probabilities = {
+        personal: 0.81,
+        notification: 0,
+        security: 0,
+        purchase: 0.01,
+        newsletter: 0,
+        promotion: 0.1,
+        suspicious: 0,
+        other: 0.07,
+      }
+    })
+
+    expect((await classifyWith(body)).status).toBe('classified')
+  })
+
+  it('rejects category probabilities beyond rounding error', async () => {
+    const body = mutated((b) => {
+      b.answers.category.probabilities = {
+        personal: 0.81,
+        notification: 0,
+        security: 0,
+        purchase: 0.01,
+        newsletter: 0,
+        promotion: 0.1,
+        suspicious: 0,
+        other: 0.03,
+      }
+    })
+
+    expect(await classifyWith(body)).toMatchObject({
+      status: 'provider_failure',
+      failure: { code: 'malformed_response', detail: 'answers.category.probabilities' },
+    })
   })
 
   it('accepts a named choice in a near tie as a valid, uncertain answer', async () => {
@@ -214,7 +251,7 @@ describe('createJevClassifier', () => {
     expect(await classifyWith(body)).toEqual({
       status: 'provider_failure',
       threadId: injection.id,
-      rubric: 'email-triage.v1',
+      rubric: 'email-triage.v2',
       requestedModel: jevModel,
       failure: { code: 'malformed_response', detail, httpStatus: null },
     })
