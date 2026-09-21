@@ -1,0 +1,100 @@
+/* LocalStatusToast molecule, from the source's .toast. The source's hard-coded
+ * greens map to the success set: --success text, --success-soft fill and
+ * --success-line border. Token values live in src/styles/tokens.css. */
+.local-status-toast {
+  position: fixed;
+  right: var(--s6);
+  bottom: var(--s6);
+  z-index: 20;
+  box-sizing: border-box;
+  min-width: 340px;
+  max-width: calc(100vw - 2 * var(--s6));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s3);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--success-line);
+  border-radius: var(--radius-control);
+  color: var(--success);
+  background: var(--success-soft);
+  box-shadow: var(--shadow-toast);
+  font: var(--text-ui);
+  /* Hidden, the toast is an empty, transparent status region. It hides at
+   * once, so the emptied box never shows while fading out. */
+  opacity: 0;
+  transform: translateY(16px);
+  pointer-events: none;
+}
+
+.local-status-toast--visible {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  transition:
+    opacity var(--duration-state) var(--ease-state),
+    transform var(--duration-state) var(--ease-state);
+}
+
+.local-status-toast__status {
+  min-width: 0;
+  flex: 1 1 10rem;
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
+
+.local-status-toast__copy {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.local-status-toast__title,
+.local-status-toast__detail {
+  display: block;
+}
+
+.local-status-toast__title {
+  font-weight: 700;
+}
+
+.local-status-toast__detail {
+  font: var(--text-meta);
+}
+
+.local-status-toast__actions {
+  display: flex;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+/* Text actions, as the source's undo. Focus and disabled come from Button. */
+.button.local-status-toast__action {
+  min-height: 32px;
+  padding: 0 var(--s2);
+  color: var(--success);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.button.local-status-toast__action:hover:enabled {
+  background: var(--paper);
+}
+
+@media (max-width: 600px) {
+  .local-status-toast {
+    right: var(--s3);
+    bottom: var(--s3);
+    left: var(--s3);
+    min-width: 0;
+    max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .local-status-toast--visible {
+    transform: none;
+    transition: none;
+  }
+}
