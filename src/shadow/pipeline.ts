@@ -24,12 +24,11 @@ import { buildTriageState } from '../jev/state'
 import { SparkError } from '../spark/errors'
 import type { ShadowConfig } from './config'
 import {
+  beginRun,
   finishRun,
   isMessageJudged,
   isThreadJudged,
-  markInterruptedRuns,
   recordJudgment,
-  startRun,
   type JudgedThread,
   type RunCounts,
   type RunStatus,
@@ -44,6 +43,9 @@ export interface ShadowDeps {
   classify: ReturnType<typeof createJevClassifier> | null
   db: DatabaseSync
   now: () => string
+  /** This process, recorded on the run so another process can tell it is live. */
+  processId: number
+  isProcessAlive: (pid: number) => boolean
 }
 
 export interface ShadowSummary extends RunCounts {
@@ -54,7 +56,7 @@ export interface ShadowSummary extends RunCounts {
   wouldClassify: number
   needsReview: number
   interruptedRuns: number
-  /** A content-free code, such as `spark_timeout`. */
+  /** A content-free code, such as `spark_timeout` or `run_in_progress`. */
   errorCode: string | null
 }
 
@@ -87,19 +89,11 @@ export async function runShadowTriage(
   settings: Settings,
 ): Promise<ShadowSummary> {
   const mode = deps.classify === null ? 'dry' : 'apply'
-  const interruptedRuns = mode === 'apply' ? markInterruptedRuns(deps.db, deps.now()) : 0
   const counts = emptyCounts()
-  const summary = (outcome: RunOutcome): ShadowSummary => ({
-    mode,
-    interruptedRuns,
-    ...counts,
-    ...outcome,
-  })
+  const summary = (outcome: RunOutcome): ShadowSummary => ({ mode, ...counts, ...outcome })
   const scope = await sparkStep(() => resolveScope(deps.reader, settings.mailbox))
-  if (!scope.ok) return summary({ runId: null, status: 'failed', errorCode: scope.errorCode })
-  if (scope.value === null) {
-    return summary({ runId: null, status: 'failed', errorCode: 'mailbox_unavailable' })
-  }
+  if (!scope.ok) return summary(notStarted(scope.errorCode))
+  if (scope.value === null) return summary(notStarted('mailbox_unavailable'))
   const outcome =
     deps.classify === null
       ? await dryRun(deps, scope.value, settings, counts)
@@ -111,7 +105,15 @@ interface RunOutcome {
   runId: number | null
   status: ShadowSummary['status']
   errorCode: string | null
+  interruptedRuns: number
 }
+
+const notStarted = (errorCode: string): RunOutcome => ({
+  runId: null,
+  status: 'failed',
+  errorCode,
+  interruptedRuns: 0,
+})
 
 type StepResult<T> = { ok: true; value: T } | { ok: false; errorCode: string }
 
@@ -149,13 +151,13 @@ async function dryRun(
   counts: Counts,
 ): Promise<RunOutcome> {
   const listed = await sparkStep(() => listRecent(deps.reader, scope, settings, counts))
-  if (!listed.ok) return { runId: null, status: 'failed', errorCode: listed.errorCode }
+  if (!listed.ok) return notStarted(listed.errorCode)
   const threads = threadsToJudge(deps, scope, listed.value, counts)
   while (!(await threads.next()).done) {
     if (counts.wouldClassify < settings.maxJevCalls) counts.wouldClassify += 1
     else counts.deferred += 1
   }
-  return { runId: null, status: 'dry_run', errorCode: null }
+  return { runId: null, status: 'dry_run', errorCode: null, interruptedRuns: 0 }
 }
 
 /** Records the run from start to finish; a run is never left `running`. */
@@ -165,10 +167,16 @@ async function applyRun(
   settings: Settings,
   counts: Counts,
 ): Promise<RunOutcome> {
-  const runId = startRun(deps.db, { ...scope, startedAt: deps.now() })
+  const claim = beginRun(
+    deps.db,
+    { ...scope, startedAt: deps.now(), pid: deps.processId },
+    deps.isProcessAlive,
+  )
+  if (claim.runId === null) return notStarted('run_in_progress')
+  const { runId, interruptedRuns } = claim
   const finish = (status: Exclude<RunStatus, 'running'>, errorCode: string | null = null) => {
     finishRun(deps.db, runId, { status, counts, errorCode, finishedAt: deps.now() })
-    return { runId, status, errorCode }
+    return { runId, status, errorCode, interruptedRuns }
   }
   try {
     const listed = await sparkStep(() => listRecent(deps.reader, scope, settings, counts))
@@ -200,18 +208,23 @@ async function classifyAll(
 ) {
   const pool = createPool(settings.jevConcurrency)
   let calls = 0
-  for await (const thread of threadsToJudge(deps, scope, listings, counts)) {
-    if (calls >= settings.maxJevCalls) {
-      counts.deferred += 1
-      continue
+  try {
+    for await (const thread of threadsToJudge(deps, scope, listings, counts)) {
+      if (calls >= settings.maxJevCalls) {
+        counts.deferred += 1
+        continue
+      }
+      calls += 1
+      await pool.add(async () => {
+        const classification = await deps.classify({ thread, mailboxAddress: scope.mailboxAddress })
+        store(deps, scope, runId, thread, classification, counts)
+      })
     }
-    calls += 1
-    await pool.add(async () => {
-      const classification = await deps.classify({ thread, mailboxAddress: scope.mailboxAddress })
-      store(deps, scope, runId, thread, classification, counts)
-    })
+  } finally {
+    // Nothing may still be writing when the caller finishes the run.
+    await pool.settled()
   }
-  await pool.drain()
+  pool.rethrow()
 }
 
 /**
@@ -310,15 +323,31 @@ function judgedThread(thread: Thread, mailboxAddress: string): JudgedThread {
 const isSqliteError = (error: unknown) =>
   error instanceof Error && 'code' in error && error.code === 'ERR_SQLITE_ERROR'
 
-/** Runs at most `size` tasks at once. `add` waits for a free slot. */
+/**
+ * Runs at most `size` tasks at once. The first task failure is kept and
+ * rethrown: by `add`, so no new task starts, and by `rethrow` once every
+ * running task has settled.
+ */
 function createPool(size: number) {
   const running = new Set<Promise<void>>()
+  let failure: { error: unknown } | null = null
+  const rethrow = () => {
+    if (failure !== null) throw failure.error
+  }
   return {
     async add(task: () => Promise<void>) {
       while (running.size >= size) await Promise.race(running)
-      const promise: Promise<void> = task().finally(() => running.delete(promise))
+      rethrow()
+      const promise: Promise<void> = task()
+        .catch((error: unknown) => {
+          failure ??= { error }
+        })
+        .finally(() => running.delete(promise))
       running.add(promise)
     },
-    drain: () => Promise.all(running),
+    settled: async () => {
+      await Promise.all(running)
+    },
+    rethrow,
   }
 }

@@ -25,6 +25,7 @@ const migrations: readonly string[] = [
     model TEXT NOT NULL,
     status TEXT NOT NULL
       CHECK (status IN ('running', 'completed', 'partial', 'failed', 'interrupted')),
+    pid INTEGER,
     started_at TEXT NOT NULL,
     finished_at TEXT,
     listed INTEGER NOT NULL DEFAULT 0,
@@ -123,10 +124,13 @@ export class ShadowDatabaseError extends Error {
 /** Opens and migrates a writable database. `:memory:` gives a disposable one. */
 export function openDatabase(path: string): DatabaseSync {
   const db = new DatabaseSync(path)
-  db.exec('PRAGMA foreign_keys = ON')
+  db.exec(`PRAGMA foreign_keys = ON; PRAGMA busy_timeout = ${String(busyTimeoutMs)}`)
   migrate(db)
   return db
 }
+
+/** How long a write waits for another process's write to finish. */
+const busyTimeoutMs = 5_000
 
 /**
  * Opens an existing database without writing to it, or an empty in-memory
@@ -135,6 +139,7 @@ export function openDatabase(path: string): DatabaseSync {
 export function openReadOnly(path: string): DatabaseSync {
   if (!existsSync(path)) return openDatabase(':memory:')
   const db = new DatabaseSync(path, { readOnly: true })
+  db.exec(`PRAGMA busy_timeout = ${String(busyTimeoutMs)}`)
   const version = userVersion(db)
   if (version > schemaVersion) throw new ShadowDatabaseError('newer_schema', version)
   if (version < schemaVersion) throw new ShadowDatabaseError('outdated_schema', version)

@@ -31,8 +31,16 @@ const options = {
 
 const number = (value: string | undefined) => (value === undefined ? undefined : Number(value))
 
+const usage =
+  'usage: pnpm shadow --mailbox <address> [--apply] [--limit <n>] [--max-jev-calls <n>] ' +
+  '[--concurrency <n>] [--db <path>] | pnpm shadow --preflight'
+
 export async function main(args: string[], env: NodeJS.ProcessEnv, print: (line: string) => void) {
-  const { values } = parseArgs({ args, options, strict: true })
+  const values = parseOptions(args)
+  if (values === null) {
+    print(usage)
+    return exitCodes.usage
+  }
   if (values.preflight === true) return preflight(print)
   const config = shadowConfigSchema.safeParse({
     mailbox: values.mailbox,
@@ -77,6 +85,8 @@ async function run(config: ShadowConfig, env: NodeJS.ProcessEnv, print: (line: s
             : null,
         db,
         now: () => new Date().toISOString(),
+        processId: process.pid,
+        isProcessAlive,
       },
       config,
     )
@@ -84,6 +94,34 @@ async function run(config: ShadowConfig, env: NodeJS.ProcessEnv, print: (line: s
     return exitCode(summary)
   } finally {
     db.close()
+  }
+}
+
+/** `null` for an unknown option, a missing value, or a stray argument. */
+function parseOptions(args: string[]) {
+  try {
+    return parseArgs({ args, options, strict: true }).values
+  } catch (error) {
+    if (isParseArgsError(error)) return null
+    throw error
+  }
+}
+
+const isParseArgsError = (error: unknown) =>
+  error instanceof TypeError &&
+  'code' in error &&
+  typeof error.code === 'string' &&
+  error.code.startsWith('ERR_PARSE_ARGS_')
+
+/** Signal 0 only checks: `ESRCH` means gone, `EPERM` means alive under another user. */
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ESRCH') return false
+    if (error instanceof Error && 'code' in error && error.code === 'EPERM') return true
+    throw error
   }
 }
 

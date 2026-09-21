@@ -38,29 +38,39 @@ interface Version {
 /** Only the named parameters a query uses; node:sqlite rejects others. */
 const version = ({ mailboxId, rubric, model }: Version) => ({ mailboxId, rubric, model })
 
-/** Runs still `running` belong to a process that stopped; none is complete. */
-export function markInterruptedRuns(db: DatabaseSync, finishedAt: string): number {
-  const result = db
-    .prepare(
-      "UPDATE runs SET status = 'interrupted', finished_at = :finishedAt WHERE status = 'running'",
-    )
-    .run({ finishedAt })
-  return Number(result.changes)
-}
+const runningRows = z.array(z.object({ id: z.int(), pid: z.int().nullable() }))
 
-export function startRun(db: DatabaseSync, run: Version & { startedAt: string }): number {
-  const result = db
-    .prepare(
-      `INSERT INTO runs (mailbox_id, rubric, model, status, started_at)
-       VALUES (:mailboxId, :rubric, :model, 'running', :startedAt)`,
+export type RunClaim =
+  { runId: number; interruptedRuns: number } | { runId: null; liveRunId: number }
+
+/**
+ * Starts a run unless another live process is running one. Runs left
+ * `running` by a process that no longer exists become `interrupted`; none
+ * of them is complete. Checking and claiming happen in one write
+ * transaction, so two processes cannot both start.
+ */
+export function beginRun(
+  db: DatabaseSync,
+  run: Version & { startedAt: string; pid: number },
+  isProcessAlive: (pid: number) => boolean,
+): RunClaim {
+  return transaction(db, () => {
+    const running = runningRows.parse(
+      db.prepare("SELECT id, pid FROM runs WHERE status = 'running'").all(),
     )
-    .run({
-      mailboxId: run.mailboxId,
-      rubric: run.rubric,
-      model: run.model,
-      startedAt: run.startedAt,
-    })
-  return Number(result.lastInsertRowid)
+    const live = running.find((row) => row.pid !== null && isProcessAlive(row.pid))
+    if (live !== undefined) return { runId: null, liveRunId: live.id }
+    db.prepare(
+      "UPDATE runs SET status = 'interrupted', finished_at = :startedAt WHERE status = 'running'",
+    ).run({ startedAt: run.startedAt })
+    const result = db
+      .prepare(
+        `INSERT INTO runs (mailbox_id, rubric, model, status, pid, started_at)
+         VALUES (:mailboxId, :rubric, :model, 'running', :pid, :startedAt)`,
+      )
+      .run({ ...version(run), pid: run.pid, startedAt: run.startedAt })
+    return { runId: Number(result.lastInsertRowid), interruptedRuns: running.length }
+  })
 }
 
 export function finishRun(
@@ -294,6 +304,7 @@ const runRowSchema = z.object({
   rubric: z.string(),
   model: z.string(),
   status: z.enum(runStatuses),
+  pid: z.int().nullable(),
   started_at: z.string(),
   finished_at: z.string().nullable(),
   listed: count,

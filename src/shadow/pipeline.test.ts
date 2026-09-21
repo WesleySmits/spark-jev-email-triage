@@ -108,6 +108,9 @@ function clock() {
 
 const settings = { mailbox, limit: 25, maxJevCalls: 25, jevConcurrency: 2 }
 
+/** Runs recorded with one of these process ids count as still running. */
+const livePids = new Set([4242])
+
 function harness(db: DatabaseSync = openDatabase(':memory:')) {
   const now = clock()
   const run = (
@@ -120,6 +123,8 @@ function harness(db: DatabaseSync = openDatabase(':memory:')) {
         classify: deps.classify === undefined ? fakeJev().classify : deps.classify,
         db,
         now,
+        processId: 1000,
+        isProcessAlive: (pid) => livePids.has(pid),
       },
       { ...settings, ...overrides },
     )
@@ -137,6 +142,7 @@ const judgmentRow = z.object({
   rubric: z.string(),
   requested_model: z.string(),
   attempts: z.int(),
+  judged_at: z.string(),
   error_code: z.string().nullable(),
 })
 const judgments = (db: DatabaseSync) =>
@@ -355,15 +361,34 @@ describe('runShadowTriage', () => {
     expect(count(db, 'judgment_messages')).toBe(4)
   })
 
-  it('marks a run left running as interrupted and never as complete', async () => {
+  const insertRunning = (db: DatabaseSync, pid: number) => {
+    db.exec(`INSERT INTO runs (mailbox_id, rubric, model, status, pid, started_at)
+             VALUES ('${mailbox}', 'email-triage.v2', 'jev-1.13.0', 'running', ${String(pid)},
+                     '2026-01-13T07:00:00Z')`)
+  }
+
+  it('marks a run left running by a stopped process as interrupted, never complete', async () => {
     const { db, run } = harness()
-    db.exec(`INSERT INTO runs (mailbox_id, rubric, model, status, started_at)
-             VALUES ('${mailbox}', 'email-triage.v2', 'jev-1.13.0', 'running', '2026-01-13T07:00:00Z')`)
+    insertRunning(db, 999)
 
     const summary = await run()
 
     expect(summary).toMatchObject({ status: 'completed', interruptedRuns: 1 })
     expect(readRun(db, 1)).toMatchObject({ status: 'interrupted' })
+    expect(readRun(db, 2)).toMatchObject({ status: 'completed', pid: 1000 })
+  })
+
+  it('refuses to start while another live process is running', async () => {
+    const { db, run } = harness()
+    insertRunning(db, 4242)
+    const jev = fakeJev()
+
+    const summary = await run({ classify: jev.classify })
+
+    expect(summary).toMatchObject({ status: 'failed', errorCode: 'run_in_progress', runId: null })
+    expect(readRun(db, 1)).toMatchObject({ status: 'running', pid: 4242 })
+    expect(count(db, 'runs')).toBe(1)
+    expect(jev.calls).toEqual([])
   })
 
   it('marks the run failed when an unexpected error stops it, then recovers', async () => {
@@ -375,6 +400,22 @@ describe('runShadowTriage', () => {
 
     expect(await run()).toMatchObject({ status: 'completed', classified: 3 })
     expect(count(db, 'judgments')).toBe(3)
+  })
+
+  it('lets running classifications finish and store before failing the run', async () => {
+    const { db, run } = harness()
+    // The first thread fails at once while the second is still in flight.
+    const jev = fakeJev((subject) => (subject === 'Following up' ? new TypeError('bug') : {}))
+
+    await expect(run({ classify: jev.classify }, { jevConcurrency: 2 })).rejects.toThrow(TypeError)
+    const stored = count(db, 'judgments')
+    const finishedAt = readRun(db, 1).finished_at ?? ''
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    expect(jev.calls).toEqual(['Following up', 'Invoice INV-4002'])
+    expect(stored).toBe(1)
+    expect(count(db, 'judgments')).toBe(stored)
+    expect(judgments(db).every((j) => j.judged_at < finishedAt)).toBe(true)
   })
 
   it('defers threads beyond the Jev budget and reports the run partial', async () => {

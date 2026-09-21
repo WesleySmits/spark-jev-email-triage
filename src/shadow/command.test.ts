@@ -39,10 +39,17 @@ describe('shadow command', () => {
     })
   })
 
-  it('rejects unknown options', async () => {
-    await expect(run(['--mailbox', 'support@example.com', '--archive'])).rejects.toThrow(
-      /Unknown option/,
-    )
+  it.each([
+    ['an unknown option', ['--mailbox', 'support@example.com', '--archive']],
+    ['a mistyped option', ['--mailbx', 'support@example.com']],
+    ['a missing value', ['--mailbox']],
+    ['a stray argument', ['support@example.com']],
+  ])('prints usage for %s', async (_, args) => {
+    const { code, lines } = await run(args)
+
+    expect(code).toBe(exitCodes.usage)
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toMatch(/^usage: pnpm shadow --mailbox <address>/)
   })
 })
 
