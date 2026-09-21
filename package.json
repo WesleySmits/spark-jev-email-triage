@@ -17,6 +17,7 @@
     "test": "vitest run",
     "fallow": "fallow --fail-on-issues",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm fallow && pnpm build",
+    "prepare": "husky",
     "fallow:audit": "fallow audit --base origin/main"
   },
   "dependencies": {
@@ -26,6 +27,8 @@
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@commitlint/cli": "21.2.3",
+    "@commitlint/config-conventional": "21.2.3",
     "@eslint/js": "10.0.1",
     "@types/node": "24.13.6",
     "@types/react": "19.3.0",
@@ -36,6 +39,8 @@
     "eslint-plugin-react-hooks": "7.1.1",
     "fallow": "3.27.0",
     "globals": "17.12.0",
+    "husky": "9.1.7",
+    "lint-staged": "17.5.1",
     "prettier": "3.9.8",
     "typescript": "6.0.3",
     "typescript-eslint": "8.70.0",
