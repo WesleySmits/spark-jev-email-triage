@@ -1,0 +1,76 @@
+/* SenderMeta molecule, from the source's .sender-meta in the reader header.
+ * Token values live in src/styles/tokens.css; rules for their use in
+ * src/styles/README.md. The source's 36px avatar is the Avatar atom's md size.
+ * Its mobile rules (top alignment, wrapping address, no truncation) apply at
+ * every width here, so long names and addresses always stay readable. */
+.sender-meta {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+  color: var(--ink);
+  font: var(--text-ui);
+}
+
+/* Copy and time share one wrapping line. The copy takes the free width; below
+ * about 12rem the time moves under it instead of squeezing it. */
+.sender-meta__body {
+  min-width: 0;
+  display: flex;
+  flex: 1 1 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--s3);
+}
+
+.sender-meta__copy {
+  min-width: 0;
+  flex: 1 1 12rem;
+}
+
+.sender-meta__name,
+.sender-meta__context {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+/* 13/20 at 700, so name and context together match the 36px avatar. */
+.sender-meta__name {
+  font: var(--text-control);
+}
+
+/* Metadata is never lighter than --muted, the time included. */
+.sender-meta__context,
+.sender-meta__time {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.sender-meta__account {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 5px;
+  /* On the line's baseline it would add half a pixel under the context. */
+  vertical-align: top;
+}
+
+.sender-meta__time {
+  flex: none;
+  max-width: 100%;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.sender-meta__hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
