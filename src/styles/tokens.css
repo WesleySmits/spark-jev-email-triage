@@ -1,0 +1,97 @@
+/*
+ * Spark Triage design tokens: the single maintained source.
+ *
+ * This file declares CSS custom properties on :root and nothing else, so
+ * importing it changes no rendering by itself. Rules for using the tokens and
+ * the decisions behind them: src/styles/README.md.
+ *
+ * A consumer imports this file once, before its own styles, e.g. from the app
+ * entry: `import './styles/tokens.css'`. The app does not import it yet;
+ * Storybook does, in .storybook/preview.ts. No package or build step is needed.
+ */
+:root {
+  /* Type families. System fonts only; nothing is downloaded. */
+  --font-display: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-body: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+
+  /* Text. --faint is decorative only, never readable text. */
+  --ink: #17191f;
+  --ink-soft: #313641;
+  --muted: #5d6470;
+  --faint: #858c98;
+
+  /* Surfaces */
+  --canvas: #e8eaee;
+  --paper: #ffffff;
+  --surface: #f7f8fa;
+  --surface-2: #f0f2f5;
+
+  /* Borders. Lines are decorative dividers; controls use --border-control. */
+  --line: #d8dce3;
+  --line-strong: #b9c0cb;
+  --border-control: #808791;
+
+  /* Accent: selection and primary action */
+  --accent: #3b4f91;
+  --accent-dark: #293b76;
+  --accent-soft: #e9ecf6;
+  --accent-ink: #25366f;
+
+  /* States: review, completed, disconnected or failed */
+  --attention: #815b18;
+  --attention-soft: #fff6df;
+  --attention-line: #dcc58c;
+  --success: #286248;
+  --success-soft: #e8f3ed;
+  --success-line: #abd0bd;
+  --danger: #9c4040;
+  --danger-soft: #faecea;
+
+  /* Account markers: 8px markers only, never large fills */
+  --account-studio: #3f6ba6;
+  --account-atelier: #9a633b;
+  --account-personal: #705f8a;
+
+  /* Type roles */
+  --text-ui: 400 14px / 1.5 var(--font-body);
+  --text-reader-title: 750 22px / 1.28 var(--font-display);
+  --tracking-reader-title: -0.025em;
+  --text-queue-title: 750 17px / 1.3 var(--font-display);
+  --tracking-queue-title: -0.015em;
+  --text-message: 400 16px / 1.68 var(--font-body);
+  --measure-message: 730px;
+  --text-control: 700 13px / 20px var(--font-body);
+  --text-meta: 400 11px / 16px var(--font-body);
+  --text-overline: 800 10px / 1.5 var(--font-body);
+  --tracking-overline: 0.08em;
+
+  /* Spacing: 4px base. There is deliberately no --s7. */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --s6: 24px;
+  --s8: 32px;
+
+  /* Radii. --r1 and --r2 are the source's short aliases. */
+  --radius-control: 4px;
+  --radius-frame: 8px;
+  --radius-pill: 999px;
+  --r1: var(--radius-control);
+  --r2: var(--radius-frame);
+
+  /* Elevation: the outer shell and transient feedback only */
+  --shadow-shell: 0 18px 48px rgb(24 29 38 / 12%);
+  --shadow-toast: 0 14px 32px rgb(24 46 35 / 18%);
+
+  /* Focus */
+  --focus: #174ec4;
+  --focus-width: 2px;
+  --focus-offset: 2px;
+
+  /* Motion: small state changes. Honour prefers-reduced-motion. */
+  --duration-state: 180ms;
+  --ease-state: ease-out;
+}
