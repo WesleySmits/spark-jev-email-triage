@@ -1,0 +1,76 @@
+/* Sidebar organism, from the source's .sidebar, .sidebar-scroll, .nav-label,
+ * .nav-group and .key-help. Token values live in src/styles/tokens.css; rules
+ * for their use in src/styles/README.md. The source's --faint overline becomes
+ * --muted because the group labels must stay readable. */
+.sidebar {
+  box-sizing: border-box;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+  container-type: inline-size;
+}
+
+.sidebar__scroll {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--s5);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--s4) var(--s3);
+  /* Room for the focus outline when Tab scrolls a row into view. */
+  scroll-padding-block: var(--s2);
+}
+
+.sidebar__group {
+  min-width: 0;
+}
+
+.sidebar__label {
+  margin: 0 0 var(--s2) var(--s2);
+  color: var(--muted);
+  font: var(--text-overline);
+  letter-spacing: var(--tracking-overline);
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+/* minmax(0, 1fr) keeps a long label from widening the track, so NavigationItem
+ * truncates it instead of overflowing the rail. */
+.sidebar__list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sidebar__empty {
+  margin: 0 var(--s2);
+  color: var(--muted);
+  font: var(--text-meta);
+  overflow-wrap: anywhere;
+}
+
+/* Fixed below the scrolling groups. */
+.sidebar__help {
+  padding: var(--s3);
+  border-top: 1px solid var(--line);
+}
+
+/* The source narrows the rail to 164px and 156px with tighter side padding. */
+@container (width < 170px) {
+  .sidebar__scroll {
+    padding-inline: var(--s2);
+  }
+
+  .sidebar__help {
+    padding-inline: var(--s2);
+  }
+}
