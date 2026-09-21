@@ -104,6 +104,17 @@ describe('listRecentEmails', () => {
     ])
   })
 
+  it.each([
+    ['a blank date', ' '.repeat('2026-01-10 12:05'.length)],
+    ['an impossible date', '2026-02-30 12:05'],
+  ])('treats %s as unavailable and keeps every row', async (_, date) => {
+    const { reader } = setup(outputs({ emails: emailsOutput.replace('2026-01-10 12:05', date) }))
+    const listings = await reader.listRecentEmails(request)
+
+    expect(listings.map((listing) => listing.messageId)).toEqual(['1003', '1002', '1001'])
+    expect(listings[0]).toMatchObject({ messageId: '1003', date: null })
+  })
+
   it('returns no messages when the mailbox has none', async () => {
     const { reader } = setup(outputs({ emails: emptyEmailsOutput }))
 
@@ -122,7 +133,13 @@ describe('listRecentEmails', () => {
     ['output without a table', 'Emails in support@example.com:Inbox\n'],
     ['a table without rows', emailsOutput.replace(/^ {2}1\d{3} .*$/gm, '').replace(/\n+/g, '\n')],
     ['a misaligned row', emailsOutput.replace('  1003   ', '  1003 ')],
-    ['an unrecognized date', emailsOutput.replace('2026-01-10 12:05', '10 Jan 12:05    ')],
+    // Shifts larger than the cell padding, so values cross column boundaries.
+    ['a row shifted right', emailsOutput.replace('  1003   support', '  1003   xxxsupport')],
+    ['a row shifted left', emailsOutput.replace('org>  2026-01-10', 'org>2026-01-10')],
+    [
+      'a Date cell that is not a time',
+      emailsOutput.replace('2026-01-10 12:05', '10 Jan 12:05    '),
+    ],
   ])('rejects %s', async (_, output) => {
     const { reader } = setup(outputs({ emails: output }))
 
@@ -177,6 +194,19 @@ describe('readThread', () => {
 
     const thread = await reader.readThread(threadRequest)
     expect(thread.messages[1]?.sentAt).toBeNull()
+  })
+
+  it.each([
+    ['a blank', '  Date: \n'],
+    ['an unrecognized', '  Date: Sat, 10 Jan 2026 11:30:00 +0100\n'],
+  ])('treats %s Date header as unavailable', async (_, header) => {
+    const { reader } = setup(
+      outputs({ thread: threadOutput.replace('  Date: 2026-01-10 11:30\n', header) }),
+    )
+
+    const thread = await reader.readThread(threadRequest)
+    expect(thread.messages[1]?.sentAt).toBeNull()
+    expect(thread.messages[0]?.sentAt).toBe('2026-01-10T10:00:00+01:00')
   })
 
   it.each([

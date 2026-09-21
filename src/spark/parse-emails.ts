@@ -6,7 +6,7 @@
 import type { z } from 'zod'
 import { emailListingSchema } from '../domain/email'
 import { malformed } from './errors'
-import type { LocalTimeZone } from './local-time'
+import { wallTimePattern, type LocalTimeZone } from './local-time'
 import { parseParticipant } from './participants'
 
 type EmailListing = z.infer<typeof emailListingSchema>
@@ -62,7 +62,7 @@ function parseRow(
   const [id, , from, date, subject] = offsets.map((start, column) =>
     row.slice(start, offsets[column + 1]).trim(),
   )
-  if (id === undefined || !idPattern.test(id) || date === undefined) {
+  if (id === undefined || date === undefined || !isAligned(row, offsets, id, date)) {
     throw malformed(`emails: row ${String(index + 1)} is misaligned`)
   }
   const listing = emailListingSchema.safeParse({
@@ -77,3 +77,14 @@ function parseRow(
 }
 
 const isCut = (value: string) => value.endsWith(truncationMark)
+
+/**
+ * Spark pads every cell, so a row whose columns shifted shows up as text
+ * running into a column boundary, or as an ID or Date cell of the wrong
+ * shape. A blank or impossible date is still aligned and becomes
+ * unavailable.
+ */
+function isAligned(row: string, offsets: number[], id: string, date: string): boolean {
+  const padded = offsets.slice(1).every((start) => start >= row.length || row[start - 1] === ' ')
+  return padded && idPattern.test(id) && (date === '' || wallTimePattern.test(date))
+}

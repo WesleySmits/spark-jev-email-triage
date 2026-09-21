@@ -2,11 +2,13 @@
  * Spark prints times as `YYYY-MM-DD HH:MM` in the Mac's local time zone,
  * without an offset. The caller supplies that zone. A wall time that the
  * zone skips or repeats (daylight saving changes) has no single instant, so
- * it is unavailable rather than guessed.
+ * it is unavailable rather than guessed. A blank, differently formatted, or
+ * impossible date is unavailable too: dates come from mail headers, which
+ * senders control, and one bad date must not fail a whole list or thread.
  */
-import { malformed } from './errors'
 
-const wallTimePattern = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/
+/** The shape Spark prints times in, whether or not the date exists. */
+export const wallTimePattern = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/
 const minuteMs = 60_000
 const dayMs = 24 * 60 * minuteMs
 
@@ -40,22 +42,23 @@ export function localTimeZone(timeZone: string): LocalTimeZone {
   }
 
   return (wallTime) => {
-    const wallUtc = parseWallTime(wallTime)
+    const wallUtc = parseWallTime(wallTime.trim())
+    if (wallUtc === null) return null
     const candidates = new Set([offsetMinutesAt(wallUtc - dayMs), offsetMinutesAt(wallUtc + dayMs)])
     const valid = [...candidates].filter(
       (offset) => offsetMinutesAt(wallUtc - offset * minuteMs) === offset,
     )
     const [offset] = valid
     return valid.length === 1 && offset !== undefined
-      ? `${wallTime.replace(' ', 'T')}:00${formatOffset(offset)}`
+      ? `${wallTime.trim().replace(' ', 'T')}:00${formatOffset(offset)}`
       : null
   }
 }
 
-/** Milliseconds since the epoch if the wall time were UTC. */
-function parseWallTime(wallTime: string): number {
+/** Milliseconds since the epoch if the wall time were UTC, or `null` if it is not a real wall time. */
+function parseWallTime(wallTime: string): number | null {
   const match = wallTimePattern.exec(wallTime)
-  if (!match) throw malformed('unrecognized date format')
+  if (!match) return null
   const [year, month, day, hour, minute] = match.slice(1).map(Number) as [
     number,
     number,
@@ -70,8 +73,7 @@ function parseWallTime(wallTime: string): number {
     utc.getUTCDate() === day &&
     utc.getUTCHours() === hour &&
     utc.getUTCMinutes() === minute
-  if (!exists) throw malformed('date does not exist')
-  return utc.getTime()
+  return exists ? utc.getTime() : null
 }
 
 function formatOffset(offsetMinutes: number): string {

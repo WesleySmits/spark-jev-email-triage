@@ -25,14 +25,20 @@ describe('localTimeZone', () => {
     expect(localTimeZone('UTC')('2026-01-10 10:00')).toBe('2026-01-10T10:00:00+00:00')
   })
 
-  it.each(['2026-01-10T10:00', '10/01/2026 10:00', '2026-02-30 10:00', '2026-01-10 24:00'])(
-    'rejects %s',
-    (wallTime) => {
-      expect(() => amsterdam(wallTime)).toThrow(
-        expect.objectContaining({ code: 'malformed_output' }),
-      )
-    },
-  )
+  it.each([
+    '',
+    '   ',
+    '2026-01-10T10:00',
+    '10/01/2026 10:00',
+    '2026-02-30 10:00',
+    '2026-01-10 24:00',
+  ])('treats %o as unavailable', (wallTime) => {
+    expect(amsterdam(wallTime)).toBeNull()
+  })
+
+  it('ignores surrounding whitespace', () => {
+    expect(amsterdam(' 2026-01-10 10:00 ')).toBe('2026-01-10T10:00:00+01:00')
+  })
 
   it('rejects an unknown time zone', () => {
     expect(() => localTimeZone('Mars/Olympus_Mons')).toThrow(RangeError)
