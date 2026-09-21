@@ -68,7 +68,10 @@ Git hooks:
 - Stories and `.storybook/preview.ts` may not import Node built-ins, `src/spark`,
   `src/jev`, `src/shadow`, or the TypeSafe SDK (ESLint `no-restricted-imports`).
 - The sidebar order is Foundations, Atoms, Molecules, Organisms, Templates,
-  Pages. Only Foundations has stories so far.
+  Pages. Foundations and `Atoms/Button` have stories so far.
+- `src/components/atoms/` holds atoms: a component, its CSS (tokens only) and
+  its stories. Components do not depend on Storybook or its specimen CSS. The
+  app does not import them yet.
 - `src/styles/tokens.css` is the single design-token source. It declares
   custom properties on `:root` only, so importing it changes nothing on its
   own. Storybook imports it in `.storybook/preview.ts`. The app deliberately
