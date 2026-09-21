@@ -6,8 +6,10 @@
  * Kept: subject, the latest messages' senders and cleaned text, the mailbox
  * owner's role on each message, and attachment names and media types.
  * Dropped: attachment contents and sizes, other recipients, timestamps,
- * quoted reply history, URL queries and fragments, and long opaque tokens
- * such as reset links or API keys. Text is truncated to fixed limits.
+ * and quoted reply history. In every text field (subject, sender name,
+ * body, and attachment name), URL queries and fragments and long opaque
+ * tokens such as reset links or API keys are removed, and text is truncated
+ * to fixed limits.
  */
 import type { z } from 'zod'
 import { mailboxSchema, type threadSchema } from '../domain/email'
@@ -35,7 +37,7 @@ export function buildTriageState(thread: Thread, mailboxAddress: string) {
   const recent = thread.messages.slice(-stateLimits.messages)
   return {
     email_thread: {
-      subject: thread.subject === null ? null : truncate(thread.subject, stateLimits.subjectChars),
+      subject: thread.subject === null ? null : cleanLine(thread.subject, stateLimits.subjectChars),
       omitted_earlier_messages: thread.messages.length - recent.length,
       messages: recent.map((message) => stateMessage(message, owner)),
     },
@@ -49,7 +51,7 @@ function stateMessage(message: Message, owner: string) {
     mailbox_owner_role: mailboxRole(message, owner),
     sender: {
       address: message.from.address,
-      name: message.from.name === null ? null : truncate(message.from.name, stateLimits.nameChars),
+      name: message.from.name === null ? null : cleanLine(message.from.name, stateLimits.nameChars),
     },
     text: text === null ? null : truncate(text, stateLimits.bodyChars),
     text_truncated: text !== null && text.length > stateLimits.bodyChars,
@@ -57,7 +59,7 @@ function stateMessage(message: Message, owner: string) {
       filename:
         attachment.filename === null
           ? null
-          : truncate(redactTokens(attachment.filename), stateLimits.filenameChars),
+          : cleanLine(attachment.filename, stateLimits.filenameChars),
       media_type: attachment.mediaType,
     })),
     omitted_attachments: message.attachments.length - shown.length,
@@ -81,16 +83,22 @@ const opaqueToken = /(?=[\w-]*\d)(?=[\w-]*[a-z])[\w-]{20,}/gi
 /** The new text of a message, without quoted history or tracking noise. */
 function cleanText(text: string): string | null {
   const latest = text.split(quotedReplyHeader)[0] ?? ''
-  const cleaned = latest
+  const unquoted = latest
     .split('\n')
     .filter((line) => !line.trimStart().startsWith('>'))
     .join('\n')
-    .replace(url, stripUrl)
+  const cleaned = scrub(unquoted)
     .replace(/[ \t]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
-  return cleaned === '' ? null : redactTokens(cleaned)
+  return cleaned === '' ? null : cleaned
 }
+
+/** A short header value, scrubbed like body text and truncated. */
+const cleanLine = (text: string, maxChars: number) => truncate(scrub(text), maxChars)
+
+/** Strips link queries and fragments, then redacts opaque tokens. */
+const scrub = (text: string) => redactTokens(text.replace(url, stripUrl))
 
 /** Keeps the origin and path, which show where a link leads. */
 function stripUrl(link: string): string {

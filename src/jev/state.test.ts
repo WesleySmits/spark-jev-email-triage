@@ -134,6 +134,28 @@ describe('buildTriageState', () => {
     ).toBe('Go to https://promo.example/claim. Or https://a.example/x, now')
   })
 
+  it('scrubs links and tokens from the subject, sender name, and attachment name', () => {
+    const thread = withBody('Hi', {
+      from: { address: 'customer@example.org', name: 'Support 9f8e7d6c5b4a39281706f5e4' },
+      attachments: [
+        {
+          filename: 'https://files.example/get?sig=abc.pdf',
+          mediaType: 'application/pdf',
+          sizeBytes: 1,
+        },
+      ],
+    })
+    const state = buildTriageState(
+      { ...thread, subject: 'Reset via https://accounts.example/reset?token=abc123' },
+      mailbox,
+    )
+    const [message] = state.email_thread.messages
+
+    expect(state.email_thread.subject).toBe('Reset via https://accounts.example/reset')
+    expect(message?.sender.name).toBe('Support [redacted]')
+    expect(message?.attachments[0]?.filename).toBe('https://files.example/get')
+  })
+
   it('replaces a link it cannot parse', () => {
     expect(firstText(withBody('See https://bad%host/path now'))).toBe('See [link] now')
   })
