@@ -1,0 +1,76 @@
+/* ReaderActionBar molecule, from the source's .reader-actions. Button owns the
+ * focus, hover and disabled states. Token values live in src/styles/tokens.css;
+ * rules for their use in src/styles/README.md. */
+.reader-action-bar {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: var(--s3) var(--s6);
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--surface);
+  font: var(--text-ui);
+  container-type: inline-size;
+}
+
+.reader-action-bar__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+}
+
+/* A long label wraps inside its button instead of widening the bar. Doubled
+ * with .button so these win over Button's own rules. */
+.button.reader-action-bar__action {
+  max-width: 100%;
+  padding-block: var(--s2);
+  text-align: center;
+}
+
+.reader-action-bar__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.reader-action-bar__hint {
+  flex: none;
+  display: inline-flex;
+}
+
+/* Takes the free space at the end of the row, as in the source. */
+.reader-action-bar__note {
+  min-width: 0;
+  max-width: 250px;
+  margin: 0 0 0 auto;
+  color: var(--muted);
+  font: var(--text-meta);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.reader-action-bar__note-title {
+  display: block;
+  color: var(--ink-soft);
+}
+
+/* Narrow reader, like the source's mobile footer: buttons share the width with
+ * a 44px target, and the note takes its own line under them. */
+@container (max-width: 30rem) {
+  .button.reader-action-bar__action {
+    min-height: 44px;
+    flex: 1 1 auto;
+  }
+
+  .reader-action-bar__note {
+    flex-basis: 100%;
+    max-width: none;
+    margin-left: 0;
+    text-align: left;
+  }
+}
+
+@media (max-width: 600px) {
+  .reader-action-bar {
+    padding: var(--s3);
+  }
+}

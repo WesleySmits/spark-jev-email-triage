@@ -27,6 +27,7 @@ function onEach(
 export const contrastPairs: readonly ContrastPair[] = [
   ...onEach('--ink', ['--paper', '--canvas'], 4.5, 'Primary text'),
   { foreground: '--ink-soft', background: '--paper', minimum: 4.5, use: 'Subjects' },
+  { foreground: '--ink-soft', background: '--surface', minimum: 4.5, use: 'Reader action note' },
   ...onEach('--muted', [...neutrals, '--accent-soft'], 4.5, 'Secondary text'),
   { foreground: '--accent', background: '--paper', minimum: 4.5, use: 'Links' },
   ...onEach('--paper', ['--accent', '--accent-dark'], 4.5, 'Primary action'),
