@@ -1,0 +1,68 @@
+/* ReaderHeader molecule, from the source's .reader-head. Token values live in
+ * src/styles/tokens.css; rules for their use in src/styles/README.md. */
+.reader-header {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: var(--s5) var(--s6) var(--s4);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--paper);
+  font: var(--text-ui);
+  container-type: inline-size;
+}
+
+.reader-header__title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s4);
+}
+
+.reader-header__subject {
+  min-width: 0;
+  max-width: 760px;
+  margin: 0;
+  font: var(--text-reader-title);
+  letter-spacing: var(--tracking-reader-title);
+  overflow-wrap: anywhere;
+}
+
+.reader-header__status {
+  flex: none;
+  max-width: 100%;
+  display: inline-flex;
+  margin-left: auto;
+}
+
+/* Badge never wraps in a queue row; here a long status wraps instead of
+ * widening a narrow reader. */
+.reader-header__status .badge {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.reader-header__sender {
+  margin-top: var(--s4);
+}
+
+/* Narrow reader, like the source's mobile header: the badge moves under the
+ * subject and the subject steps down to 20px. */
+@container (max-width: 30rem) {
+  .reader-header__title-row {
+    display: block;
+  }
+
+  .reader-header__subject {
+    font-size: 20px;
+  }
+
+  .reader-header__status {
+    margin: var(--s3) 0 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .reader-header {
+    padding: var(--s4);
+  }
+}
