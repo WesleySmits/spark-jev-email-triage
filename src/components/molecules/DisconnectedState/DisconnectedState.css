@@ -1,0 +1,79 @@
+/* DisconnectedState molecule. The source names the state (danger colors,
+ * precise recovery copy) but draws no panel, so this follows ReviewPanel: a
+ * tinted heading band on --paper, framed by the state's border. Danger is a
+ * set of --danger text and border with a --danger-soft fill. Token values live
+ * in src/styles/tokens.css. */
+.disconnected-state {
+  box-sizing: border-box;
+  container-type: inline-size;
+  min-width: 0;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-control);
+  color: var(--ink);
+  background: var(--paper);
+  font: var(--text-ui);
+}
+
+.disconnected-state__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border-radius: var(--radius-control) var(--radius-control) 0 0;
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+/* Level with the first line of the heading. */
+.disconnected-state__head .icon {
+  margin-top: 1px;
+}
+
+.disconnected-state__title {
+  min-width: 0;
+  margin: 0;
+  font: var(--text-control);
+  overflow-wrap: anywhere;
+}
+
+.disconnected-state__recovery {
+  max-width: var(--measure-message);
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+/* Takes the free width; below about 14rem the action wraps under it. */
+.disconnected-state__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+  padding: var(--s3) var(--s4);
+  border-top: 1px solid var(--line);
+}
+
+.disconnected-state__last-known {
+  min-width: 0;
+  flex: 1 1 14rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.button.disconnected-state__action {
+  max-width: 100%;
+  margin-left: auto;
+  overflow-wrap: anywhere;
+}
+
+/* Narrow, like the source's mobile footer: the action takes the full width
+ * with a 44px target. */
+@container (max-width: 30rem) {
+  .button.disconnected-state__action {
+    min-height: 44px;
+    flex: 1 1 100%;
+  }
+}
