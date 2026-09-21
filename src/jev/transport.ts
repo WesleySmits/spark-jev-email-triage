@@ -33,15 +33,17 @@ const typesafeBaseUrl = 'https://api.typesafe.ai'
  * limits, server errors, and timeouts are safe to keep.
  */
 const retry = { maxRetries: 2 }
-const timeoutMs = 10_000
 
 export function createSdkTransport({
   apiKey,
   fetch,
+  timeoutMs = 10_000,
 }: {
   apiKey: string
   /** For tests; defaults to the global `fetch`. */
   fetch?: Fetch
+  /** Per attempt; the SDK retries at most twice. */
+  timeoutMs?: number
 }): JevTransport {
   const client = new TypeSafeClient({
     apiKey,

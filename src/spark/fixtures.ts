@@ -32,7 +32,7 @@ const cell = (value: string, width: number) =>
 const tableRow = (values: readonly [string, string, string, string, string, string]) =>
   `  ${widths.map((width, index) => cell(values[index] ?? '', width)).join('')}${values[5]}`
 
-const emailsTable = (
+export const emailsTable = (
   rows: readonly (readonly [string, string, string, string, string, string])[],
 ) =>
   [
@@ -82,6 +82,33 @@ No emails found.
 `
 
 const rule = '─'.repeat(72)
+
+interface SyntheticMessage {
+  id: string
+  from: string
+  date: string
+  body: string
+}
+
+/** A `spark thread` output with one email block per message. */
+export const threadText = (subject: string, messages: readonly SyntheticMessage[]) =>
+  [
+    `Thread: ${subject}`,
+    `Messages: ${String(messages.length)}`,
+    ...messages.flatMap((message) => [
+      rule,
+      '',
+      `  ID: ${message.id}`,
+      `  Subject: ${subject}`,
+      `  From: ${message.from}`,
+      '  To: support@example.com',
+      `  Date: ${message.date}`,
+      '  Type: Email',
+      '',
+      `  ${message.body}`,
+      '',
+    ]),
+  ].join('\n')
 
 // Only `Type: Email` has been observed; the `Comment` block models a team
 // comment. The second message's body contains a line that looks like an

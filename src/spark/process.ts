@@ -29,7 +29,7 @@ export interface ProcessLimits {
   maxOutputBytes: number
 }
 
-const defaultLimits: ProcessLimits = { timeoutMs: 15_000, maxOutputBytes: 4 * 1024 * 1024 }
+export const defaultLimits: ProcessLimits = { timeoutMs: 15_000, maxOutputBytes: 4 * 1024 * 1024 }
 
 export function createProcessTransport({
   spawn = nodeSpawn,
