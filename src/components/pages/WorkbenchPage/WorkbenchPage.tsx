@@ -106,11 +106,17 @@ function usePendingCompletion(messages: readonly WorkbenchMessage[]) {
  * The page's own state: the chosen filters, the chosen message and the
  * mobile pane. What applies is worked out from the current props on every
  * render, so data that arrives or changes after mount still shows.
+ * `generation` counts the user's navigation: J, K, opening a row and
+ * changing a filter each move it on.
  */
 function usePageState({ messages, workflows, mailboxes, onComplete }: PageInput) {
   const [chosen, setChosen] = useState(defaultFilter)
   const [openId, setOpenId] = useState<string>()
   const [pane, setPane] = useState<Pane>('queue')
+  const [generation, setGeneration] = useState(0)
+  const moveOn = () => {
+    setGeneration((current) => current + 1)
+  }
   const { live, markPending, release } = usePendingCompletion(messages)
   const filter = appliedFilter(chosen, workflows, mailboxes)
   const shown = visibleMessages(live, filter)
@@ -120,6 +126,7 @@ function usePageState({ messages, workflows, mailboxes, onComplete }: PageInput)
   const filterBy = (change: Partial<WorkbenchFilter>) => {
     setChosen({ ...filter, ...change })
     setPane('queue')
+    moveOn()
   }
   return {
     messages: live,
@@ -127,6 +134,7 @@ function usePageState({ messages, workflows, mailboxes, onComplete }: PageInput)
     shown,
     open,
     pane,
+    generation,
     filterBy,
     reset: () => {
       filterBy(defaultFilter)
@@ -134,19 +142,24 @@ function usePageState({ messages, workflows, mailboxes, onComplete }: PageInput)
     openMessage: (id: string) => {
       setOpenId(id)
       setPane('reader')
+      moveOn()
     },
     step: (by: 1 | -1) => {
       setOpenId(neighbour(shown, open?.id, by))
+      moveOn()
     },
     select: setOpenId,
     release,
-    /** Completes the open message and returns it with the caller's result. */
+    /**
+     * Completes the open message. Returns it with the message that opens
+     * next, the navigation generation at this moment and the caller's result.
+     */
     complete: () => {
       if (!open) return undefined
       markPending(open)
       const next = afterRemoval(shown, open.id)
       setOpenId(next)
-      return { message: open, next, result: onComplete(open.id) }
+      return { message: open, next, generation, result: onComplete(open.id) }
     },
     back: () => {
       setPane('queue')
@@ -218,11 +231,15 @@ function settle(result: void | Promise<void>, done: (atOnce: boolean) => void, f
   } else done(true)
 }
 
-type Shown = Readonly<{ message: WorkbenchMessage; at: string | undefined }>
+/** Where the user is: the navigation generation and the open message. */
+type Spot = Readonly<{ generation: number; at: string | undefined }>
+type Shown = Spot & Readonly<{ message: WorkbenchMessage }>
 
-/** The completed message to show while `at` is still the open message. */
-function noticeFor(shown: Shown | undefined, openId: string | undefined) {
-  return shown && shown.at === openId ? shown.message : undefined
+const samePlace = (a: Spot, b: Spot) => a.generation === b.generation && a.at === b.at
+
+/** The completed message to show while the user hasn't moved on. */
+function noticeFor(shown: Shown | undefined, now: Spot) {
+  return shown && samePlace(shown, now) ? shown.message : undefined
 }
 
 /** A ref that always holds the latest render's value, for use in callbacks. */
@@ -235,25 +252,22 @@ function useLatest<T>(value: T) {
 }
 
 /**
- * The Completed notice: the last completed message, shown while the message
- * that opened after it stays open. Moving on, with J, K, a row or a filter,
- * hides it. Hiding it while focus is on its actions sends focus back into
- * the page.
+ * The Completed notice: the last completed message, shown while the user
+ * stays where the completion left them. Moving on, with J, K, a row or a
+ * filter, hides it, even when the same message stays open. Hiding it while
+ * focus is on its actions sends focus back into the page.
  */
 function useCompletedNotice(state: PageState, restoreRef: RefObject<Place | null>) {
   const [shown, setShown] = useState<Shown>()
-  const openId = state.open?.id
-  const openRef = useLatest(openId)
+  const now = { generation: state.generation, at: state.open?.id }
   // Once the user moves on, the notice is gone for good.
-  if (shown && shown.at !== openId) setShown(undefined)
+  if (shown && !samePlace(shown, now)) setShown(undefined)
   return {
-    message: noticeFor(shown, openId),
-    /** Shows the notice for `completed` while `at` is the open message. */
-    show: (completed: WorkbenchMessage, at: string | undefined) => {
-      setShown({ message: completed, at })
+    message: noticeFor(shown, now),
+    /** Shows the notice for `completed` while the user stays at `place`. */
+    show: (completed: WorkbenchMessage, place: Spot) => {
+      setShown({ ...place, message: completed })
     },
-    /** The message open in the latest render, for results that settle later. */
-    openNow: () => openRef.current,
     hide: () => {
       if (document.activeElement?.closest('.local-status-toast')) restoreRef.current = state.pane
       setShown(undefined)
@@ -295,15 +309,18 @@ type Notice = ReturnType<typeof useCompletedNotice>
  * the caller's result settles, and brings the message back if it fails.
  */
 function useComplete(state: PageState, notice: Notice, restoreRef: RefObject<Place | null>) {
+  const latest = useLatest<Spot>({ generation: state.generation, at: state.open?.id })
   return () => {
     restoreRef.current = focusedPlace()
     const completion = state.complete()
     if (!completion) return
+    // Where the completion leaves the user: the next message, this generation.
+    const left = { generation: completion.generation, at: completion.next }
     settle(
       completion.result,
       (atOnce) => {
-        // At once, the next message opens in this same update.
-        notice.show(completion.message, atOnce ? completion.next : notice.openNow())
+        // A late result shows only if the user hasn't moved on meanwhile.
+        if (atOnce || samePlace(latest.current, left)) notice.show(completion.message, left)
       },
       () => {
         state.release(completion.message)

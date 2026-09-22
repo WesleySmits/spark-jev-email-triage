@@ -167,6 +167,26 @@ const rail = (root: HTMLElement, name: string) =>
 const subject = (root: HTMLElement) =>
   within(within(root).getByRole('main')).getAllByRole('heading', { level: 2 }).at(-1)
 
+/** Opens the first review message and presses `keys`, e.g. 'e' to complete it. */
+async function completeFirst(root: HTMLElement, keys: string) {
+  await userEvent.click(within(root).getByRole('button', { name: /Can delivery move/ }))
+  await userEvent.keyboard(keys)
+}
+
+/** Waits for a late completion to land in the data: Done counts `count`. */
+const doneReaches = (root: HTMLElement, count: number) =>
+  waitFor(
+    () =>
+      expect(within(root).getByRole('button', { name: /^Done/ })).toHaveTextContent(String(count)),
+    { timeout: 3000 },
+  )
+
+/** A desktop story whose caller records each completion a second later. */
+const recordedLater = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  render: (args) => <WithData {...args} completeAfter={1000} />,
+} satisfies Story
+
 async function filtersAndSearch(root: HTMLElement) {
   const canvas = within(root)
   await expect(canvas.getByRole('heading', { level: 1, name: 'Needs review' })).toBeVisible()
@@ -282,20 +302,15 @@ export const DataArrivesLater: Story = {
  * it shows under Done when the data catches up.
  */
 export const SlowComplete: Story = {
-  globals: { viewport: { value: 'desktop', isRotated: false } },
-  render: (args) => <WithData {...args} completeAfter={1000} />,
+  ...recordedLater,
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: /Can delivery move/ }))
-    await userEvent.keyboard('eee')
+    await completeFirst(canvasElement, 'eee')
     await expect(canvas.getByText('0 results')).toBeVisible()
     await expect(args.onComplete).toHaveBeenCalledTimes(2)
     await expect(args.onComplete).toHaveBeenNthCalledWith(1, 'm1')
     await expect(args.onComplete).toHaveBeenNthCalledWith(2, 'm3')
-    await waitFor(
-      () => expect(canvas.getByRole('button', { name: /^Done/ })).toHaveTextContent('3'),
-      { timeout: 3000 },
-    )
+    await doneReaches(canvasElement, 3)
     await expect(canvas.getByText('0 results')).toBeVisible()
   },
 }
@@ -308,10 +323,13 @@ export const UndoComplete: Story = {
   globals: { viewport: { value: 'desktop', isRotated: false } },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: /Can delivery move/ }))
-    await userEvent.keyboard('e')
+    await completeFirst(canvasElement, 'e')
     await expect(canvas.getByRole('status')).toHaveTextContent('Completed')
     await expect(canvas.getByText('1 result')).toBeVisible()
+    // A filter that keeps the same message open still counts as moving on.
+    await rail(canvasElement, 'Personal')
+    await expect(subject(canvasElement)).toHaveTextContent('Move Friday dinner?')
+    await expect(canvas.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
     // Moving on hides the notice for good, even when coming back.
     await rail(canvasElement, 'Done')
     await expect(canvas.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
@@ -332,6 +350,30 @@ export const UndoComplete: Story = {
 }
 
 /**
+ * The caller records the completion after a second, but the user moves on
+ * first: K, another workflow, then back to the same message. The late
+ * result shows no notice, because it no longer belongs where the user is.
+ */
+export const LateCompleteAfterNavigation: Story = {
+  ...recordedLater,
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement)
+    await completeFirst(canvasElement, 'e')
+    await expect(subject(canvasElement)).toHaveTextContent('Move Friday dinner?')
+    await userEvent.keyboard('k')
+    await rail(canvasElement, 'Needs action')
+    await expect(subject(canvasElement)).toHaveTextContent('Correction on invoice AL-2048')
+    await rail(canvasElement, 'Needs review')
+    // Back on the message the completion opened, before the result arrives.
+    await expect(subject(canvasElement)).toHaveTextContent('Move Friday dinner?')
+    await doneReaches(canvasElement, 2)
+    await expect(args.onComplete).toHaveBeenCalledTimes(1)
+    await expect(canvas.getByRole('status')).not.toHaveTextContent('Completed')
+    await expect(canvas.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
+  },
+}
+
+/**
  * The caller's completion fails after a second, as when Spark is
  * unreachable. The message leaves the list at once and comes back when the
  * failure arrives; no Completed notice shows.
@@ -341,8 +383,7 @@ export const FailedComplete: Story = {
   render: (args) => <WithData {...args} completeAfter={1000} failComplete />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: /Can delivery move/ }))
-    await userEvent.keyboard('e')
+    await completeFirst(canvasElement, 'e')
     await expect(canvas.getByText('1 result')).toBeVisible()
     await waitFor(() => expect(canvas.getByText('2 results')).toBeVisible(), { timeout: 3000 })
     await expect(canvas.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
