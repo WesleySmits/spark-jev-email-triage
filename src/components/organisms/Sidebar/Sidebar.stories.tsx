@@ -36,7 +36,7 @@ const meta = {
     label: 'Filters',
     groups: [workflow, mailboxes],
     shortcuts: [
-      { label: 'Next / previous', keys: ['J', 'K'] },
+      { label: 'Next / previous', keys: ['K', 'J'] },
       { label: 'Complete', keys: ['E'] },
     ],
     onSelect: fn(),
@@ -96,7 +96,7 @@ type Story = StoryObj<typeof meta>
  *     { id: 'mailbox', label: 'Mailboxes', selectedId: mailbox, items: mailboxItems },
  *   ]}
  *   onSelect={(groupId, itemId) => (groupId === 'workflow' ? setWorkflow(itemId) : setMailbox(itemId))}
- *   shortcuts={[{ label: 'Next / previous', keys: ['J', 'K'] }, { label: 'Complete', keys: ['E'] }]}
+ *   shortcuts={[{ label: 'Next / previous', keys: ['K', 'J'] }, { label: 'Complete', keys: ['E'] }]}
  * />
  * ```
  */
@@ -145,7 +145,7 @@ export const LongLabelsAndCounts: Story = {
       },
     ],
     shortcuts: [
-      { label: 'Next / previous message in the queue', keys: ['J', 'K'] },
+      { label: 'Next / previous message in the queue', keys: ['K', 'J'] },
       { label: 'Complete', keys: ['E'] },
     ],
   },

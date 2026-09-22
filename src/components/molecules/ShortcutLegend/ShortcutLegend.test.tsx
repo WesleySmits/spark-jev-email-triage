@@ -6,7 +6,7 @@ import { ShortcutLegend } from './ShortcutLegend'
 type Element = ReactElement<Record<string, unknown>>
 
 const shortcuts = [
-  { label: 'Next / previous', keys: ['J', 'K'] },
+  { label: 'Next / previous', keys: ['K', 'J'] },
   { label: 'Complete', keys: ['E'] },
 ] as const
 
@@ -43,9 +43,9 @@ describe('ShortcutLegend', () => {
       )
     expect(keys(first?.content ?? [])).toEqual([
       false,
-      { hint: KeyboardHint, key: 'J' },
-      ' ',
       { hint: KeyboardHint, key: 'K' },
+      ' ',
+      { hint: KeyboardHint, key: 'J' },
     ])
     expect(keys(second?.content ?? [])).toEqual([false, { hint: KeyboardHint, key: 'E' }])
   })

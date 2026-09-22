@@ -286,11 +286,11 @@ async function filtersAndSearch(root: HTMLElement) {
 async function shortcuts(root: HTMLElement) {
   const canvas = within(root)
   // In the search field the keys type text; on a row they act.
-  await userEvent.keyboard('k')
-  await expect(canvas.getByRole('searchbox')).toHaveValue('k')
+  await userEvent.keyboard('j')
+  await expect(canvas.getByRole('searchbox')).toHaveValue('j')
   await userEvent.clear(canvas.getByRole('searchbox'))
   await userEvent.click(canvas.getByRole('button', { name: /Move Friday dinner\?/ }))
-  await userEvent.keyboard('k')
+  await userEvent.keyboard('j')
   await expect(subject(root)).toHaveTextContent('Can delivery move a week earlier?')
   await expect(canvas.getByRole('button', { name: /Can delivery move/ })).toHaveFocus()
   // E from a row: the next message opens and focus moves to its row.
@@ -302,13 +302,34 @@ async function shortcuts(root: HTMLElement) {
   await userEvent.click(canvas.getByRole('button', { name: 'Complete' }))
   await expect(subject(root)).toHaveTextContent('No message open')
   await expect(canvas.getByRole('button', { name: 'Reset filters' })).toHaveFocus()
+  // On a button / is left to it; from the page it jumps to the search.
+  await userEvent.keyboard('/')
+  await expect(canvas.getByRole('button', { name: 'Reset filters' })).toHaveFocus()
+  blurFocus()
   await userEvent.keyboard('/')
   await expect(canvas.getByRole('searchbox')).toHaveFocus()
 }
 
+/** Moves focus off any control, back to the page itself. */
+function blurFocus() {
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+}
+
+const firstReview = /Can delivery move/
+const lastReview = /Move Friday dinner\?/
+
+/** Presses `keys` and checks the open message and the focused row stay put. */
+async function keysChangeNothing(root: HTMLElement, keys: string, focused: HTMLElement) {
+  const before = subject(root)?.textContent
+  await userEvent.keyboard(keys)
+  await expect(subject(root)).toHaveTextContent(before ?? '')
+  await expect(focused).toHaveFocus()
+}
+
 /**
  * The workbench with sample data at 1280px. Pick a workflow or mailbox,
- * search, and open a message. Keys: J and K move through the list, E
+ * search, and open a message. Keys: K opens the next message and J the
+ * previous one, E
  * completes the open message (here it moves to Done), and / jumps to the
  * search. The play function checks filtering, search, opening, reset and the
  * keys.
@@ -318,6 +339,57 @@ export const Desktop: Story = {
   play: async ({ canvasElement }) => {
     await filtersAndSearch(canvasElement)
     await shortcuts(canvasElement)
+  },
+}
+
+/**
+ * K opens the next message and J the previous one, and they stop at either
+ * end. Focus follows the open row. The keys do nothing on a rail filter,
+ * with Ctrl, Alt or Cmd held, or when the filter shows no mail.
+ */
+export const KeyboardNavigation: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const row = (name: RegExp) => canvas.getByRole('button', { name })
+    await userEvent.click(row(firstReview))
+    // J on the first message and K on the last stay put.
+    await keysChangeNothing(canvasElement, 'j', row(firstReview))
+    await userEvent.keyboard('k')
+    await expect(subject(canvasElement)).toHaveTextContent('Move Friday dinner?')
+    await expect(row(lastReview)).toHaveFocus()
+    await keysChangeNothing(canvasElement, 'K', row(lastReview))
+    await userEvent.keyboard('J')
+    await expect(subject(canvasElement)).toHaveTextContent('Can delivery move a week earlier?')
+    await expect(row(firstReview)).toHaveFocus()
+
+    // With Ctrl, Alt or Cmd the keys belong to the browser.
+    for (const modifier of ['Control', 'Alt', 'Meta']) {
+      await keysChangeNothing(
+        canvasElement,
+        `{${modifier}>}k{/${modifier}}{${modifier}>}j{/${modifier}}`,
+        row(firstReview),
+      )
+    }
+
+    // A mailbox filter keeps its focus and the open message stays.
+    await rail(canvasElement, 'All accounts')
+    const filter = canvas.getByRole('button', { name: /^All accounts/ })
+    await keysChangeNothing(canvasElement, 'kj', filter)
+    await rail(canvasElement, 'Needs review')
+    await keysChangeNothing(
+      canvasElement,
+      'k',
+      canvas.getByRole('button', { name: /^Needs review/ }),
+    )
+
+    // With no mail in the filter the keys do nothing.
+    await rail(canvasElement, 'Personal')
+    await rail(canvasElement, 'Done')
+    blurFocus()
+    await userEvent.keyboard('kj')
+    await expect(subject(canvasElement)).toHaveTextContent('No message open')
+    await expect(canvas.getByRole('heading', { name: 'No results in this filter' })).toBeVisible()
   },
 }
 
@@ -467,9 +539,13 @@ export const Disconnected: Story = {
   },
 }
 
-/** Nothing to show yet: every workflow is empty and the reader says so. */
+/** Nothing to show yet: every workflow is empty and the reader says so. K and J do nothing. */
 export const NoMessages: Story = {
   args: { messages: [] },
+  play: async ({ canvasElement }) => {
+    await userEvent.keyboard('kjKJ')
+    await expect(subject(canvasElement)).toHaveTextContent('No message open')
+  },
 }
 
 /**

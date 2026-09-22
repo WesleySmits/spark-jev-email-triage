@@ -94,6 +94,8 @@ type WorkbenchPageProps = Readonly<{
 const readerContent = '.workbench__reader [role="region"][tabindex]'
 const currentRow = '.workbench__queue [aria-current="true"]'
 const queueControl = '.workbench__queue button'
+// The rows are where the list is read, so the keys still act from them.
+const queueRow = '.workbench__queue .message-row__button'
 
 type PageInput = Pick<WorkbenchPageProps, 'messages' | 'workflows' | 'mailboxes' | 'completion'>
 
@@ -128,7 +130,7 @@ function usePendingCompletion(messages: readonly WorkbenchMessage[]) {
  * The page's own state: the chosen filters, the chosen message and the
  * mobile pane. What applies is worked out from the current props on every
  * render, so data that arrives or changes after mount still shows.
- * `generation` counts the user's navigation: J, K, opening a row and
+ * `generation` counts the user's navigation: K, J, opening a row and
  * changing a filter each move it on.
  */
 function usePageState({ messages, workflows, mailboxes, completion }: PageInput) {
@@ -166,7 +168,9 @@ function usePageState({ messages, workflows, mailboxes, completion }: PageInput)
       setPane('reader')
       moveOn()
     },
+    /** Opens the next (1) or previous (-1) row. With no rows it does nothing. */
     step: (by: 1 | -1) => {
+      if (shown.length === 0) return
       setOpenId(neighbour(shown, open?.id, by))
       moveOn()
     },
@@ -276,7 +280,7 @@ function useLatest<T>(value: T) {
 
 /**
  * The Completed notice: the last completed message, shown while the user
- * stays where the completion left them. Moving on, with J, K, a row or a
+ * stays where the completion left them. Moving on, with K, J, a row or a
  * filter, hides it, even when the same message stays open. Hiding it while
  * focus is on its actions sends focus back into the page.
  */
@@ -307,22 +311,26 @@ function useFollowCurrentRow(root: Root, openId: string | undefined) {
   }, [root, openId])
 }
 
+/** K opens the next message, J the previous one, E completes and / searches. */
 function useShortcuts(root: Root, state: PageState, complete: () => void, searchId: string) {
-  useWorkbenchShortcuts({
-    next: () => {
-      state.step(1)
+  useWorkbenchShortcuts(
+    {
+      next: () => {
+        state.step(1)
+      },
+      previous: () => {
+        state.step(-1)
+      },
+      // Only what the user can see: on mobile the queue hides the reader.
+      complete: () => {
+        if (root.current?.querySelector('.workbench__reader')?.checkVisibility()) complete()
+      },
+      search: () => {
+        document.getElementById(searchId)?.focus()
+      },
     },
-    previous: () => {
-      state.step(-1)
-    },
-    // Only what the user can see: on mobile the queue hides the reader.
-    complete: () => {
-      if (root.current?.querySelector('.workbench__reader')?.checkVisibility()) complete()
-    },
-    search: () => {
-      document.getElementById(searchId)?.focus()
-    },
-  })
+    queueRow,
+  )
 }
 
 type Notice = ReturnType<typeof useCompletedNotice>
@@ -564,7 +572,9 @@ function useWorkbench(props: WorkbenchPageProps) {
  *
  * The page owns the UI state: the workflow and mailbox filters, the search,
  * which message is open, the mobile pane, focus on pane switches, and the
- * J, K, E and / shortcuts shown in the rail and search field, and the
+ * K (next), J (previous), E and / shortcuts shown in the rail and search
+ * field. The keys do nothing on a field, button, checkbox or link, except
+ * the queue's rows, nor with Ctrl, Alt or Cmd. It also owns the
  * Completed notice with its optional Undo. The caller owns the data: it
  * passes the messages without bodies, a loader for one body at a time, and
  * decides whether Complete is offered and what it and Undo do. The page

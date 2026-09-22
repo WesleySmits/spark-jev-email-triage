@@ -98,7 +98,7 @@ function Group({ group, onSelect }: GroupProps) {
  *     { id: 'mailbox', label: 'Mailboxes', selectedId: mailbox, items: [{ id: 'studio', account: 'studio', label: 'Studio Noord', count: 4 }] },
  *   ]}
  *   onSelect={(groupId, itemId) => select(groupId, itemId)}
- *   shortcuts={[{ label: 'Next / previous', keys: ['J', 'K'] }]}
+ *   shortcuts={[{ label: 'Next / previous', keys: ['K', 'J'] }]}
  * />
  */
 export function Sidebar({ label, groups, onSelect, shortcuts = [], className }: SidebarProps) {
