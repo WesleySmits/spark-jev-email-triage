@@ -4,6 +4,7 @@
  */
 import type { z } from 'zod'
 import type { emailListingSchema, mailboxSchema, threadSchema } from './email'
+import type { MailboxCopyRef } from './mailbox-copy'
 
 export interface MailboxAccess {
   mailbox: z.infer<typeof mailboxSchema>
@@ -18,12 +19,11 @@ export interface ListRecentEmailsRequest {
   limit: number
 }
 
-export interface ReadThreadRequest {
-  /** The mailbox the message was listed in. */
-  mailboxId: string
-  /** Any message id from the thread, as returned by `listRecentEmails`. */
-  messageId: string
-}
+/**
+ * The mailbox copy whose thread to read: any message id from the thread, as
+ * `listRecentEmails` returned it for that mailbox.
+ */
+export type ReadThreadRequest = MailboxCopyRef
 
 export interface ReadOptions {
   signal?: AbortSignal

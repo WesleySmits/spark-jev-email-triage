@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MailboxAccess, MailReader } from '../domain/mail-reader'
+import { mailboxCopyId } from '../domain/mailbox-copy'
 import { sparkArguments, type SparkCommand } from '../spark/commands'
 import { SparkError } from '../spark/errors'
 import { accountsOutput, emailsTable, threadText } from '../spark/fixtures'
@@ -38,9 +39,12 @@ const listing = (
   ...change,
 })
 
-const thread = (messages: readonly { id: string; bodyText: string | null }[]): Thread => ({
+const thread = (
+  messages: readonly { id: string; bodyText: string | null }[],
+  mailboxId = 'one@mail.example',
+): Thread => ({
   id: messages[0]?.id ?? '1',
-  mailboxId: 'one@mail.example',
+  mailboxId,
   subject: 'Subject',
   messages: messages.map(({ id, bodyText }) => ({
     id,
@@ -56,6 +60,7 @@ const thread = (messages: readonly { id: string; bodyText: string | null }[]): T
 type FakeMail = Readonly<{
   mailboxes?: MailboxAccess[] | Error
   listings?: Readonly<Record<string, Listing[] | Error>>
+  /** By message id, or by `mailbox id` for one mailbox's copy. */
   threads?: Readonly<Record<string, Thread | Error>>
 }>
 
@@ -76,11 +81,11 @@ function fakeReader({ mailboxes = [], listings = {}, threads = {} }: FakeMail) {
     listMailboxes: () => answer('accounts', mailboxes, []),
     listRecentEmails: ({ mailboxId, limit }) =>
       answer(`emails ${mailboxId} ${String(limit)}`, listings[mailboxId], []),
-    readThread: ({ messageId }) =>
+    readThread: ({ mailboxId, messageId }) =>
       answer(
-        `thread ${messageId}`,
-        threads[messageId],
-        thread([{ id: messageId, bodyText: null }]),
+        `thread ${mailboxId} ${messageId}`,
+        threads[`${mailboxId} ${messageId}`] ?? threads[messageId],
+        thread([{ id: messageId, bodyText: null }], mailboxId),
       ),
   }
   return { reader, calls }
@@ -98,6 +103,7 @@ const inbox = (mail: FakeMail) => {
 
 const one = 'one@mail.example'
 const two = 'two@mail.example'
+const copy = (mailboxId: string, messageId: string) => mailboxCopyId({ mailboxId, messageId })
 
 describe('createLiveInbox list', () => {
   it('lists each readable mailbox in turn, a bounded number of messages each', async () => {
@@ -145,13 +151,14 @@ describe('createLiveInbox list', () => {
     })
   })
 
-  it('maps listings to strict summaries without a body, newest first, each message once', async () => {
+  it('maps listings to strict summaries without a body, newest first, each mailbox copy once', async () => {
     const { live } = inbox({
       mailboxes: [access(one), access(two)],
       listings: {
         [one]: [
           listing(one, '11', '2026-09-22T09:15:00+02:00'),
           listing(one, '12', null),
+          listing(one, '13', '2026-09-18T08:00:00+02:00'),
           listing(one, '13', '2026-09-18T08:00:00+02:00'),
         ],
         [two]: [
@@ -169,16 +176,20 @@ describe('createLiveInbox list', () => {
     const result = await live.list()
     if (result.status !== 'ready') throw new Error('Expected a list')
 
-    expect(result.messages.map((message) => [message.id, message.mailbox, message.time])).toEqual([
+    expect(
+      result.messages.map((message) => [message.messageId, message.mailbox, message.time]),
+    ).toEqual([
       ['21', two, '11:30'],
       ['11', one, '09:15'],
+      ['11', two, '09:15'],
       ['13', one, 'Fri'],
       ['23', two, '2 Aug'],
       ['22', two, '1 Dec 2025'],
       ['12', one, ''],
     ])
     expect(result.messages[0]).toEqual({
-      id: '21',
+      id: copy(two, '21'),
+      messageId: '21',
       workflow: 'inbox',
       mailbox: two,
       sender: 'Sample Sender',
@@ -190,7 +201,7 @@ describe('createLiveInbox list', () => {
       account: { marker: 'atelier', label: two },
       status: { label: 'Not triaged', tone: 'neutral' },
     })
-    expect(result.messages.find((message) => message.id === '22')).toMatchObject({
+    expect(result.messages.find((message) => message.messageId === '22')).toMatchObject({
       sender: 'Sender unavailable',
       subject: 'Subject unavailable',
     })
@@ -276,10 +287,10 @@ describe('createLiveInbox body', () => {
     await live.list()
 
     await expect(live.body({ mailbox: one, id: '11' })).resolves.toEqual({
-      id: '11',
+      id: copy(one, '11'),
       text: 'The requested message',
     })
-    expect(calls.at(-1)).toBe('thread 11')
+    expect(calls.at(-1)).toBe(`thread ${one} 11`)
   })
 
   it('resolves to null for a message without a plain-text body', async () => {
@@ -292,8 +303,10 @@ describe('createLiveInbox body', () => {
   it('lists again first when it has not listed the message, e.g. after a restart', async () => {
     const { live, calls } = inbox(mail)
 
-    await expect(live.body({ mailbox: one, id: '11' })).resolves.toMatchObject({ id: '11' })
-    expect(calls).toEqual(['accounts', `emails ${one} ${String(perMailbox)}`, 'thread 11'])
+    await expect(live.body({ mailbox: one, id: '11' })).resolves.toMatchObject({
+      id: copy(one, '11'),
+    })
+    expect(calls).toEqual(['accounts', `emails ${one} ${String(perMailbox)}`, `thread ${one} 11`])
   })
 
   it('never reads a message it did not list', async () => {
@@ -358,6 +371,67 @@ describe('createLiveInbox body', () => {
     await expect(live.body({ mailbox: one, id: '11' })).rejects.toThrow(
       new BodyUnavailableError().message,
     )
+  })
+})
+
+describe('createLiveInbox alias copies', () => {
+  // One delivery to two aliases: Spark lists the same message id in both.
+  const mail: FakeMail = {
+    mailboxes: [access(one), access(two)],
+    listings: {
+      [one]: [listing(one, '11', '2026-09-22T09:15:00+02:00')],
+      [two]: [listing(two, '11', '2026-09-22T09:15:00+02:00')],
+    },
+    threads: {
+      [`${one} 11`]: thread([{ id: '11', bodyText: 'The copy in one' }], one),
+      [`${two} 11`]: thread([{ id: '11', bodyText: 'The copy in two' }], two),
+    },
+  }
+
+  it('lists a row per mailbox copy, each with its own identity and the message id', async () => {
+    const result = await inbox(mail).live.list()
+    if (result.status !== 'ready') throw new Error('Expected a list')
+
+    expect(
+      result.messages.map(({ id, messageId, mailbox }) => ({ id, messageId, mailbox })),
+    ).toEqual([
+      { id: copy(one, '11'), messageId: '11', mailbox: one },
+      { id: copy(two, '11'), messageId: '11', mailbox: two },
+    ])
+    expect(new Set(result.messages.map((message) => message.id)).size).toBe(2)
+  })
+
+  it('reads each copy through its own mailbox, naming the copy', async () => {
+    const { live, calls } = inbox(mail)
+    await live.list()
+
+    await expect(live.body({ mailbox: two, id: '11' })).resolves.toEqual({
+      id: copy(two, '11'),
+      text: 'The copy in two',
+    })
+    await expect(live.body({ mailbox: one, id: '11' })).resolves.toEqual({
+      id: copy(one, '11'),
+      text: 'The copy in one',
+    })
+    expect(calls.filter((call) => call.startsWith('thread'))).toEqual([
+      `thread ${two} 11`,
+      `thread ${one} 11`,
+    ])
+  })
+
+  it('offers only the copies the latest list still has', async () => {
+    const listings: Record<string, Listing[] | Error> = { ...mail.listings }
+    const { live, calls } = inbox({ ...mail, listings })
+    await live.list()
+
+    listings[two] = []
+    await live.list()
+
+    await expect(live.body({ mailbox: one, id: '11' })).resolves.toMatchObject({
+      id: copy(one, '11'),
+    })
+    await expect(live.body({ mailbox: two, id: '11' })).rejects.toThrow(BodyUnavailableError)
+    expect(calls.filter((call) => call.startsWith('thread'))).toEqual([`thread ${one} 11`])
   })
 })
 
@@ -449,8 +523,16 @@ describe('createLiveInbox over the Spark reader', () => {
     const result = await live.list()
     const body = await live.body({ mailbox: 'Ops@Example.com', id: '4001' })
 
-    expect(result.status).toBe('ready')
-    expect(body).toEqual({ id: '4001', text: 'Hello' })
+    if (result.status !== 'ready') throw new Error('Expected a list')
+    // Spark lists message 4001 in each readable mailbox: every copy stays a row.
+    expect(result.messages.map(({ messageId, mailbox }) => ({ messageId, mailbox }))).toEqual([
+      { messageId: '4001', mailbox: 'Ops@Example.com' },
+      { messageId: '4001', mailbox: 'support@example.com' },
+      { messageId: '4001', mailbox: 'person@example.org' },
+      { messageId: '4001', mailbox: 'other@example.net' },
+    ])
+    expect(new Set(result.messages.map((message) => message.id)).size).toBe(4)
+    expect(body).toEqual({ id: copy('Ops@Example.com', '4001'), text: 'Hello' })
     expect(commands.map((command) => sparkArguments(command)[0])).toEqual([
       'accounts',
       'emails',
