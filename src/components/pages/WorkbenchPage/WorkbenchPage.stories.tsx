@@ -516,31 +516,46 @@ export const SlowBodyThenSwitch: Story = {
   },
 }
 
-/** The first request for the first body fails; the second works. */
-function failingOnce(id: string, loader: BodyLoader): BodyLoader {
-  let failed = false
+/** The first `times` requests for `id` fail; later ones work. */
+function failingFirst(id: string, times: number, loader: BodyLoader): BodyLoader {
+  let failures = 0
   return (requested, options) => {
-    if (requested !== id || failed) return loader(requested, options)
-    failed = true
+    if (requested !== id || failures >= times) return loader(requested, options)
+    failures += 1
     return Promise.reject(new Error('The mail provider is unavailable'))
   }
 }
 
 /**
- * The provider fails for the first body. The reader says so in place, the
- * list keeps working, and Try again loads it.
+ * The provider fails twice for the first body. The reader says so in place
+ * and the list keeps working: another message loads. Opening the first
+ * one again fails again; Try again then loads it without leaving it.
  */
 export const BodyProviderError: Story = {
   globals: { viewport: { value: 'desktop', isRotated: false } },
-  args: { loadBody: fn(failingOnce('m1', bodiesAfter(100))) },
-  play: async ({ canvasElement }) => {
+  args: { loadBody: fn(failingFirst('m1', 2, bodiesAfter(100))) },
+  play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
     await bodyShows(canvasElement, "This message didn't load")
+
+    // The queue still works while the reader shows the failure.
     await userEvent.click(canvas.getByRole('button', { name: /Move Friday dinner\?/ }))
     await bodyShows(canvasElement, 'Would Saturday evening work')
+
+    // Back to the first message: its second request fails too.
     await userEvent.click(canvas.getByRole('button', { name: /Can delivery move/ }))
-    await expect(content(canvasElement)).toHaveTextContent('Loading message…')
+    await bodyShows(canvasElement, "This message didn't load")
+    await expect(args.loadBody).toHaveBeenCalledTimes(3)
+
+    // Try again asks for the same open message once more, and it loads.
+    await userEvent.click(within(content(canvasElement)).getByRole('button', { name: 'Try again' }))
+    await expect(args.loadBody).toHaveBeenCalledTimes(4)
+    await expect(args.loadBody).toHaveBeenLastCalledWith('m1', expect.anything())
     await bodyShows(canvasElement, 'Hi Wesley,')
+    await expect(subject(canvasElement)).toHaveTextContent('Can delivery move a week earlier?')
+    await expect(
+      within(content(canvasElement)).queryByRole('button', { name: 'Try again' }),
+    ).not.toBeInTheDocument()
   },
 }
 
