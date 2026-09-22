@@ -1,7 +1,10 @@
 /**
  * Parses `spark emails`: a fixed-width table whose column positions come
- * from its header row. Spark cuts long values and ends them with `…`; a cut
- * value is not the real value, so it becomes unavailable.
+ * from its header row. Spark 1.3.1 shows at most 30 characters of From and
+ * 50 of Subject, and ends a longer value with `…`; its documented options
+ * offer no structured or uncut form of this list. A cut value keeps the
+ * start Spark showed and is marked cut, so it is never taken for the
+ * complete sender or subject.
  */
 import type { z } from 'zod'
 import { emailListingSchema } from '../domain/email'
@@ -68,8 +71,8 @@ function parseRow(
   const listing = emailListingSchema.safeParse({
     messageId: id,
     mailboxId,
-    from: from === undefined || isCut(from) ? null : parseParticipant(from),
-    subject: subject === undefined || isCut(subject) ? null : subject,
+    ...listedSender(from ?? ''),
+    subject: listed(subject ?? ''),
     date: localTime(date),
   })
   if (!listing.success) throw malformed(`emails: row ${String(index + 1)} is invalid`)
@@ -77,6 +80,56 @@ function parseRow(
 }
 
 const isCut = (value: string) => value.endsWith(truncationMark)
+
+type ListedText = EmailListing['subject']
+
+/** A cell as shown: blank is `null`, and a cut value keeps its visible start. */
+const listed = (cell: string): ListedText =>
+  isCut(cell) ? cutText(cell.slice(0, -truncationMark.length)) : whole(cell)
+
+const whole = (value: string): ListedText => {
+  const text = value.trim()
+  return text === '' ? null : { text, cut: false }
+}
+
+/**
+ * Spark cuts by UTF-16 code unit, so a cut can split a surrogate pair;
+ * the orphaned half is dropped.
+ */
+function cutText(visible: string): ListedText {
+  const text = visible.replace(/[\uD800-\uDBFF]$/, '').trim()
+  return text === '' ? null : { text, cut: true }
+}
+
+/**
+ * The sender a From cell shows. A whole `Name <address>` or address is
+ * parsed. A cut one still has its whole name once the address has begun,
+ * as in `Name <addr…`, so only the address is lost. Anything else shows
+ * as Spark printed it.
+ */
+function listedSender(cell: string): Pick<EmailListing, 'from' | 'sender'> {
+  if (!isCut(cell)) {
+    const from = parseParticipant(cell)
+    const text = from === null ? cell : (from.name ?? from.address)
+    return { from, sender: whole(text) }
+  }
+  const visible = cell.slice(0, -truncationMark.length).trim()
+  return { from: null, sender: wholeName(visible) ?? cutText(afterName(visible)) }
+}
+
+/** The name of a cut `Name <addr…` or `"Last, First" <addr…`, if it is whole. */
+function wholeName(visible: string): ListedText {
+  const quoted = /^"([^"]*)"\s*</.exec(visible)
+  if (quoted) return whole(quoted[1] ?? '')
+  const bracket = visible.indexOf('<')
+  return visible.startsWith('"') || bracket < 1 ? null : whole(visible.slice(0, bracket))
+}
+
+/** The rest of a cut sender without a whole name: its address, or the name without its open quote. */
+function afterName(visible: string): string {
+  const bracket = visible.lastIndexOf('<')
+  return bracket === -1 ? visible.replace(/^"/, '') : visible.slice(bracket + 1)
+}
 
 /**
  * Spark pads every cell, so a row whose columns shifted shows up as text
