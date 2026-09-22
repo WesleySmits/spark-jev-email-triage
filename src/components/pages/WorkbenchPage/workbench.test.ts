@@ -17,7 +17,7 @@ function message(
   id: string,
   workflow: string,
   marker: 'studio' | 'atelier',
-  text: Partial<Pick<WorkbenchMessage, 'sender' | 'subject' | 'snippet' | 'body'>> = {},
+  text: Partial<Pick<WorkbenchMessage, 'sender' | 'subject' | 'snippet'>> = {},
 ): WorkbenchMessage {
   return {
     id,
@@ -26,7 +26,6 @@ function message(
     time: '09:00',
     subject: `Subject ${id}`,
     snippet: `Snippet ${id}`,
-    body: `Body ${id}`,
     account: { marker, label: marker },
     status: { label: workflow, tone: 'review' },
     ...text,
@@ -35,7 +34,7 @@ function message(
 
 const messages = [
   message('a', 'review', 'studio', { subject: 'Invoice AL-2048' }),
-  message('b', 'review', 'atelier', { body: 'The INVOICE is attached.' }),
+  message('b', 'review', 'atelier', { snippet: 'The INVOICE is attached.' }),
   message('c', 'action', 'studio'),
   message('d', 'review', 'studio'),
 ]
@@ -69,7 +68,7 @@ describe('visibleMessages', () => {
     expect(ids(visibleMessages(messages, filter({ mailbox: 'atelier' })))).toEqual(['b'])
   })
 
-  it('searches subject and body, ignoring case and outer spaces', () => {
+  it('searches subject and snippet, ignoring case and outer spaces', () => {
     expect(ids(visibleMessages(messages, filter({ query: '  invoice ' })))).toEqual(['a', 'b'])
   })
 

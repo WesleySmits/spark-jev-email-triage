@@ -110,6 +110,11 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
   sample data from `src/app/demo.ts`. The sync status says so. Complete only
   moves a message to Done in the page's memory; the app reads no mail, writes
   nothing, and changes no mailbox.
+- `src/app/inbox.ts` is the browser-safe read model: queue rows are strict
+  summaries without a body, and the page loads one body at a time, only
+  when its message opens, through an injected loader. A late response for a
+  message that is no longer open is dropped. With `completion` set to
+  `read-only` the page offers no Complete, Undo or other mail change.
 - The only persistence is the local shadow-triage SQLite file (Node's
   built-in `node:sqlite`, migrated through `PRAGMA user_version`).
 - `src/spark` reads mail through the local `spark` CLI, read-only. Its command

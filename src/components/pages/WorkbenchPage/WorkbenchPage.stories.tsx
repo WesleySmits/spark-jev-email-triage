@@ -5,14 +5,16 @@ import QueueStories from '../../organisms/MessageQueue/MessageQueue.stories'
 import ReaderStories from '../../organisms/MessageReader/MessageReader.stories'
 import SidebarStories from '../../organisms/Sidebar/Sidebar.stories'
 import TopBarStories from '../../organisms/TopBar/TopBar.stories'
+import { fixtureBodyLoader, type BodyLoader, type InboxFixture } from '../../../app/inbox'
 import type { WorkbenchMessage } from './workbench'
 import { WorkbenchPage } from './WorkbenchPage'
 
 type Props = ComponentProps<typeof WorkbenchPage>
 
 // Sample data from the organisms' stories, plus a workflow and a body per
-// message. The first message uses the reader story's letter.
-const details: Readonly<Record<string, Pick<WorkbenchMessage, 'workflow' | 'body' | 'address'>>> = {
+// message. The first message uses the reader story's letter. Bodies stay
+// out of the rows: the page loads one when its message opens.
+const details: Readonly<Record<string, Pick<InboxFixture, 'workflow' | 'body' | 'address'>>> = {
   m1: {
     workflow: 'review',
     body: ReaderStories.args.children,
@@ -33,10 +35,22 @@ const details: Readonly<Record<string, Pick<WorkbenchMessage, 'workflow' | 'body
   },
 }
 
-const messages: readonly WorkbenchMessage[] = QueueStories.args.messages.map((message) => ({
-  ...message,
-  ...(details[message.id] ?? { workflow: 'review', body: message.snippet }),
-}))
+const messages: readonly WorkbenchMessage[] = QueueStories.args.messages.map((message) => {
+  const { workflow, address } = details[message.id] ?? { workflow: 'review' }
+  return { ...message, workflow, address }
+})
+
+const bodies = new Map(Object.entries(details).map(([id, { body }]) => [id, body]))
+
+/** Loads the sample bodies, each after `delay` milliseconds or its own delay. */
+const bodiesAfter = (delay: number, per: Readonly<Record<string, number>> = {}) =>
+  fixtureBodyLoader(bodies, { delay: (id) => per[id] ?? delay })
+
+/** Like `loader`, but ignores the page's abort, as a careless provider would. */
+const ignoringAbort =
+  (loader: BodyLoader): BodyLoader =>
+  (id) =>
+    loader(id, { signal: new AbortController().signal })
 
 const [workflowGroup, mailboxGroup] = SidebarStories.args.groups
 
@@ -87,37 +101,62 @@ function later(apply: () => void, delay: number | undefined, fail: boolean | und
   })
 }
 
-// Stands in for the data owner. Complete moves the message to Done, at once
-// or after `completeAfter`; Undo puts the sample message back. One page stays
-// mounted while the data loads.
+type Change = (update: (message: WorkbenchMessage) => WorkbenchMessage) => void
+
+/**
+ * The story's completion: read-only stays as it is. Otherwise the spies are
+ * called, Complete moves the message to Done, at once or after
+ * `completeAfter`, and Undo puts the sample message back.
+ */
+function sampleCompletion(
+  { completion, messages }: Props,
+  change: Change,
+  { completeAfter, failComplete }: Timing,
+): Props['completion'] {
+  if (completion.mode === 'read-only') return completion
+  const original = (id: string) => (message: WorkbenchMessage) =>
+    message.id === id ? (messages.find((item) => item.id === id) ?? message) : message
+  return {
+    ...completion,
+    onComplete: (id) => {
+      void completion.onComplete(id)
+      return later(
+        () => {
+          change(markDone(id))
+        },
+        completeAfter,
+        failComplete,
+      )
+    },
+    onUndoComplete: (id) => {
+      completion.onUndoComplete?.(id)
+      change(original(id))
+    },
+  }
+}
+
+// Stands in for the data owner. One page stays mounted while the data loads.
 function WithData({ loadAfter, completeAfter, failComplete, ...args }: Props & Timing) {
   const [data, setData] = useState(args.messages)
   const loaded = useAfter(loadAfter)
-  const original = (id: string) => (message: WorkbenchMessage) => ({
-    ...(message.id === id ? (args.messages.find((item) => item.id === id) ?? message) : message),
-  })
+  const change: Change = (update) => {
+    setData((current) => current.map(update))
+  }
   return (
     <WorkbenchPage
       {...args}
       messages={loaded ? data : []}
       workflows={loaded ? args.workflows : []}
       mailboxes={loaded ? args.mailboxes : []}
-      onComplete={(id) => {
-        void args.onComplete(id)
-        return later(
-          () => {
-            setData((current) => current.map(markDone(id)))
-          },
-          completeAfter,
-          failComplete,
-        )
-      }}
-      onUndoComplete={(id) => {
-        args.onUndoComplete?.(id)
-        setData((current) => current.map(original(id)))
-      }}
+      completion={sampleCompletion(args, change, { completeAfter, failComplete })}
     />
   )
+}
+
+/** The spies behind Complete and Undo, for stories that may complete. */
+function completionOf(args: Props) {
+  if (args.completion.mode === 'read-only') throw new Error('This story is read-only')
+  return args.completion
 }
 
 const meta = {
@@ -125,11 +164,15 @@ const meta = {
   component: WorkbenchPage,
   args: {
     messages,
+    loadBody: fn(bodiesAfter(0)),
     workflows: workflowGroup?.items ?? [],
     mailboxes: mailboxGroup?.items.filter((item) => item.account) ?? [],
-    onComplete: fn(),
-    onUndoComplete: fn(),
-    completedNote: 'Sample data. No mail changed.',
+    completion: {
+      mode: 'enabled',
+      onComplete: fn(),
+      onUndoComplete: fn(),
+      note: 'Sample data. No mail changed.',
+    },
     topBar: {
       syncStatus: TopBarStories.args.syncStatus,
       syncLabel: TopBarStories.args.syncLabel,
@@ -140,6 +183,8 @@ const meta = {
   },
   argTypes: {
     messages: { control: 'object' },
+    loadBody: { control: false },
+    completion: { control: 'object' },
     workflows: { control: 'object' },
     mailboxes: { control: 'object' },
     topBar: { control: 'object' },
@@ -166,6 +211,25 @@ const rail = (root: HTMLElement, name: string) =>
 // The reader's heading: the open subject, or its empty state's title.
 const subject = (root: HTMLElement) =>
   within(within(root).getByRole('main')).getAllByRole('heading', { level: 2 }).at(-1)
+
+// The reader's content region, where the body or its state shows.
+const content = (root: HTMLElement) => within(root).getByRole('region', { name: 'Message content' })
+
+/** Waits for the open body to show `text`. */
+const bodyShows = (root: HTMLElement, text: string | RegExp) =>
+  waitFor(() => expect(content(root)).toHaveTextContent(text), { timeout: 3000 })
+
+/** At mobile width, opens the dinner message: its content takes focus. */
+async function openDinnerOnMobile(root: HTMLElement) {
+  await userEvent.click(within(root).getByRole('button', { name: /Move Friday dinner\?/ }))
+  await expect(content(root)).toHaveFocus()
+}
+
+/** Back from the reader: focus returns to the dinner row. */
+async function backToDinnerRow(root: HTMLElement) {
+  await userEvent.click(within(root).getByRole('button', { name: 'Back to messages' }))
+  await expect(within(root).getByRole('button', { name: /Move Friday dinner\?/ })).toHaveFocus()
+}
 
 /** Opens the first review message and presses `keys`, e.g. 'e' to complete it. */
 async function completeFirst(root: HTMLElement, keys: string) {
@@ -266,10 +330,8 @@ export const Mobile: Story = {
   globals: { viewport: { value: 'mobile1', isRotated: false } },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: /Move Friday dinner\?/ }))
-    await expect(canvas.getByRole('region', { name: 'Message content' })).toHaveFocus()
-    await userEvent.click(canvas.getByRole('button', { name: 'Back to messages' }))
-    await expect(canvas.getByRole('button', { name: /Move Friday dinner\?/ })).toHaveFocus()
+    await openDinnerOnMobile(canvasElement)
+    await backToDinnerRow(canvasElement)
     // E does nothing while the queue hides the reader.
     await userEvent.keyboard('e')
     await expect(canvas.getByText('2 results')).toBeVisible()
@@ -277,7 +339,7 @@ export const Mobile: Story = {
     await userEvent.click(canvas.getByRole('button', { name: /Move Friday dinner\?/ }))
     await userEvent.click(canvas.getByRole('button', { name: 'Complete' }))
     await expect(subject(canvasElement)).toHaveTextContent('Can delivery move a week earlier?')
-    await expect(canvas.getByRole('region', { name: 'Message content' })).toHaveFocus()
+    await expect(content(canvasElement)).toHaveFocus()
   },
 }
 
@@ -307,9 +369,9 @@ export const SlowComplete: Story = {
     const canvas = within(canvasElement)
     await completeFirst(canvasElement, 'eee')
     await expect(canvas.getByText('0 results')).toBeVisible()
-    await expect(args.onComplete).toHaveBeenCalledTimes(2)
-    await expect(args.onComplete).toHaveBeenNthCalledWith(1, 'm1')
-    await expect(args.onComplete).toHaveBeenNthCalledWith(2, 'm3')
+    await expect(completionOf(args).onComplete).toHaveBeenCalledTimes(2)
+    await expect(completionOf(args).onComplete).toHaveBeenNthCalledWith(1, 'm1')
+    await expect(completionOf(args).onComplete).toHaveBeenNthCalledWith(2, 'm3')
     await doneReaches(canvasElement, 3)
     await expect(canvas.getByText('0 results')).toBeVisible()
   },
@@ -338,9 +400,9 @@ export const UndoComplete: Story = {
     // Complete again, then undo from the notice.
     await userEvent.click(canvas.getByRole('button', { name: /Move Friday dinner\?/ }))
     await userEvent.keyboard('e')
-    await expect(args.onComplete).toHaveBeenLastCalledWith('m3')
+    await expect(completionOf(args).onComplete).toHaveBeenLastCalledWith('m3')
     await userEvent.click(canvas.getByRole('button', { name: 'Undo' }))
-    await expect(args.onUndoComplete).toHaveBeenCalledWith('m3')
+    await expect(completionOf(args).onUndoComplete).toHaveBeenCalledWith('m3')
     await expect(canvas.getByText('1 result')).toBeVisible()
     await expect(subject(canvasElement)).toHaveTextContent('Move Friday dinner?')
     await expect(canvas.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
@@ -367,7 +429,7 @@ export const LateCompleteAfterNavigation: Story = {
     // Back on the message the completion opened, before the result arrives.
     await expect(subject(canvasElement)).toHaveTextContent('Move Friday dinner?')
     await doneReaches(canvasElement, 2)
-    await expect(args.onComplete).toHaveBeenCalledTimes(1)
+    await expect(completionOf(args).onComplete).toHaveBeenCalledTimes(1)
     await expect(canvas.getByRole('status')).not.toHaveTextContent('Completed')
     await expect(canvas.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
   },
@@ -408,4 +470,138 @@ export const Disconnected: Story = {
 /** Nothing to show yet: every workflow is empty and the reader says so. */
 export const NoMessages: Story = {
   args: { messages: [] },
+}
+
+/**
+ * Bodies take half a second. Only the open message's body is asked for: the
+ * reader says it is loading, then shows the text. Opening another message
+ * asks for that one alone.
+ */
+export const BodyLoadsOnOpen: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: { loadBody: fn(bodiesAfter(500)) },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(content(canvasElement)).toHaveTextContent('Loading message…')
+    await bodyShows(canvasElement, 'Hi Wesley,')
+    await expect(args.loadBody).toHaveBeenCalledTimes(1)
+    await expect(args.loadBody).toHaveBeenLastCalledWith('m1', expect.anything())
+
+    await userEvent.click(canvas.getByRole('button', { name: /Move Friday dinner\?/ }))
+    await expect(content(canvasElement)).toHaveTextContent('Loading message…')
+    await bodyShows(canvasElement, 'Would Saturday evening work')
+    await expect(args.loadBody).toHaveBeenCalledTimes(2)
+    await expect(args.loadBody).toHaveBeenLastCalledWith('m3', expect.anything())
+  },
+}
+
+/**
+ * The first body takes 1.5 seconds and its provider ignores the abort; the
+ * user opens another message first. That message's body shows, and the late
+ * response for the first one never replaces it.
+ */
+export const SlowBodyThenSwitch: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: { loadBody: fn(ignoringAbort(bodiesAfter(100, { m1: 1500 }))) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(content(canvasElement)).toHaveTextContent('Loading message…')
+    await userEvent.click(canvas.getByRole('button', { name: /Move Friday dinner\?/ }))
+    await bodyShows(canvasElement, 'Would Saturday evening work')
+    // Past the moment the first body arrives.
+    await new Promise((resolve) => setTimeout(resolve, 1800))
+    await expect(subject(canvasElement)).toHaveTextContent('Move Friday dinner?')
+    await expect(content(canvasElement)).toHaveTextContent('Would Saturday evening work')
+    await expect(content(canvasElement)).not.toHaveTextContent('Hi Wesley,')
+  },
+}
+
+/** The first request for the first body fails; the second works. */
+function failingOnce(id: string, loader: BodyLoader): BodyLoader {
+  let failed = false
+  return (requested, options) => {
+    if (requested !== id || failed) return loader(requested, options)
+    failed = true
+    return Promise.reject(new Error('The mail provider is unavailable'))
+  }
+}
+
+/**
+ * The provider fails for the first body. The reader says so in place, the
+ * list keeps working, and Try again loads it.
+ */
+export const BodyProviderError: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: { loadBody: fn(failingOnce('m1', bodiesAfter(100))) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await bodyShows(canvasElement, "This message didn't load")
+    await userEvent.click(canvas.getByRole('button', { name: /Move Friday dinner\?/ }))
+    await bodyShows(canvasElement, 'Would Saturday evening work')
+    await userEvent.click(canvas.getByRole('button', { name: /Can delivery move/ }))
+    await expect(content(canvasElement)).toHaveTextContent('Loading message…')
+    await bodyShows(canvasElement, 'Hi Wesley,')
+  },
+}
+
+/** A message without a body says so instead of loading forever. */
+export const MissingBody: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: { loadBody: fn(fixtureBodyLoader(new Map([['m1', null]]))) },
+  play: async ({ canvasElement }) => {
+    await bodyShows(canvasElement, 'No text to show')
+    await expect(
+      within(content(canvasElement)).queryByRole('button', { name: 'Try again' }),
+    ).not.toBeInTheDocument()
+  },
+}
+
+const readOnly = { completion: { mode: 'read-only' } } satisfies Partial<Props>
+
+/**
+ * Read-only, as live mail will first be shown: no Complete button, no E in
+ * the legend, E changes nothing and no Completed notice shows. The footer
+ * says the view is read-only.
+ */
+export const ReadOnly: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: readOnly,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await bodyShows(canvasElement, 'Hi Wesley,')
+    await expect(canvas.queryByRole('button', { name: 'Complete' })).not.toBeInTheDocument()
+    await expect(canvas.getByText('Read only')).toBeVisible()
+    await expect(canvas.getByRole('complementary', { name: 'Filters' })).not.toHaveTextContent(
+      'Complete',
+    )
+    await userEvent.click(canvas.getByRole('button', { name: /Can delivery move/ }))
+    await userEvent.keyboard('e')
+    await expect(canvas.getByText('2 results')).toBeVisible()
+    await expect(subject(canvasElement)).toHaveTextContent('Can delivery move a week earlier?')
+    await expect(canvas.getByRole('button', { name: /^Done/ })).toHaveTextContent('1')
+    await expect(canvas.queryByText('Completed')).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
+  },
+}
+
+/**
+ * Read-only at 320px with slow bodies. Opening a message moves focus to its
+ * content while the body loads, and it stays there when the body arrives.
+ * Back returns focus to the row; another row loads its own body.
+ */
+export const ReadOnlyMobile: Story = {
+  globals: { viewport: { value: 'mobile1', isRotated: false } },
+  args: { ...readOnly, loadBody: fn(bodiesAfter(500)) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await openDinnerOnMobile(canvasElement)
+    await expect(content(canvasElement)).toHaveTextContent('Loading message…')
+    await bodyShows(canvasElement, 'Would Saturday evening work')
+    await expect(content(canvasElement)).toHaveFocus()
+    await expect(canvas.queryByRole('button', { name: 'Complete' })).not.toBeInTheDocument()
+    await backToDinnerRow(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: /Can delivery move/ }))
+    await expect(content(canvasElement)).toHaveFocus()
+    await bodyShows(canvasElement, 'Hi Wesley,')
+  },
 }

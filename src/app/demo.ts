@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react'
 import type { SidebarItem } from '../components/organisms/Sidebar/Sidebar'
-import type { WorkbenchMessage } from '../components/pages/WorkbenchPage/workbench'
 import type { WorkbenchPage } from '../components/pages/WorkbenchPage/WorkbenchPage'
+import { fixtureBodyLoader, splitFixtures, type InboxFixture, type InboxSummary } from './inbox'
 
 // Fictional sample data for the demo workbench. No name, address or mail
 // here belongs to anyone; every address uses a reserved `.example` domain.
@@ -25,7 +25,7 @@ const review = { label: 'Needs review', tone: 'review' } as const
 const action = { label: 'Action needed', tone: 'neutral' } as const
 const completed = { label: 'Completed', tone: 'done' } as const
 
-export const demoMessages: readonly WorkbenchMessage[] = [
+const demoFixtures: readonly InboxFixture[] = [
   {
     id: 'demo-1',
     workflow: 'review',
@@ -97,6 +97,14 @@ export const demoMessages: readonly WorkbenchMessage[] = [
   },
 ]
 
+const demo = splitFixtures(demoFixtures)
+
+/** The queue rows. Bodies stay out; `loadDemoBody` hands out one at a time. */
+export const demoMessages: readonly InboxSummary[] = demo.summaries
+
+/** Loads one sample body when its message opens, as a server would. */
+export const loadDemoBody = fixtureBodyLoader(demo.bodies)
+
 /** The top bar's sync status says the data is a sample and no mailbox changes. */
 export const demoTopBar: Omit<ComponentProps<typeof WorkbenchPage>['topBar'], 'onSyncClick'> = {
   syncStatus: 'disconnected',
@@ -106,7 +114,10 @@ export const demoTopBar: Omit<ComponentProps<typeof WorkbenchPage>['topBar'], 'o
 }
 
 /** The messages with `id` moved to Done. The demo keeps this in memory only. */
-export function completeDemoMessage(messages: readonly WorkbenchMessage[], id: string) {
+export function completeDemoMessage(
+  messages: readonly InboxSummary[],
+  id: string,
+): readonly InboxSummary[] {
   return messages.map((message) =>
     message.id === id ? { ...message, workflow: 'done', status: completed } : message,
   )
