@@ -22,9 +22,11 @@ type SyncStatusButtonProps = Omit<ComponentPropsWithRef<'button'>, 'children'> &
   /** Sets the dot and text color. Defaults to connected. */
   status?: SyncStatus | undefined
   /**
-   * Visible status text, which is also the button's name. Say what the state
-   * is and when it last changed, e.g. "Updated 2 min ago" or
-   * "Disconnected · last sync 10:14".
+   * Visible status text, which is also the button's name unless `aria-label`
+   * says what a click does. Say what the state is and when it last changed,
+   * e.g. "Updated at 09:42 · read only" or "Disconnected · last sync 10:14".
+   * An `aria-label` should contain this text, e.g.
+   * "Refresh mail · Updated at 09:42 · read only".
    */
   children: ReactNode
 }
@@ -41,7 +43,9 @@ const classesFor = (status: SyncStatus, className: string | undefined) =>
  * @example
  * import { SyncStatusButton } from '../components/molecules/SyncStatusButton/SyncStatusButton'
  *
- * <SyncStatusButton onClick={onSyncDetails}>Updated 2 min ago</SyncStatusButton>
+ * <SyncStatusButton aria-label="Refresh mail · Updated at 09:42 · read only" onClick={refresh}>
+ *   Updated at 09:42 · read only
+ * </SyncStatusButton>
  * <SyncStatusButton status="disconnected" onClick={onReconnect}>
  *   Disconnected · last sync 10:14
  * </SyncStatusButton>

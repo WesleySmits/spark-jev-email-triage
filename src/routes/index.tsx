@@ -135,6 +135,7 @@ function Page({ inbox, root, onReady }: PageProps) {
     )
   }
   const loadBody = liveBodyLoader(inbox.messages, (data, signal) => getLiveBody({ data, signal }))
+  const syncLabel = `Updated at ${inbox.readAt} · read only`
   return (
     <div ref={root} className="app-root">
       <WorkbenchPage
@@ -145,7 +146,8 @@ function Page({ inbox, root, onReady }: PageProps) {
         completion={{ mode: 'read-only' }}
         topBar={{
           syncStatus: 'connected',
-          syncLabel: `Read at ${inbox.readAt} · read only`,
+          syncLabel,
+          syncActionLabel: `Refresh mail · ${syncLabel}`,
           onSyncClick: reread,
           ...profile,
         }}

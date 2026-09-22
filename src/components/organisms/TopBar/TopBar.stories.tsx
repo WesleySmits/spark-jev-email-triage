@@ -34,6 +34,7 @@ const meta = {
       options: ['connected', 'disconnected', 'waiting', 'checking', 'idle'],
     },
     syncLabel: { control: 'text' },
+    syncActionLabel: { control: 'text' },
     profileLabel: { control: 'text' },
     profileInitials: { control: 'text' },
     searchId: { table: { disable: true } },
@@ -83,6 +84,27 @@ type Story = StoryObj<typeof meta>
  * ```
  */
 export const Default: Story = {}
+
+/**
+ * Live mail, read: the status says when and that nothing changes mail, and
+ * the button's name says a click refreshes.
+ */
+export const ReadyReadOnly: Story = {
+  args: {
+    syncLabel: 'Updated at 09:42 · read only',
+    syncActionLabel: 'Refresh mail · Updated at 09:42 · read only',
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    const sync = canvas.getByRole('button', {
+      name: 'Refresh mail · Updated at 09:42 · read only',
+    })
+    await expect(sync).toHaveTextContent('Updated at 09:42 · read only')
+    await expect(canvas.queryByText(/Read at/)).toBeNull()
+    await userEvent.click(sync)
+    await expect(args.onSyncClick).toHaveBeenCalledTimes(1)
+  },
+}
 
 /** The danger dot and text, with when it last synced. */
 export const Disconnected: Story = {

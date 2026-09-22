@@ -40,7 +40,7 @@ type Formats = Readonly<{
   minutes: (at: Date) => string
 }>
 
-/** Local 24-hour times, like the inbox's "Read at 09:42". */
+/** Local 24-hour times, like the inbox's "Updated at 09:42". */
 const localFormats: Formats = {
   seconds: (at) =>
     at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),

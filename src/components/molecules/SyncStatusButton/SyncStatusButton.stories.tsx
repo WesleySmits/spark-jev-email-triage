@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState, type ComponentProps } from 'react'
-import { fn } from 'storybook/test'
+import { expect, fn, userEvent, within } from 'storybook/test'
 import { SyncStatusButton } from './SyncStatusButton'
 
 const meta = {
@@ -18,6 +18,7 @@ const meta = {
       options: ['connected', 'disconnected', 'waiting', 'checking', 'idle'],
     },
     children: { control: 'text' },
+    'aria-label': { control: 'text' },
     disabled: { control: 'boolean' },
   },
 } satisfies Meta<typeof SyncStatusButton>
@@ -33,6 +34,22 @@ export const Disconnected: Story = {
 }
 
 export const Disabled: Story = { args: { disabled: true } }
+
+/** A click refreshes: the name says so and keeps the visible time in it. */
+export const Refresh: Story = {
+  args: {
+    children: 'Updated at 09:42 · read only',
+    'aria-label': 'Refresh mail · Updated at 09:42 · read only',
+  },
+  play: async ({ canvasElement, args }) => {
+    const button = within(canvasElement).getByRole('button', {
+      name: 'Refresh mail · Updated at 09:42 · read only',
+    })
+    await expect(button).toHaveTextContent('Updated at 09:42 · read only')
+    await userEvent.click(button)
+    await expect(args.onClick).toHaveBeenCalledTimes(1)
+  },
+}
 
 /** Waiting for Spark, expected back. Muted, not danger: nothing failed for good. */
 export const Waiting: Story = {
