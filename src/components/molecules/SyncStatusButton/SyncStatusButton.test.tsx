@@ -2,7 +2,7 @@ import type { ReactElement } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { Button } from '../../atoms/Button/Button'
 import { StatusDot } from '../../atoms/StatusDot/StatusDot'
-import { SyncStatusButton } from './SyncStatusButton'
+import { SyncStatusButton, SyncStatusText } from './SyncStatusButton'
 
 type Element = ReactElement<Record<string, unknown>>
 
@@ -58,5 +58,37 @@ describe('SyncStatusButton', () => {
     })
     expect(root.props).not.toHaveProperty('status')
     expect(onClick).not.toHaveBeenCalled()
+  })
+
+  it('takes a name that says what a click does and keeps the status visible', () => {
+    const { root, text } = render({
+      'aria-label': 'Refresh mail · Updated at 09:42 · read only',
+      children: 'Updated at 09:42 · read only',
+    })
+    expect(root.props['aria-label']).toBe('Refresh mail · Updated at 09:42 · read only')
+    expect(text.props['children']).toBe('Updated at 09:42 · read only')
+  })
+
+  it.each([
+    ['waiting', 'waiting'],
+    ['checking', 'checking'],
+    ['idle', 'neutral'],
+  ] as const)('shows the calm %s state with the %s dot', (status, tone) => {
+    const { root, dot } = render({ status, children: 'Waiting for Spark' })
+    expect(root.props['className']).toBe(`sync-status-button sync-status-button--${status}`)
+    expect(dot.props).toEqual({ tone })
+  })
+})
+
+describe('SyncStatusText', () => {
+  it('shows the status as plain text, not a control', () => {
+    const root = SyncStatusText({ status: 'idle', children: 'Not on the Spark Mac' }) as Element
+    expect(root.type).toBe('p')
+    expect(root.props['className']).toBe(
+      'sync-status-button sync-status-button--idle sync-status-button--text',
+    )
+    const [dot, text] = root.props['children'] as [Element, Element]
+    expect(dot.props).toEqual({ tone: 'neutral' })
+    expect(text.props['children']).toBe('Not on the Spark Mac')
   })
 })

@@ -32,7 +32,7 @@ export interface LiveInboxOptions {
 }
 
 /** Why a read failed, without anything the provider said. */
-function reasonFor(error: unknown): Extract<LiveInbox, { status: 'unavailable' }>['reason'] {
+export function reasonFor(error: unknown): Extract<LiveInbox, { status: 'unavailable' }>['reason'] {
   if (!(error instanceof SparkError)) return 'failed'
   if (error.code === 'not_installed') return 'missing'
   return error.code === 'malformed_output' ? 'malformed' : 'failed'

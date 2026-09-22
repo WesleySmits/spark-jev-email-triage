@@ -29,8 +29,12 @@ const meta = {
     searchPlaceholder: { control: 'text' },
     searchValue: { control: 'text' },
     searchShortcut: { control: 'boolean' },
-    syncStatus: { control: 'inline-radio', options: ['connected', 'disconnected'] },
+    syncStatus: {
+      control: 'inline-radio',
+      options: ['connected', 'disconnected', 'waiting', 'checking', 'idle'],
+    },
     syncLabel: { control: 'text' },
+    syncActionLabel: { control: 'text' },
     profileLabel: { control: 'text' },
     profileInitials: { control: 'text' },
     searchId: { table: { disable: true } },
@@ -81,6 +85,27 @@ type Story = StoryObj<typeof meta>
  */
 export const Default: Story = {}
 
+/**
+ * Live mail, read: the status says when and that nothing changes mail, and
+ * the button's name says a click refreshes.
+ */
+export const ReadyReadOnly: Story = {
+  args: {
+    syncLabel: 'Updated at 09:42 · read only',
+    syncActionLabel: 'Refresh mail · Updated at 09:42 · read only',
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    const sync = canvas.getByRole('button', {
+      name: 'Refresh mail · Updated at 09:42 · read only',
+    })
+    await expect(sync).toHaveTextContent('Updated at 09:42 · read only')
+    await expect(canvas.queryByText(/Read at/)).toBeNull()
+    await userEvent.click(sync)
+    await expect(args.onSyncClick).toHaveBeenCalledTimes(1)
+  },
+}
+
 /** The danger dot and text, with when it last synced. */
 export const Disconnected: Story = {
   args: { syncStatus: 'disconnected', syncLabel: 'Disconnected · last sync 10:14' },
@@ -127,7 +152,7 @@ function CallerStory(args: Props) {
         syncStatus={offline ? 'disconnected' : 'connected'}
         syncLabel={offline ? 'Disconnected · last sync 10:14' : 'Updated 2 min ago'}
         onSyncClick={() => {
-          args.onSyncClick()
+          args.onSyncClick?.()
           setOffline(!offline)
         }}
       />
@@ -159,5 +184,39 @@ export const SearchFocused: Story = {
     const search = within(canvasElement).getByRole('searchbox', { name: 'Search current results' })
     await userEvent.click(search)
     await expect(search).toHaveFocus()
+  },
+}
+
+/**
+ * Waiting for Spark: nothing to search yet, so the search is disabled and
+ * its `/` hint hidden. The status still runs Check now.
+ */
+export const WaitingForSpark: Story = {
+  args: {
+    searchDisabled: true,
+    syncStatus: 'waiting',
+    syncLabel: 'Waiting for Spark · 09:41',
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('searchbox', { name: 'Search current results' })).toBeDisabled()
+    await expect(canvas.getByRole('searchbox')).not.toHaveAttribute('aria-keyshortcuts')
+    await userEvent.click(canvas.getByRole('button', { name: 'Waiting for Spark · 09:41' }))
+    await expect(args.onSyncClick).toHaveBeenCalledTimes(1)
+  },
+}
+
+/** Nothing to do from here: without `onSyncClick` the status is plain text. */
+export const StatusOnly: Story = {
+  args: {
+    searchDisabled: true,
+    syncStatus: 'idle',
+    syncLabel: 'Not on the Spark Mac',
+  },
+  render: (args) => <TopBar {...args} onSyncClick={undefined} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('Not on the Spark Mac')).toBeVisible()
+    await expect(canvas.queryByRole('button', { name: 'Not on the Spark Mac' })).toBeNull()
   },
 }

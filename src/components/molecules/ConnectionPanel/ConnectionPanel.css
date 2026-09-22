@@ -1,0 +1,153 @@
+/* ConnectionPanel molecule: Direction A of the Spark connection prototypes.
+ * It sits in the queue pane, under the QueueHeader, on --paper with a --line
+ * divider, like the rows it stands in for. Token values live in
+ * src/styles/tokens.css. */
+.connection-panel {
+  box-sizing: border-box;
+  min-width: 0;
+  display: grid;
+  gap: var(--s4);
+  padding: var(--s5) var(--s4);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--paper);
+  font: var(--text-ui);
+  container-type: inline-size;
+}
+
+.connection-panel__status {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
+
+.connection-panel__title {
+  min-width: 0;
+  margin: 0;
+  font: var(--text-queue-title);
+  letter-spacing: var(--tracking-queue-title);
+  overflow-wrap: anywhere;
+}
+
+.connection-panel__steps {
+  display: grid;
+  gap: var(--s2);
+  margin: 0;
+  padding: 0;
+  color: var(--ink-soft);
+  list-style: none;
+  counter-reset: connection-step;
+}
+
+.connection-panel__step {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: var(--s2);
+  counter-increment: connection-step;
+  overflow-wrap: anywhere;
+}
+
+/* The number sits in a --line-strong ring, level with the first line. */
+.connection-panel__step::before {
+  content: counter(connection-step);
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  margin-top: 1px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--muted);
+  font: 700 11px / 1 var(--font-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.connection-panel__text {
+  max-width: var(--measure-message);
+  margin: 0;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+/* Takes the free width; below about 12rem the action wraps under it. */
+.connection-panel__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+}
+
+.connection-panel__meta {
+  min-width: 0;
+  flex: 1 1 12rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.connection-panel__hint {
+  display: block;
+  margin-top: var(--s1);
+  color: var(--ink-soft);
+}
+
+.button.connection-panel__action {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* Busy: it keeps its place and focus, and looks like a disabled button. */
+.button.connection-panel__action[aria-disabled='true'],
+.button.connection-panel__action[aria-disabled='true']:hover {
+  border-color: var(--line);
+  color: var(--muted);
+  background: var(--surface-2);
+  cursor: default;
+}
+
+.connection-panel__spin {
+  display: inline-flex;
+}
+
+.connection-panel__spin .icon {
+  animation: connection-panel-spin 1s linear infinite;
+}
+
+@keyframes connection-panel-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.connection-panel__note {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* Narrow, like the source's mobile footer: the action takes the full width
+ * with a 44px target. */
+@container (max-width: 30rem) {
+  .button.connection-panel__action {
+    min-height: 44px;
+    flex: 1 1 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .connection-panel__spin .icon {
+    animation: none;
+  }
+}
