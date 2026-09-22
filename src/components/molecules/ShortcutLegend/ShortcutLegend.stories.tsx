@@ -6,7 +6,7 @@ const meta = {
   component: ShortcutLegend,
   args: {
     shortcuts: [
-      { label: 'Next / previous', keys: ['J', 'K'] },
+      { label: 'Next / previous', keys: ['K', 'J'] },
       { label: 'Complete', keys: ['E'] },
     ],
   },
@@ -54,7 +54,7 @@ export const WithSearch: Story = {
   args: {
     shortcuts: [
       { label: 'Search', keys: ['/'] },
-      { label: 'Next / previous', keys: ['J', 'K'] },
+      { label: 'Next / previous', keys: ['K', 'J'] },
       { label: 'Complete', keys: ['E'] },
     ],
   },
@@ -63,7 +63,7 @@ export const WithSearch: Story = {
 export const Dutch: Story = {
   args: {
     shortcuts: [
-      { label: 'Volgende / vorige', keys: ['J', 'K'] },
+      { label: 'Volgende / vorige', keys: ['K', 'J'] },
       { label: 'Afhandelen', keys: ['E'] },
     ],
   },
@@ -73,7 +73,7 @@ export const Dutch: Story = {
 export const Narrow: Story = {
   args: {
     shortcuts: [
-      { label: 'Volgende / vorige bericht in de wachtrij', keys: ['J', 'K'] },
+      { label: 'Volgende / vorige bericht in de wachtrij', keys: ['K', 'J'] },
       { label: 'Afhandelen', keys: ['E'] },
     ],
   },

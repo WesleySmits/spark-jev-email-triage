@@ -33,6 +33,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Install Chromium for Storybook tests
+        run: pnpm exec playwright install --with-deps --only-shell chromium
+
       - name: Lint commit messages
         if: github.event_name == 'pull_request'
         env:
@@ -44,6 +47,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm test-storybook
       - run: pnpm fallow
 
       - name: Fallow changed-code audit

@@ -5,7 +5,7 @@ import './ShortcutLegend.css'
 type Shortcut = Readonly<{
   /** Visible name of the action, for example "Next / previous". Unique in the legend. */
   label: string
-  /** Keys in the order the label names their actions, for example `['J', 'K']`. */
+  /** Keys in the order the label names their actions, for example `['K', 'J']`. */
   keys: readonly [string, ...string[]]
 }>
 
@@ -28,7 +28,7 @@ type ShortcutLegendProps = Readonly<{
  *
  * <ShortcutLegend
  *   shortcuts={[
- *     { label: 'Next / previous', keys: ['J', 'K'] },
+ *     { label: 'Next / previous', keys: ['K', 'J'] },
  *     { label: 'Complete', keys: ['E'] },
  *   ]}
  * />
@@ -43,7 +43,7 @@ export function ShortcutLegend({ shortcuts, className }: ShortcutLegendProps) {
           <dt className="shortcut-legend__label">{label}</dt>
           <dd className="shortcut-legend__keys">
             {keys.map((key, index) => (
-              // A real space, so "J K" is read as two keys and not as "JK".
+              // A real space, so "K J" is read as two keys and not as "KJ".
               <Fragment key={key}>
                 {index > 0 && ' '}
                 <KeyboardHint>{key}</KeyboardHint>

@@ -16,17 +16,18 @@ pnpm dev
 
 ## Quality commands
 
-| Command             | Purpose                                             |
-| ------------------- | --------------------------------------------------- |
-| `pnpm format`       | Format files with Prettier                          |
-| `pnpm format:check` | Verify formatting                                   |
-| `pnpm lint`         | ESLint with type-aware rules, zero warnings         |
-| `pnpm typecheck`    | `tsc --noEmit` in strict mode                       |
-| `pnpm test`         | Run Vitest once                                     |
-| `pnpm fallow`       | Dead code, cycles, complexity, and duplication      |
-| `pnpm fallow:audit` | Fallow audit of changes against `origin/main`       |
-| `pnpm build`        | Production build                                    |
-| `pnpm check`        | Format check, lint, typecheck, test, Fallow, builds |
+| Command               | Purpose                                              |
+| --------------------- | ---------------------------------------------------- |
+| `pnpm format`         | Format files with Prettier                           |
+| `pnpm format:check`   | Verify formatting                                    |
+| `pnpm lint`           | ESLint with type-aware rules, zero warnings          |
+| `pnpm typecheck`      | `tsc --noEmit` in strict mode                        |
+| `pnpm test`           | Run Vitest once                                      |
+| `pnpm test-storybook` | Run every story and its play function in Chromium    |
+| `pnpm fallow`         | Dead code, cycles, complexity, and duplication       |
+| `pnpm fallow:audit`   | Fallow audit of changes against `origin/main`        |
+| `pnpm build`          | Production build                                     |
+| `pnpm check`          | Format check, lint, typecheck, tests, Fallow, builds |
 
 `pnpm eval:jev:live` runs the live Jev evaluation over synthetic fixtures. It
 calls the TypeSafe API, needs `TYPESAFE_API_KEY`, reports itself blocked
@@ -61,6 +62,11 @@ Git hooks:
 
 `pnpm storybook` starts Storybook on http://localhost:6006.
 `pnpm build-storybook` writes a static build to `storybook-static/`; CI runs it.
+`pnpm test-storybook` renders every story and runs its play function in
+headless Chromium through Vitest browser mode and Storybook's portable
+stories (`.storybook/stories.test.ts`). It starts no Storybook server. A
+story's `viewport` global sets the window size; other stories get 1280×1024.
+The first local run needs `pnpm exec playwright install --only-shell chromium`.
 
 ## Dokploy deployment
 
@@ -77,16 +83,17 @@ Git hooks:
 - Stories and `.storybook/preview.ts` may not import Node built-ins, `src/spark`,
   `src/jev`, `src/shadow`, or the TypeSafe SDK (ESLint `no-restricted-imports`).
 - The sidebar order is Foundations, Atoms, Molecules, Organisms, Templates,
-  Pages. Foundations and `Atoms/Button` have stories so far.
-- `src/components/atoms/` holds atoms: a component, its CSS (tokens only) and
-  its stories. Components do not depend on Storybook or its specimen CSS. The
-  app does not import them yet.
+  Pages. Every component under `src/components/` has stories, up to
+  `Pages/Workbench`.
+- `src/components/` holds atoms, molecules, organisms, the workbench template
+  and the WorkbenchPage: each a component, its CSS (tokens only) and its
+  stories. Components do not depend on Storybook or its specimen CSS.
 - `src/styles/tokens.css` is the single design-token source. It declares
   custom properties on `:root` only, so importing it changes nothing on its
-  own. Storybook imports it in `.storybook/preview.ts`. The app deliberately
-  does not import tokens or styles in this phase. `src/styles/README.md` holds
-  the foundation rules, design decisions, provenance, and the one-line import
-  for a future consumer.
+  own. Storybook imports it in `.storybook/preview.ts`; the app imports it
+  and `src/styles/app.css`, its base styles, once in `src/routes/__root.tsx`.
+  `src/styles/README.md` holds the foundation rules, design decisions, and
+  provenance.
 - `src/foundations/` holds the Foundations stories and their Storybook-only
   specimen CSS. Specimens read token values in the browser instead of copying
   them. `contrast-pairs.test.ts` checks the maintained token pairs in
@@ -99,13 +106,39 @@ Git hooks:
 
 ## Safety status
 
-- No product features or UI. The only persistence is the local shadow-triage
-  SQLite file (Node's built-in `node:sqlite`, migrated through
-  `PRAGMA user_version`).
+- The app's root route shows recent Spark mail, strictly read-only. Its
+  loader calls `getLiveInbox` in `src/app/live-inbox.functions.ts`, a server
+  function: it discovers the readable mailboxes (at most 5), lists the 10
+  most recent Inbox messages in each, one Spark call at a time, and returns
+  strict summaries without a body, newest first. Opening a message calls
+  `getLiveBody` for that message only; it returns that message's plain-text
+  body, or `null` when it has none, and reads only messages the last list
+  offered. Both answer only requests from this computer (loopback) and send
+  `Cache-Control: no-store`.
+- When Spark is missing, fails, or prints output that doesn't parse, the
+  page says so and shows no mail; it never falls back to sample data.
+  Errors reach the browser only as a coarse reason or a fixed message.
+- The page runs in `read-only` completion mode: no Complete, E, Completed
+  notice or Undo. The sync button only reads the inbox again.
+- Spark wiring lives in `*.server.ts` files, which TanStack Start keeps out
+  of the client build; ESLint also keeps components and stories from
+  importing `*.server`, `*.functions`, `src/spark` and Node built-ins.
+- Live mail isn't triaged yet, so every message is in one "Recent mail"
+  workflow and reads "Not triaged". Spark's list cuts long senders and
+  subjects; a cut value shows as unavailable rather than guessed.
+- `src/app/inbox.ts` is the browser-safe read model: queue rows are strict
+  summaries without a body, each naming its `mailbox` (the account marker
+  is only a color, which several mailboxes may share), and the page loads
+  one body at a time, only when its message opens, through an injected
+  loader. A late response for a message that is no longer open is dropped.
+- `src/app/demo.ts` keeps fictional sample data for tests; the app no
+  longer shows it.
+- The only persistence is the local shadow-triage SQLite file (Node's
+  built-in `node:sqlite`, migrated through `PRAGMA user_version`).
 - `src/spark` reads mail through the local `spark` CLI, read-only. Its command
   type allows only `accounts`, `emails`, and `thread`. It never uses a shell,
   runs one call at a time with a timeout and output limit, and logs no mail
-  content. Only the shadow command calls it.
+  content. The shadow command and the live inbox call it.
 - `src/jev` classifies one normalized thread with Jev through the official
   TypeSafe SDK. It sends a minimized state: the latest five messages with
   quoted history, URL queries, and long opaque tokens removed, bounded text,
@@ -124,7 +157,8 @@ Git hooks:
 - The only secret is `TYPESAFE_API_KEY`, read server-side from the
   environment. The SDK's logging is off and its base URL is pinned. No
   deployment configuration.
-- CI runs every quality command and the build on pull requests and `main`.
+- CI runs every quality command, the Storybook play tests, and the build on
+  pull requests and `main`.
 - On pull requests, CI also runs commitlint and the Fallow changed-code audit.
 - CI fails on `git diff --check` errors or uncommitted generated files.
 - Branch protection is not configured yet, so CI results are not enforced on merge.

@@ -17,16 +17,16 @@ function message(
   id: string,
   workflow: string,
   marker: 'studio' | 'atelier',
-  text: Partial<Pick<WorkbenchMessage, 'sender' | 'subject' | 'snippet' | 'body'>> = {},
+  text: Partial<Pick<WorkbenchMessage, 'sender' | 'subject' | 'snippet'>> = {},
 ): WorkbenchMessage {
   return {
     id,
     workflow,
+    mailbox: marker,
     sender: `Sender ${id}`,
     time: '09:00',
     subject: `Subject ${id}`,
     snippet: `Snippet ${id}`,
-    body: `Body ${id}`,
     account: { marker, label: marker },
     status: { label: workflow, tone: 'review' },
     ...text,
@@ -35,7 +35,7 @@ function message(
 
 const messages = [
   message('a', 'review', 'studio', { subject: 'Invoice AL-2048' }),
-  message('b', 'review', 'atelier', { body: 'The INVOICE is attached.' }),
+  message('b', 'review', 'atelier', { snippet: 'The INVOICE is attached.' }),
   message('c', 'action', 'studio'),
   message('d', 'review', 'studio'),
 ]
@@ -69,7 +69,16 @@ describe('visibleMessages', () => {
     expect(ids(visibleMessages(messages, filter({ mailbox: 'atelier' })))).toEqual(['b'])
   })
 
-  it('searches subject and body, ignoring case and outer spaces', () => {
+  it('narrows by mailbox id, not by the marker color mailboxes may share', () => {
+    const shared = [
+      { ...message('e', 'review', 'studio'), mailbox: 'one@mail.example' },
+      { ...message('f', 'review', 'studio'), mailbox: 'two@mail.example' },
+    ]
+    expect(ids(visibleMessages(shared, filter({ mailbox: 'two@mail.example' })))).toEqual(['f'])
+    expect(visibleMessages(shared, filter({ mailbox: 'studio' }))).toEqual([])
+  })
+
+  it('searches subject and snippet, ignoring case and outer spaces', () => {
     expect(ids(visibleMessages(messages, filter({ query: '  invoice ' })))).toEqual(['a', 'b'])
   })
 

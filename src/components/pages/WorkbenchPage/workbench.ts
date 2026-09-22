@@ -1,13 +1,19 @@
 import type { QueueMessage } from '../../organisms/MessageQueue/MessageQueue'
 import type { SidebarGroup, SidebarItem } from '../../organisms/Sidebar/Sidebar'
 
-/** One message as the workbench shows it: its queue row plus what the reader needs. */
+/**
+ * One message as the workbench lists it: its queue row plus what the reader
+ * header needs. It holds no body; the page loads that when the message opens.
+ */
 export type WorkbenchMessage = QueueMessage &
   Readonly<{
     /** Id of the workflow it is in, one of the page's `workflows`. */
     workflow: string
-    /** Plain text. A blank line starts a new paragraph. */
-    body: string
+    /**
+     * Id of the mailbox it is in, one of the page's `mailboxes`. Its account
+     * marker is only a color, which several mailboxes may share.
+     */
+    mailbox: string
     /** The sender's address, shown in the reader. */
     address?: string | undefined
   }>
@@ -40,12 +46,12 @@ export function appliedFilter(
 }
 
 function inMailbox(message: WorkbenchMessage, mailbox: string) {
-  return mailbox === allMailboxes || message.account.marker === mailbox
+  return mailbox === allMailboxes || message.mailbox === mailbox
 }
 
 function hasText(message: WorkbenchMessage, query: string) {
   const needle = query.trim().toLowerCase()
-  return [message.sender, message.subject, message.snippet, message.body].some((text) =>
+  return [message.sender, message.subject, message.snippet].some((text) =>
     text.toLowerCase().includes(needle),
   )
 }
