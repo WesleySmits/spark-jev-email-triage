@@ -6,12 +6,12 @@
  */
 
 /** Names one mailbox copy to a provider. */
-export interface MailboxCopyRef {
+export type MailboxCopyRef = Readonly<{
   /** The mailbox the message was listed in. */
   mailboxId: string
   /** The provider's message id, as listed in that mailbox. */
   messageId: string
-}
+}>
 
 /**
  * An opaque id for one mailbox copy, distinct for every mailbox and

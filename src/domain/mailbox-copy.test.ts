@@ -1,5 +1,13 @@
-import { describe, expect, it } from 'vitest'
-import { mailboxCopyId } from './mailbox-copy'
+import { describe, expect, expectTypeOf, it } from 'vitest'
+import { mailboxCopyId, type MailboxCopyRef } from './mailbox-copy'
+
+describe('MailboxCopyRef', () => {
+  it('is an immutable mailbox and message id pair', () => {
+    expectTypeOf<MailboxCopyRef>().toEqualTypeOf<
+      Readonly<{ mailboxId: string; messageId: string }>
+    >()
+  })
+})
 
 describe('mailboxCopyId', () => {
   it('tells apart copies of one message id in two mailboxes', () => {
