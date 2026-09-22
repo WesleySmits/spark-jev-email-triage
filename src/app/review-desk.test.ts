@@ -184,7 +184,13 @@ describe('ReviewDesk.focus', () => {
     spark.run.mockImplementation(
       answerSpark({ ...aliased, emails: { ...aliased.emails, [two]: [] } }),
     )
-    await ReviewDesk.open()
+    const refreshed = await ReviewDesk.open()
+    if (refreshed.status !== 'ready') throw new Error('Expected a reading')
+    // The refresh drops the copy the second mailbox lost and keeps the rest.
+    expect(refreshed.messages.map((message) => message.id)).toEqual([
+      copy(one, '11'),
+      copy(one, '12'),
+    ])
     spark.run.mockClear()
 
     await expect(stale(copy(two, '11'), { signal })).rejects.toThrow()
