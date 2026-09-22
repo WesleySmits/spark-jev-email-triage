@@ -62,6 +62,15 @@ Git hooks:
 `pnpm storybook` starts Storybook on http://localhost:6006.
 `pnpm build-storybook` writes a static build to `storybook-static/`; CI runs it.
 
+## Dokploy deployment
+
+- `Dockerfile.app` builds the TanStack Start application with Nitro and runs
+  the generated Node server on port 3000.
+- `Dockerfile.storybook` builds the independent static Storybook site and
+  serves it with Nginx on port 80.
+- The Dockerfiles contain no application secrets. Configure any runtime
+  secrets only in Dokploy, never in the repository.
+
 - Storybook 10 with `@storybook/react-vite`. It uses `.storybook/vite.config.ts`
   with only the React plugin, so the TanStack Start plugin and server
   functions stay out of the browser bundle.
