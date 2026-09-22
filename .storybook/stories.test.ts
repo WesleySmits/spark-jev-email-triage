@@ -6,8 +6,9 @@ import {
 } from '@storybook/react-vite'
 import type { Globals } from 'storybook/internal/types'
 import { MINIMAL_VIEWPORTS } from 'storybook/viewport'
-import { beforeAll, describe, test } from 'vitest'
+import { beforeAll, describe, expect, test } from 'vitest'
 import { page } from 'vitest/browser'
+import main from './main'
 import preview from './preview'
 
 // Storybook's portable stories: each story renders with the project's
@@ -18,8 +19,14 @@ beforeAll(project.beforeAll)
 
 type StoryFile = Readonly<Record<string, StoryObj>> & { default: Meta }
 
-// The same glob as `stories` in main.ts.
+// Vite needs a literal glob here, so it repeats `stories` from main.ts. The
+// first test fails when the two differ.
+const glob = '../src/**/*.stories.tsx'
 const files = import.meta.glob<StoryFile>('../src/**/*.stories.tsx', { eager: true })
+
+test('finds the stories that main.ts lists', () => {
+  expect(main.stories).toEqual([glob])
+})
 
 // Storybook's viewport sizes in pixels, like mobile1: 320 by 568.
 const sizes = new Map(
