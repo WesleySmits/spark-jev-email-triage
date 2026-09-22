@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { threadSchema } from './email'
-import { syntheticThreads } from './fixtures'
+import { independentlyObservedCopies, syntheticThreads } from './fixtures'
 
 const threads = Object.values(syntheticThreads).map((thread) => threadSchema.parse(thread))
+const observedThreads = Object.values(independentlyObservedCopies).map(({ thread }) =>
+  threadSchema.parse(thread),
+)
 
 // Second-level domains reserved for documentation (RFC 2606) and reserved
 // top-level domains (RFC 2606, RFC 6761).
@@ -17,7 +20,7 @@ describe('syntheticThreads', () => {
   })
 
   it('use only reserved domains for addresses and links', () => {
-    const domains = threads.flatMap((thread) =>
+    const domains = [...threads, ...observedThreads].flatMap((thread) =>
       thread.messages.flatMap((message) => [
         ...[message.from, ...message.to, ...message.cc].map(({ address }) => address.split('@')[1]),
         ...[...(message.bodyText ?? '').matchAll(/https?:\/\/([^/\s]+)/g)].map((match) => match[1]),
@@ -32,5 +35,14 @@ describe('syntheticThreads', () => {
 
   it('include a thread with several messages', () => {
     expect(threadSchema.parse(syntheticThreads.multiMessage).messages).toHaveLength(3)
+  })
+})
+
+describe('independentlyObservedCopies', () => {
+  it('put the same provider message id in two mailboxes', () => {
+    const [first, second] = Object.values(independentlyObservedCopies)
+
+    expect(first?.copy.messageId).toBe(second?.copy.messageId)
+    expect(first?.copy.mailboxId).not.toBe(second?.copy.mailboxId)
   })
 })
