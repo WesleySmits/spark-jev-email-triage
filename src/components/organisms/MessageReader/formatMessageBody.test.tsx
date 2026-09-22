@@ -51,6 +51,24 @@ describe('formatMessageBody', () => {
     expect(markup).not.toContain('example.com')
   })
 
+  it('cleans up a hostname-only Markdown link from Spark mail', () => {
+    expect(
+      html(
+        'Ik ga ervan uit dat jij bij [Wegwerphanddoeken.nl](Wegwerphanddoeken.nl) de goede contactpersoon bent.',
+      ),
+    ).toBe('<p>Ik ga ervan uit dat jij bij Wegwerphanddoeken.nl de goede contactpersoon bent.</p>')
+  })
+
+  it('flattens the redundant nested links Spark returns for some HTML mail', () => {
+    expect(
+      html(
+        'Ik ga ervan uit dat jij bij [[Wegwerphanddoeken.nl](Wegwerphanddoeken.nl)](Wegwerphanddoeken.nl) de goede contactpersoon bent.\n\nw: [sababateam.com](sababateam.com)',
+      ),
+    ).toBe(
+      '<p>Ik ga ervan uit dat jij bij Wegwerphanddoeken.nl de goede contactpersoon bent.</p><p>w: sababateam.com</p>',
+    )
+  })
+
   it('keeps balanced parentheses in a URL out of the text', () => {
     expect(html('See [the wiki](https://en.example.org/wiki/Mail_(protocol)).')).toBe(
       '<p>See the wiki.</p>',

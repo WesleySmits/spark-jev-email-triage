@@ -12,8 +12,9 @@ import type { ReactNode } from 'react'
  *
  * - A blank line starts a new paragraph; single line breaks stay.
  * - Lines starting with `>` become a quote, nested up to eight deep.
- * - `[label](url)` shows `label`. An empty label shows the hostname of an
- *   http(s) URL; with any other URL the text stays as written.
+ * - `[label](url)` shows `label`. Spark's redundant `[[label](url)](url)`
+ *   form is flattened too. An empty label shows the hostname of an http(s)
+ *   URL; with any other URL the text stays as written.
  * - `![alt](url)` shows `alt`, or nothing, and never loads.
  * - `**bold**` and `__bold__` lose their markers when both ends are clear.
  */
@@ -63,7 +64,7 @@ function quote(lines: readonly string[], depth: number, key: number): ReactNode 
 }
 
 function paragraph(lines: readonly string[], key: number): ReactNode {
-  const text = lines.join('\n').replace(link, readableLink)
+  const text = readableLinks(lines.join('\n'))
   return isBlank(text) ? null : <p key={key}>{withBold(text)}</p>
 }
 
@@ -73,6 +74,11 @@ function paragraph(lines: readonly string[], key: number): ReactNode {
 const link =
   /(!?)\[((?:[^[\]\n]|!\[[^[\]\n]*\]\([^\s()<>]*\))*)\]\((<[^\s<>]*>|[^\s()<>]*(?:\([^\s()<>]*\)[^\s()<>]*)*)\)/g
 const image = /!\[([^[\]\n]*)\]\([^\s()<>]*\)/g
+
+/** Spark sometimes wraps one Markdown link in the same link a second time. */
+function readableLinks(text: string): string {
+  return text.replace(link, readableLink).replace(link, readableLink)
+}
 
 function readableLink(match: string, bang: string, label: string, target: string): string {
   const words = label.replace(image, '$1').trim()
