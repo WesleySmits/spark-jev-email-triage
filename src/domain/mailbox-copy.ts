@@ -4,14 +4,17 @@
  * two mailboxes, e.g. one delivery to two aliases, is two copies, not a
  * duplicate. Nothing here guesses which copies share a logical message.
  */
+import { z } from 'zod'
 
 /** Names one mailbox copy to a provider. */
-export type MailboxCopyRef = Readonly<{
+export const mailboxCopyRefSchema = z.strictObject({
   /** The mailbox the message was listed in. */
-  mailboxId: string
+  mailboxId: z.string().trim().min(1),
   /** The provider's message id, as listed in that mailbox. */
-  messageId: string
-}>
+  messageId: z.string().trim().min(1),
+})
+
+export type MailboxCopyRef = Readonly<z.infer<typeof mailboxCopyRefSchema>>
 
 /**
  * An opaque id for one mailbox copy, distinct for every mailbox and

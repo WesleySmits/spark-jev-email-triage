@@ -3,9 +3,11 @@
  * invented, and every domain is reserved by RFC 2606 or RFC 6761.
  */
 import type { z } from 'zod'
+import type { threadSnapshotSchema } from './classification-subject'
 import type { threadSchema } from './email'
 
 type ThreadInput = z.input<typeof threadSchema>
+type SnapshotInput = z.input<typeof threadSnapshotSchema>
 type MessageInput = ThreadInput['messages'][number]
 type ParticipantInput = MessageInput['from']
 
@@ -19,12 +21,12 @@ const message = (
   extra: Partial<MessageInput> = {},
 ): MessageInput => ({ id, from, to: [inbox], cc: [], sentAt, bodyText, attachments: [], ...extra })
 
-const thread = (id: string, subject: string | null, messages: MessageInput[]): ThreadInput => ({
-  id,
-  mailboxId: 'mailbox-example',
-  subject,
-  messages,
-})
+const thread = (
+  id: string,
+  subject: string | null,
+  messages: MessageInput[],
+  mailboxId = 'mailbox-example',
+): ThreadInput => ({ id, mailboxId, subject, messages })
 
 const customer: ParticipantInput = { address: 'customer@example.org', name: 'Sample Customer' }
 
@@ -158,3 +160,45 @@ export const syntheticThreads = {
     }),
   ]),
 } satisfies Record<string, ThreadInput>
+
+const maintenanceSubject = 'Planned maintenance on Saturday'
+
+const maintenanceNotice = (recipient: ParticipantInput): MessageInput[] => [
+  message(
+    'msg-shared-notice',
+    { address: 'status@service.example', name: 'Example Service' },
+    '2026-01-14T08:00:00Z',
+    'We pause the service on Saturday between 02:00 and 04:00 UTC.',
+    { to: [recipient] },
+  ),
+]
+
+/**
+ * One notice delivered to two aliases and read from each mailbox on its own.
+ * The provider gives both copies the same message id and the text is
+ * identical, so any content fingerprint would merge them; only the mailbox
+ * tells them apart. Nothing here claims the two share a logical message.
+ */
+export const independentlyObservedCopies = {
+  personalMailbox: {
+    copy: { mailboxId: 'mailbox-personal', messageId: 'msg-shared-notice' },
+    thread: thread(
+      'msg-shared-notice',
+      maintenanceSubject,
+      maintenanceNotice({ address: 'owner@example.com', name: 'Mailbox Owner' }),
+      'mailbox-personal',
+    ),
+    observedAt: '2026-01-14T08:05:00Z',
+  },
+
+  sharedInbox: {
+    copy: { mailboxId: 'mailbox-shared', messageId: 'msg-shared-notice' },
+    thread: thread(
+      'msg-shared-notice',
+      maintenanceSubject,
+      maintenanceNotice({ address: 'team@example.org', name: 'Example Team' }),
+      'mailbox-shared',
+    ),
+    observedAt: '2026-01-14T09:41:00Z',
+  },
+} satisfies Record<string, SnapshotInput>

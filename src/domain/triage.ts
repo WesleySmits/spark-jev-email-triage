@@ -21,7 +21,7 @@ export const prioritySchema = z.enum(triagePriorities)
  * dropped before anything was stored; once decisions are persisted, keep old
  * ids here so stored decisions and corrections stay parseable.
  */
-const rubricSchema = z.enum([defaultRubric.id])
+export const rubricSchema = z.enum([defaultRubric.id])
 
 export const currentTriageRubric: z.infer<typeof rubricSchema> = defaultRubric.id
 

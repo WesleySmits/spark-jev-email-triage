@@ -10,7 +10,7 @@ One provider-visible copy of a message in one mailbox. A mailbox copy is identif
 
 ## Thread snapshot
 
-The ordered messages Spark returned when the application read a mailbox copy. Spark does not expose a stable thread id, so a snapshot's current thread id is provider-local and derived.
+The ordered messages Spark returned when the application read a mailbox copy. Spark does not expose a stable thread id, so a snapshot's current thread id is provider-local and derived from its first message. That id is meaningful only inside the mailbox the copy was read from, and it changes once the provider stops returning that message.
 
 ## Classification subject
 
