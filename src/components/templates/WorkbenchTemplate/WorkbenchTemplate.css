@@ -55,9 +55,9 @@
   }
 }
 
-/* The source's mobile reader: the top bar above the reader alone. The rail
- * and queue leave the layout, the tab order and the accessibility tree; the
- * caller's mobile bar leads back to the list. */
+/* At 600px and below the top bar sits above one pane: the queue or, as in
+ * the source's mobile reader, the reader. The rail and the other pane leave
+ * the layout, the tab order and the accessibility tree. */
 @media (max-width: 600px) {
   .workbench__workspace,
   .workbench__main {
@@ -65,7 +65,13 @@
   }
 
   .workbench__sidebar,
-  .workbench__queue {
+  .workbench--mobile-reader .workbench__queue,
+  .workbench--mobile-queue .workbench__reader {
     display: none;
+  }
+
+  /* The queue's right border only divides it from the reader. */
+  .workbench__queue {
+    border-right: 0;
   }
 }

@@ -114,12 +114,17 @@ const meta = {
     sidebar: 'Default',
     queue: 'Messages',
     reader: 'Message',
+    mobilePane: 'reader',
   },
   argTypes: {
     topBar: slot(topBars, 'The bar above the workspace, usually a TopBar.'),
     sidebar: slot(sidebars, 'The navigation rail, usually a Sidebar. Hidden at 600px and below.'),
-    queue: slot(queues, 'The queue pane, usually a MessageQueue. Hidden at 600px and below.'),
-    reader: slot(readers, 'The reader pane. The only pane at 600px and below.'),
+    queue: slot(
+      queues,
+      'The queue pane, usually a MessageQueue. At 600px and below, one of two panes.',
+    ),
+    reader: slot(readers, 'The reader pane. At 600px and below, one of two panes.'),
+    mobilePane: { control: 'inline-radio', options: ['reader', 'queue'] },
     className: { control: false },
   },
   parameters: { layout: 'fullscreen' },
@@ -174,7 +179,7 @@ export const NarrowDesktop: Story = {
 /**
  * The mobile reader at 320px, also what 400% zoom gives on a 1280px screen.
  * The rail and queue leave the layout and the tab order; the reader's mobile
- * bar leads back, which the caller handles.
+ * bar leads back, which the caller handles by setting `mobilePane` to "queue".
  */
 export const MobileReader: Story = {
   globals: { viewport: { value: 'mobile1', isRotated: false } },
@@ -182,6 +187,69 @@ export const MobileReader: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.queryByRole('complementary')).not.toBeInTheDocument()
     await expect(canvas.getByRole('button', { name: 'Back to messages' })).toBeVisible()
+  },
+}
+
+/** The mobile queue at 320px: the caller sets `mobilePane` to "queue", so the list shows instead of the reader. */
+export const MobileQueue: Story = {
+  args: { mobilePane: 'queue' },
+  globals: { viewport: { value: 'mobile1', isRotated: false } },
+}
+
+// Stands in for the caller on mobile: opening a row shows the reader, the
+// mobile bar's back button shows the queue again. The reader keeps the
+// sample body; only the subject follows the opened row.
+function MobileFlowStory(args: ComponentProps<typeof WorkbenchTemplate>) {
+  const [openId, setOpenId] = useState<string | null>(null)
+  const messages = QueueStories.args.messages
+  const open = messages.find((message) => message.id === openId)
+  return (
+    <WorkbenchTemplate
+      {...args}
+      mobilePane={open ? 'reader' : 'queue'}
+      queue={<MessageQueue {...QueueStories.args} currentId={openId} onOpen={setOpenId} />}
+      reader={
+        open ? (
+          <ReaderSlot
+            key={open.id}
+            header={{ ...Reader.default.args.header, subject: open.subject }}
+            mobileBar={{
+              title: open.account.label,
+              context: `${String(messages.indexOf(open) + 1)} of ${String(messages.length)} in Needs review`,
+              onBack: () => {
+                setOpenId(null)
+              },
+            }}
+          />
+        ) : (
+          readers['Nothing open']
+        )
+      }
+    />
+  )
+}
+
+/**
+ * The mobile flow at 320px, with the caller's state kept in the story. Open a
+ * row to read it, then use the back button to return to the list.
+ */
+export const MobileFlow: Story = {
+  argTypes: {
+    queue: { table: { disable: true } },
+    reader: { table: { disable: true } },
+    mobilePane: { table: { disable: true } },
+  },
+  globals: { viewport: { value: 'mobile1', isRotated: false } },
+  render: (args) => <MobileFlowStory {...args} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const row = canvas.getByRole('button', { name: /Can delivery move a week earlier\?/ })
+    await userEvent.click(row)
+    const back = canvas.getByRole('button', { name: 'Back to messages' })
+    await expect(back).toBeVisible()
+    await expect(canvas.queryByRole('region', { name: 'Needs review' })).not.toBeInTheDocument()
+    await userEvent.click(back)
+    await expect(canvas.getByRole('region', { name: 'Needs review' })).toBeVisible()
   },
 }
 

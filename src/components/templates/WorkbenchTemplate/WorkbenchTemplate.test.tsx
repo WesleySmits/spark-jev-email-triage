@@ -16,8 +16,10 @@ const slots = {
   reader: <article>Reader</article>,
 }
 
-function render(className?: string) {
-  const root = WorkbenchTemplate({ ...slots, className }) as Element
+type Props = Parameters<typeof WorkbenchTemplate>[0]
+
+function render(overrides: Partial<Props> = {}) {
+  const root = WorkbenchTemplate({ ...slots, ...overrides }) as Element
   const [topBar, workspace] = root.props['children'] as Element[]
   if (!topBar || !workspace) throw new Error('Missing workbench part')
   const [sidebar, main] = workspace.props['children'] as Element[]
@@ -52,7 +54,10 @@ function rules(media: string | null) {
 describe('WorkbenchTemplate', () => {
   it('puts the top bar above the rail and a main area with queue and reader', () => {
     const { root, topBar, workspace, sidebar, main, queue, reader } = render()
-    expect(root).toMatchObject({ type: 'div', props: { className: 'workbench' } })
+    expect(root).toMatchObject({
+      type: 'div',
+      props: { className: 'workbench workbench--mobile-reader' },
+    })
     expect(topBar).toBe(slots.topBar)
     expect(workspace.props['className']).toBe('workbench__workspace')
     expect(sidebar).toMatchObject({
@@ -64,8 +69,10 @@ describe('WorkbenchTemplate', () => {
     expect(reader.props).toEqual({ className: 'workbench__reader', children: slots.reader })
   })
 
-  it('adds the caller class', () => {
-    expect(render('extra').root.props['className']).toBe('workbench extra')
+  it('marks the mobile pane the caller chose, and adds the caller class', () => {
+    expect(render({ mobilePane: 'queue', className: 'extra' }).root.props['className']).toBe(
+      'workbench workbench--mobile-queue extra',
+    )
   })
 
   it('styles with tokens only', () => {
@@ -97,12 +104,17 @@ describe('WorkbenchTemplate', () => {
     ).toBe('156px minmax(0, 1fr)')
   })
 
-  it('shows only the reader at 600px and below', () => {
+  it('shows one pane, queue or reader, at 600px and below', () => {
     const mobile = rules('(max-width: 600px)')
-    expect(mobile.get('.workbench__sidebar')?.get('display')).toBe('none')
-    expect(mobile.get('.workbench__queue')?.get('display')).toBe('none')
+    for (const hidden of [
+      '.workbench__sidebar',
+      '.workbench--mobile-reader .workbench__queue',
+      '.workbench--mobile-queue .workbench__reader',
+    ]) {
+      expect(mobile.get(hidden)?.get('display')).toBe('none')
+    }
     expect(mobile.get('.workbench__main')?.get('grid-template-columns')).toBe('minmax(0, 1fr)')
     expect(mobile.get('.workbench__workspace')?.get('grid-template-columns')).toBe('minmax(0, 1fr)')
-    expect(mobile.has('.workbench__reader')).toBe(false)
+    expect(mobile.get('.workbench__queue')?.get('border-right')).toBe('0')
   })
 })
