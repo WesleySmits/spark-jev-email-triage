@@ -7,6 +7,8 @@ import {
   type ComponentProps,
   type RefObject,
 } from 'react'
+import type { BodyLoader } from '../../../app/inbox'
+import { DisconnectedState } from '../../molecules/DisconnectedState/DisconnectedState'
 import { EmptyState } from '../../molecules/EmptyState/EmptyState'
 import { LocalStatusToast } from '../../molecules/LocalStatusToast/LocalStatusToast'
 import { MessageQueue } from '../../organisms/MessageQueue/MessageQueue'
@@ -14,6 +16,8 @@ import { MessageReader } from '../../organisms/MessageReader/MessageReader'
 import { Sidebar, type SidebarItem } from '../../organisms/Sidebar/Sidebar'
 import { TopBar } from '../../organisms/TopBar/TopBar'
 import { WorkbenchTemplate } from '../../templates/WorkbenchTemplate/WorkbenchTemplate'
+import type { BodyState } from './body'
+import { useMessageBody } from './useMessageBody'
 import { shortcutLegend, useWorkbenchShortcuts } from './useWorkbenchShortcuts'
 import {
   afterRemoval,
@@ -30,9 +34,41 @@ import './WorkbenchPage.css'
 
 type Pane = ComponentProps<typeof WorkbenchTemplate>['mobilePane']
 
+/**
+ * What Complete may do. `read-only` shows no Complete button, ignores `E`
+ * and never shows the Completed notice: the page offers no way to change mail.
+ */
+type WorkbenchCompletion =
+  | Readonly<{ mode: 'read-only' }>
+  | Readonly<{
+      mode: 'enabled'
+      /**
+       * Marks the open message done, from its Complete button or `E`. The caller
+       * changes the data, e.g. moves it to the Done workflow; the page opens the
+       * next message in the list. It may update later: until `messages` holds a
+       * new version of the completed message, the page leaves it out. Return a
+       * promise to report the outcome: when it rejects, the message comes back,
+       * and the Completed notice only shows once it resolves.
+       */
+      onComplete: (id: string) => void | Promise<void>
+      /**
+       * Undoes a completion from the Completed notice. The caller puts the message
+       * back; the page opens it again. Left out: the notice has no Undo.
+       */
+      onUndoComplete?: ((id: string) => void) | undefined
+      /** The Completed notice's second line, e.g. "Mailbox unchanged." */
+      note?: string | undefined
+    }>
+
 type WorkbenchPageProps = Readonly<{
-  /** Every message the page can show, in display order. The caller loads them. */
+  /** Every message the page can show, in display order, without bodies. The caller loads them. */
   messages: readonly WorkbenchMessage[]
+  /**
+   * Loads a message's body when it opens, and again on Try again. Only the
+   * open message's body is asked for; a response for a message that is no
+   * longer open is dropped.
+   */
+  loadBody: BodyLoader
   /** The workflow filters, e.g. Needs review. The first is applied at the start. Counts are filled in. */
   workflows: readonly SidebarItem[]
   /**
@@ -40,22 +76,8 @@ type WorkbenchPageProps = Readonly<{
    * messages carry. "All accounts" is added in front; counts are filled in.
    */
   mailboxes: readonly SidebarItem[]
-  /**
-   * Marks the open message done, from its Complete button or `E`. The caller
-   * changes the data, e.g. moves it to the Done workflow; the page opens the
-   * next message in the list. It may update later: until `messages` holds a
-   * new version of the completed message, the page leaves it out. Return a
-   * promise to report the outcome: when it rejects, the message comes back,
-   * and the Completed notice only shows once it resolves.
-   */
-  onComplete: (id: string) => void | Promise<void>
-  /**
-   * Undoes a completion from the Completed notice. The caller puts the message
-   * back; the page opens it again. Left out: the notice has no Undo.
-   */
-  onUndoComplete?: ((id: string) => void) | undefined
-  /** The Completed notice's second line, e.g. "Mailbox unchanged." */
-  completedNote?: string | undefined
+  /** Whether Complete is offered, and what it does. */
+  completion: WorkbenchCompletion
   /** Sync status and profile. The page owns the search. */
   topBar: Omit<
     ComponentProps<typeof TopBar>,
@@ -73,7 +95,7 @@ const readerContent = '.workbench__reader [role="region"][tabindex]'
 const currentRow = '.workbench__queue [aria-current="true"]'
 const queueControl = '.workbench__queue button'
 
-type PageInput = Pick<WorkbenchPageProps, 'messages' | 'workflows' | 'mailboxes' | 'onComplete'>
+type PageInput = Pick<WorkbenchPageProps, 'messages' | 'workflows' | 'mailboxes' | 'completion'>
 
 const none: ReadonlySet<WorkbenchMessage> = new Set()
 
@@ -109,7 +131,7 @@ function usePendingCompletion(messages: readonly WorkbenchMessage[]) {
  * `generation` counts the user's navigation: J, K, opening a row and
  * changing a filter each move it on.
  */
-function usePageState({ messages, workflows, mailboxes, onComplete }: PageInput) {
+function usePageState({ messages, workflows, mailboxes, completion }: PageInput) {
   const [chosen, setChosen] = useState(defaultFilter)
   const [openId, setOpenId] = useState<string>()
   const [pane, setPane] = useState<Pane>('queue')
@@ -151,15 +173,16 @@ function usePageState({ messages, workflows, mailboxes, onComplete }: PageInput)
     select: setOpenId,
     release,
     /**
-     * Completes the open message. Returns it with the message that opens
-     * next, the navigation generation at this moment and the caller's result.
+     * Completes the open message, unless the page is read-only. Returns it
+     * with the message that opens next, the navigation generation at this
+     * moment and the caller's result.
      */
     complete: () => {
-      if (!open) return undefined
+      if (!open || completion.mode === 'read-only') return undefined
       markPending(open)
       const next = afterRemoval(shown, open.id)
       setOpenId(next)
-      return { message: open, next, generation, result: onComplete(open.id) }
+      return { message: open, next, generation, result: completion.onComplete(open.id) }
     },
     back: () => {
       setPane('queue')
@@ -386,10 +409,12 @@ function PageTopBar({ topBar, state, searchId, root }: PageTopBarProps) {
   )
 }
 
-type PageRailProps = Readonly<{ state: PageState } & Pick<PageInput, 'workflows' | 'mailboxes'>>
+type PageRailProps = Readonly<
+  { state: PageState; canComplete: boolean } & Pick<PageInput, 'workflows' | 'mailboxes'>
+>
 
 /** The rail with the applied filters, counts and the shortcut legend. */
-function PageRail({ state, workflows, mailboxes }: PageRailProps) {
+function PageRail({ state, canComplete, workflows, mailboxes }: PageRailProps) {
   return (
     <Sidebar
       label="Filters"
@@ -397,14 +422,16 @@ function PageRail({ state, workflows, mailboxes }: PageRailProps) {
       onSelect={(groupId, itemId) => {
         state.filterBy({ [groupId]: itemId })
       }}
-      shortcuts={shortcutLegend}
+      shortcuts={
+        canComplete ? shortcutLegend : shortcutLegend.filter((item) => item.label !== 'Complete')
+      }
     />
   )
 }
 
-type PaneProps = Readonly<{ state: PageState; title: string; complete: () => void }>
+type PaneProps = Readonly<{ state: PageState; title: string }>
 
-function Queue({ state, title }: Omit<PaneProps, 'complete'>) {
+function Queue({ state, title }: PaneProps) {
   const count = state.shown.length
   return (
     <MessageQueue
@@ -437,7 +464,51 @@ function initials(name: string) {
     .join('')
 }
 
-function Reader({ state, title, complete }: PaneProps) {
+type ReaderBodyProps = Readonly<{ body: BodyState; retry: () => void }>
+
+/** The open message's body, or why it isn't there (yet). */
+function ReaderBody({ body, retry }: ReaderBodyProps) {
+  if (body.status === 'ready') {
+    return body.text.split(/\n{2,}/).map((paragraph, index) => <p key={index}>{paragraph}</p>)
+  }
+  if (body.status !== 'error') return <p>Loading message…</p>
+  if (body.reason === 'missing') {
+    return (
+      <EmptyState
+        headingLevel={3}
+        title="No text to show"
+        description="This message has no plain-text body."
+      />
+    )
+  }
+  return (
+    <DisconnectedState
+      headingLevel={3}
+      title="This message didn't load"
+      action={{ label: 'Try again', onClick: retry }}
+    >
+      The list still works. Try again, or open another message.
+    </DisconnectedState>
+  )
+}
+
+type ReaderActions = ComponentProps<typeof MessageReader>['actions']
+
+/** Complete when the page may offer it; read-only says so instead. */
+function readerActions(complete: (() => void) | undefined): ReaderActions {
+  return complete
+    ? { primaryAction: { label: 'Complete', icon: 'check', shortcut: 'E', onClick: complete } }
+    : { note: { title: 'Read only', detail: 'Nothing here changes your mail.' } }
+}
+
+type ReaderProps = PaneProps &
+  ReaderBodyProps &
+  Readonly<{
+    /** Left out when the page is read-only. */
+    complete: (() => void) | undefined
+  }>
+
+function Reader({ state, title, complete, body, retry }: ReaderProps) {
   const { shown, open } = state
   if (!open) {
     return (
@@ -465,13 +536,9 @@ function Reader({ state, title, complete }: PaneProps) {
           dateTime: open.dateTime,
         },
       }}
-      actions={{
-        primaryAction: { label: 'Complete', icon: 'check', shortcut: 'E', onClick: complete },
-      }}
+      actions={readerActions(complete)}
     >
-      {open.body.split(/\n{2,}/).map((paragraph, index) => (
-        <p key={index}>{paragraph}</p>
-      ))}
+      <ReaderBody body={body} retry={retry} />
     </MessageReader>
   )
 }
@@ -487,7 +554,8 @@ function useWorkbench(props: WorkbenchPageProps) {
   useShortcuts(root, state, complete, searchId)
   useKeepFocus(root, restoreRef, state, notice.message !== undefined)
   useFollowCurrentRow(root, state.open?.id)
-  return { state, searchId, root, notice, complete } as const
+  const { body, retry } = useMessageBody(props.loadBody, state.open?.id)
+  return { state, searchId, root, notice, complete, body, retry } as const
 }
 
 /**
@@ -498,8 +566,10 @@ function useWorkbench(props: WorkbenchPageProps) {
  * which message is open, the mobile pane, focus on pane switches, and the
  * J, K, E and / shortcuts shown in the rail and search field, and the
  * Completed notice with its optional Undo. The caller owns the data: it
- * passes the messages and decides what Complete and Undo do. The page
- * fetches nothing and changes no mail. Give it a bounded parent such as a
+ * passes the messages without bodies, a loader for one body at a time, and
+ * decides whether Complete is offered and what it and Undo do. The page
+ * asks only for the open message's body, shows its loading, missing and
+ * failed states, and changes no mail. Give it a bounded parent such as a
  * `100dvh` root.
  *
  * @example
@@ -508,32 +578,51 @@ function useWorkbench(props: WorkbenchPageProps) {
  * <div style={{ height: '100dvh' }}>
  *   <WorkbenchPage
  *     messages={messages}
+ *     loadBody={(id, { signal }) => fetchBody(id, signal)}
+ *     completion={{ mode: 'read-only' }}
  *     workflows={[{ id: 'review', icon: 'clock', label: 'Needs review' }]}
  *     mailboxes={[{ id: 'studio', account: 'studio', label: 'Studio Noord' }]}
- *     onComplete={markDone}
  *     topBar={{ syncStatus: 'connected', syncLabel: 'Updated 2 min ago', onSyncClick, profileLabel: 'Profile Wesley Smits', profileInitials: 'WS' }}
  *   />
  * </div>
  */
 export function WorkbenchPage(props: WorkbenchPageProps) {
-  const { workflows, mailboxes } = props
-  const { state, searchId, root, notice, complete } = useWorkbench(props)
+  const { workflows, mailboxes, completion } = props
+  const { state, searchId, root, notice, complete, body, retry } = useWorkbench(props)
   const title = workflows.find((item) => item.id === state.filter.workflow)?.label ?? ''
+  const canComplete = completion.mode === 'enabled'
   return (
     <div ref={root} className="workbench-page">
       <WorkbenchTemplate
         mobilePane={state.pane}
         topBar={<PageTopBar topBar={props.topBar} state={state} searchId={searchId} root={root} />}
-        sidebar={<PageRail state={state} workflows={workflows} mailboxes={mailboxes} />}
+        sidebar={
+          <PageRail
+            state={state}
+            canComplete={canComplete}
+            workflows={workflows}
+            mailboxes={mailboxes}
+          />
+        }
         queue={<Queue state={state} title={title} />}
-        reader={<Reader state={state} title={title} complete={complete} />}
+        reader={
+          <Reader
+            state={state}
+            title={title}
+            complete={canComplete ? complete : undefined}
+            body={body}
+            retry={retry}
+          />
+        }
       />
-      <CompletedNotice
-        notice={notice}
-        state={state}
-        note={props.completedNote}
-        onUndoComplete={props.onUndoComplete}
-      />
+      {completion.mode === 'enabled' && (
+        <CompletedNotice
+          notice={notice}
+          state={state}
+          note={completion.note}
+          onUndoComplete={completion.onUndoComplete}
+        />
+      )}
     </div>
   )
 }

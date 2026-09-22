@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { completeDemoMessage, demoMailboxes, demoMessages, demoWorkflows } from './demo'
+import {
+  completeDemoMessage,
+  demoMailboxes,
+  demoMessages,
+  demoWorkflows,
+  loadDemoBody,
+} from './demo'
 
 const ids = (items: readonly { id: string }[]) => items.map((item) => item.id)
 
@@ -20,6 +26,16 @@ describe('demo data', () => {
       expect(message.address).toMatch(/@[\w-]+\.example$/)
       expect(message.subject).toMatch(/^Sample: /)
     }
+  })
+})
+
+describe('loadDemoBody', () => {
+  it('keeps bodies out of the rows and loads one when asked', async () => {
+    for (const message of demoMessages) expect(message).not.toHaveProperty('body')
+    const body = await loadDemoBody('demo-3', { signal: new AbortController().signal })
+
+    expect(body?.id).toBe('demo-3')
+    expect(body?.text).toContain('meet by the lake')
   })
 })
 
