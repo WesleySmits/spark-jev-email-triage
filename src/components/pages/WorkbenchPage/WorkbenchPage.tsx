@@ -1,5 +1,14 @@
-import { useEffect, useId, useRef, useState, type ComponentProps, type RefObject } from 'react'
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type RefObject,
+} from 'react'
 import { EmptyState } from '../../molecules/EmptyState/EmptyState'
+import { LocalStatusToast } from '../../molecules/LocalStatusToast/LocalStatusToast'
 import { MessageQueue } from '../../organisms/MessageQueue/MessageQueue'
 import { MessageReader } from '../../organisms/MessageReader/MessageReader'
 import { Sidebar, type SidebarItem } from '../../organisms/Sidebar/Sidebar'
@@ -35,9 +44,18 @@ type WorkbenchPageProps = Readonly<{
    * Marks the open message done, from its Complete button or `E`. The caller
    * changes the data, e.g. moves it to the Done workflow; the page opens the
    * next message in the list. It may update later: until `messages` holds a
-   * new version of the completed message, the page leaves it out.
+   * new version of the completed message, the page leaves it out. Return a
+   * promise to report the outcome: when it rejects, the message comes back,
+   * and the Completed notice only shows once it resolves.
    */
-  onComplete: (id: string) => void
+  onComplete: (id: string) => void | Promise<void>
+  /**
+   * Undoes a completion from the Completed notice. The caller puts the message
+   * back; the page opens it again. Left out: the notice has no Undo.
+   */
+  onUndoComplete?: ((id: string) => void) | undefined
+  /** The Completed notice's second line, e.g. "Mailbox unchanged." */
+  completedNote?: string | undefined
   /** Sync status and profile. The page owns the search. */
   topBar: Omit<
     ComponentProps<typeof TopBar>,
@@ -55,12 +73,7 @@ const readerContent = '.workbench__reader [role="region"][tabindex]'
 const currentRow = '.workbench__queue [aria-current="true"]'
 const queueControl = '.workbench__queue button'
 
-type PageInput = Readonly<{
-  messages: readonly WorkbenchMessage[]
-  workflows: readonly SidebarItem[]
-  mailboxes: readonly SidebarItem[]
-  onComplete: (id: string) => void
-}>
+type PageInput = Pick<WorkbenchPageProps, 'messages' | 'workflows' | 'mailboxes' | 'onComplete'>
 
 const none: ReadonlySet<WorkbenchMessage> = new Set()
 
@@ -73,11 +86,20 @@ const none: ReadonlySet<WorkbenchMessage> = new Set()
 function usePendingCompletion(messages: readonly WorkbenchMessage[]) {
   const [pending, setPending] = useState(none)
   const live = messages.filter((message) => !pending.has(message))
-  const markPending = (message: WorkbenchMessage) => {
-    const unchanged = [...pending].filter((item) => messages.includes(item))
-    setPending(new Set(unchanged).add(message))
+  const keep = (keepIf: (item: WorkbenchMessage) => boolean) => {
+    setPending((current) => new Set([...current].filter(keepIf)))
   }
-  return [live, markPending] as const
+  return {
+    live,
+    markPending: (message: WorkbenchMessage) => {
+      keep((item) => messages.includes(item))
+      setPending((current) => new Set(current).add(message))
+    },
+    /** Shows a message again, e.g. when its completion failed or was undone. */
+    release: (message: WorkbenchMessage) => {
+      keep((item) => item !== message)
+    },
+  } as const
 }
 
 /**
@@ -89,7 +111,7 @@ function usePageState({ messages, workflows, mailboxes, onComplete }: PageInput)
   const [chosen, setChosen] = useState(defaultFilter)
   const [openId, setOpenId] = useState<string>()
   const [pane, setPane] = useState<Pane>('queue')
-  const [live, markPending] = usePendingCompletion(messages)
+  const { live, markPending, release } = usePendingCompletion(messages)
   const filter = appliedFilter(chosen, workflows, mailboxes)
   const shown = visibleMessages(live, filter)
   const open = openedMessage(shown, openId)
@@ -116,11 +138,15 @@ function usePageState({ messages, workflows, mailboxes, onComplete }: PageInput)
     step: (by: 1 | -1) => {
       setOpenId(neighbour(shown, open?.id, by))
     },
+    select: setOpenId,
+    release,
+    /** Completes the open message and returns it with the caller's result. */
     complete: () => {
-      if (!open) return
+      if (!open) return undefined
       markPending(open)
-      setOpenId(afterRemoval(shown, open.id))
-      onComplete(open.id)
+      const next = afterRemoval(shown, open.id)
+      setOpenId(next)
+      return { message: open, next, result: onComplete(open.id) }
     },
     back: () => {
       setPane('queue')
@@ -165,14 +191,74 @@ function takePlace(restoreRef: RefObject<Place | null>, pane: Place) {
  * pane switch hides it, and Complete removes the row or reader that held
  * it. `restoreRef` names the pane focus was in before Complete.
  */
-function useKeepFocus(root: Root, restoreRef: RefObject<Place | null>, state: PageState) {
+function useKeepFocus(
+  root: Root,
+  restoreRef: RefObject<Place | null>,
+  state: PageState,
+  noticeOpen: boolean,
+) {
   const { pane } = state
   const openId = state.open?.id
   const count = state.shown.length
   useEffect(() => {
     const place = takePlace(restoreRef, pane)
     if (place && root.current) focusInto(root.current, place, openId !== undefined)
-  }, [root, restoreRef, pane, openId, count])
+  }, [root, restoreRef, pane, openId, count, noticeOpen])
+}
+
+/**
+ * Calls `done` once the caller's result settles well, `failed` if it
+ * rejects. `done` learns whether the result was there at once.
+ */
+function settle(result: void | Promise<void>, done: (atOnce: boolean) => void, failed: () => void) {
+  if (result instanceof Promise) {
+    void result.then(() => {
+      done(false)
+    }, failed)
+  } else done(true)
+}
+
+type Shown = Readonly<{ message: WorkbenchMessage; at: string | undefined }>
+
+/** The completed message to show while `at` is still the open message. */
+function noticeFor(shown: Shown | undefined, openId: string | undefined) {
+  return shown && shown.at === openId ? shown.message : undefined
+}
+
+/** A ref that always holds the latest render's value, for use in callbacks. */
+function useLatest<T>(value: T) {
+  const ref = useRef(value)
+  useLayoutEffect(() => {
+    ref.current = value
+  })
+  return ref
+}
+
+/**
+ * The Completed notice: the last completed message, shown while the message
+ * that opened after it stays open. Moving on, with J, K, a row or a filter,
+ * hides it. Hiding it while focus is on its actions sends focus back into
+ * the page.
+ */
+function useCompletedNotice(state: PageState, restoreRef: RefObject<Place | null>) {
+  const [shown, setShown] = useState<Shown>()
+  const openId = state.open?.id
+  const openRef = useLatest(openId)
+  // Once the user moves on, the notice is gone for good.
+  if (shown && shown.at !== openId) setShown(undefined)
+  return {
+    message: noticeFor(shown, openId),
+    /** Shows the notice for `completed` while `at` is the open message. */
+    show: (completed: WorkbenchMessage, at: string | undefined) => {
+      setShown({ message: completed, at })
+    },
+    /** The message open in the latest render, for results that settle later. */
+    openNow: () => openRef.current,
+    hide: () => {
+      if (document.activeElement?.closest('.local-status-toast')) restoreRef.current = state.pane
+      setShown(undefined)
+    },
+  } as const
 }
 
 /** Keeps the open row in view, and brings focus along when it was on a row. */
@@ -200,6 +286,103 @@ function useShortcuts(root: Root, state: PageState, complete: () => void, search
       document.getElementById(searchId)?.focus()
     },
   })
+}
+
+type Notice = ReturnType<typeof useCompletedNotice>
+
+/**
+ * Completes the open message: notes where focus was, shows the notice once
+ * the caller's result settles, and brings the message back if it fails.
+ */
+function useComplete(state: PageState, notice: Notice, restoreRef: RefObject<Place | null>) {
+  return () => {
+    restoreRef.current = focusedPlace()
+    const completion = state.complete()
+    if (!completion) return
+    settle(
+      completion.result,
+      (atOnce) => {
+        // At once, the next message opens in this same update.
+        notice.show(completion.message, atOnce ? completion.next : notice.openNow())
+      },
+      () => {
+        state.release(completion.message)
+      },
+    )
+  }
+}
+
+type CompletedNoticeProps = Readonly<{
+  notice: Notice
+  state: PageState
+  note: string | undefined
+  onUndoComplete: ((id: string) => void) | undefined
+}>
+
+function CompletedNotice({ notice, state, note, onUndoComplete }: CompletedNoticeProps) {
+  const { message } = notice
+  const undo =
+    message && onUndoComplete
+      ? () => {
+          notice.hide()
+          onUndoComplete(message.id)
+          state.release(message)
+          state.select(message.id)
+        }
+      : undefined
+  return (
+    <LocalStatusToast
+      visible={notice.message !== undefined}
+      title="Completed"
+      detail={note}
+      actionLabel={undo ? 'Undo' : undefined}
+      onAction={undo}
+      dismissLabel="Dismiss"
+      onDismiss={notice.hide}
+    />
+  )
+}
+
+type PageTopBarProps = Readonly<{
+  topBar: WorkbenchPageProps['topBar']
+  state: PageState
+  searchId: string
+  root: Root
+}>
+
+/** The top bar with the page's search. Enter moves focus to the results. */
+function PageTopBar({ topBar, state, searchId, root }: PageTopBarProps) {
+  return (
+    <TopBar
+      {...topBar}
+      searchId={searchId}
+      searchLabel="Search current results"
+      searchPlaceholder="Search current results"
+      searchValue={state.filter.query}
+      onSearchChange={(query) => {
+        state.filterBy({ query })
+      }}
+      onSearchSubmit={() => {
+        if (root.current) focusInto(root.current, 'queue', false)
+      }}
+    />
+  )
+}
+
+type PageRailProps = Readonly<{ state: PageState } & Pick<PageInput, 'workflows' | 'mailboxes'>>
+
+/** The rail with the applied filters, counts and the shortcut legend. */
+function PageRail({ state, workflows, mailboxes }: PageRailProps) {
+  return (
+    <Sidebar
+      label="Filters"
+      groups={railGroups({ messages: state.messages, filter: state.filter, workflows, mailboxes })}
+      onSelect={(groupId, itemId) => {
+        state.filterBy({ [groupId]: itemId })
+      }}
+      shortcuts={shortcutLegend}
+    />
+  )
 }
 
 type PaneProps = Readonly<{ state: PageState; title: string; complete: () => void }>
@@ -276,14 +459,29 @@ function Reader({ state, title, complete }: PaneProps) {
   )
 }
 
+/** Everything the page ties together: state, focus, the notice and the keys. */
+function useWorkbench(props: WorkbenchPageProps) {
+  const state = usePageState(props)
+  const searchId = useId()
+  const root = useRef<HTMLDivElement>(null)
+  const restoreRef = useRef<Place | null>(null)
+  const notice = useCompletedNotice(state, restoreRef)
+  const complete = useComplete(state, notice, restoreRef)
+  useShortcuts(root, state, complete, searchId)
+  useKeepFocus(root, restoreRef, state, notice.message !== undefined)
+  useFollowCurrentRow(root, state.open?.id)
+  return { state, searchId, root, notice, complete } as const
+}
+
 /**
  * The triage workbench: the Compact workbench template filled with the rail,
  * search, queue and reader, and the state that ties them together.
  *
  * The page owns the UI state: the workflow and mailbox filters, the search,
  * which message is open, the mobile pane, focus on pane switches, and the
- * J, K, E and / shortcuts shown in the rail and search field. The caller owns
- * the data: it passes the messages and decides what Complete does. The page
+ * J, K, E and / shortcuts shown in the rail and search field, and the
+ * Completed notice with its optional Undo. The caller owns the data: it
+ * passes the messages and decides what Complete and Undo do. The page
  * fetches nothing and changes no mail. Give it a bounded parent such as a
  * `100dvh` root.
  *
@@ -300,61 +498,24 @@ function Reader({ state, title, complete }: PaneProps) {
  *   />
  * </div>
  */
-export function WorkbenchPage({
-  messages,
-  workflows,
-  mailboxes,
-  onComplete,
-  topBar,
-}: WorkbenchPageProps) {
-  const state = usePageState({ messages, workflows, mailboxes, onComplete })
-  const searchId = useId()
-  const root = useRef<HTMLDivElement>(null)
-  const restoreRef = useRef<Place | null>(null)
-  const complete = () => {
-    restoreRef.current = focusedPlace()
-    state.complete()
-  }
-  useShortcuts(root, state, complete, searchId)
-  useKeepFocus(root, restoreRef, state)
-  useFollowCurrentRow(root, state.open?.id)
+export function WorkbenchPage(props: WorkbenchPageProps) {
+  const { workflows, mailboxes } = props
+  const { state, searchId, root, notice, complete } = useWorkbench(props)
   const title = workflows.find((item) => item.id === state.filter.workflow)?.label ?? ''
   return (
     <div ref={root} className="workbench-page">
       <WorkbenchTemplate
         mobilePane={state.pane}
-        topBar={
-          <TopBar
-            {...topBar}
-            searchId={searchId}
-            searchLabel="Search current results"
-            searchPlaceholder="Search current results"
-            searchValue={state.filter.query}
-            onSearchChange={(query) => {
-              state.filterBy({ query })
-            }}
-            onSearchSubmit={() => {
-              if (root.current) focusInto(root.current, 'queue', false)
-            }}
-          />
-        }
-        sidebar={
-          <Sidebar
-            label="Filters"
-            groups={railGroups({
-              messages: state.messages,
-              filter: state.filter,
-              workflows,
-              mailboxes,
-            })}
-            onSelect={(groupId, itemId) => {
-              state.filterBy({ [groupId]: itemId })
-            }}
-            shortcuts={shortcutLegend}
-          />
-        }
+        topBar={<PageTopBar topBar={props.topBar} state={state} searchId={searchId} root={root} />}
+        sidebar={<PageRail state={state} workflows={workflows} mailboxes={mailboxes} />}
         queue={<Queue state={state} title={title} />}
         reader={<Reader state={state} title={title} complete={complete} />}
+      />
+      <CompletedNotice
+        notice={notice}
+        state={state}
+        note={props.completedNote}
+        onUndoComplete={props.onUndoComplete}
       />
     </div>
   )

@@ -47,6 +47,8 @@ type Timing = Readonly<{
   loadAfter?: number | undefined
   /** Milliseconds before a completion shows in the data. Left out: at once. */
   completeAfter?: number | undefined
+  /** Completions fail after `completeAfter`, as when Spark is unreachable. */
+  failComplete?: boolean | undefined
 }>
 
 /** Whether `delay` has passed since mount; true at once without a delay. */
@@ -67,11 +69,33 @@ function useAfter(delay: number | undefined) {
 const markDone = (id: string) => (message: WorkbenchMessage) =>
   message.id === id ? { ...message, workflow: 'done', status: completed } : message
 
+/** Runs `apply` at once, or after `delay` as a promise that fails when `fail` is set. */
+function later(apply: () => void, delay: number | undefined, fail: boolean | undefined) {
+  if (delay === undefined) {
+    apply()
+    return undefined
+  }
+  return new Promise<void>((resolve, reject) => {
+    setTimeout(() => {
+      if (fail) {
+        reject(new Error('Spark is unavailable'))
+        return
+      }
+      apply()
+      resolve()
+    }, delay)
+  })
+}
+
 // Stands in for the data owner. Complete moves the message to Done, at once
-// or after `completeAfter`. One page stays mounted while the data loads.
-function WithData({ loadAfter, completeAfter, ...args }: Props & Timing) {
+// or after `completeAfter`; Undo puts the sample message back. One page stays
+// mounted while the data loads.
+function WithData({ loadAfter, completeAfter, failComplete, ...args }: Props & Timing) {
   const [data, setData] = useState(args.messages)
   const loaded = useAfter(loadAfter)
+  const original = (id: string) => (message: WorkbenchMessage) => ({
+    ...(message.id === id ? (args.messages.find((item) => item.id === id) ?? message) : message),
+  })
   return (
     <WorkbenchPage
       {...args}
@@ -79,12 +103,18 @@ function WithData({ loadAfter, completeAfter, ...args }: Props & Timing) {
       workflows={loaded ? args.workflows : []}
       mailboxes={loaded ? args.mailboxes : []}
       onComplete={(id) => {
-        args.onComplete(id)
-        const apply = () => {
-          setData((current) => current.map(markDone(id)))
-        }
-        if (completeAfter === undefined) apply()
-        else setTimeout(apply, completeAfter)
+        void args.onComplete(id)
+        return later(
+          () => {
+            setData((current) => current.map(markDone(id)))
+          },
+          completeAfter,
+          failComplete,
+        )
+      }}
+      onUndoComplete={(id) => {
+        args.onUndoComplete?.(id)
+        setData((current) => current.map(original(id)))
       }}
     />
   )
@@ -98,6 +128,8 @@ const meta = {
     workflows: workflowGroup?.items ?? [],
     mailboxes: mailboxGroup?.items.filter((item) => item.account) ?? [],
     onComplete: fn(),
+    onUndoComplete: fn(),
+    completedNote: 'Sample data. No mail changed.',
     topBar: {
       syncStatus: TopBarStories.args.syncStatus,
       syncLabel: TopBarStories.args.syncLabel,
@@ -265,6 +297,70 @@ export const SlowComplete: Story = {
       { timeout: 3000 },
     )
     await expect(canvas.getByText('0 results')).toBeVisible()
+  },
+}
+
+/**
+ * After Complete the notice offers Undo until the user moves on. Undo puts
+ * the message back, opens it again and returns focus to the page.
+ */
+export const UndoComplete: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: /Can delivery move/ }))
+    await userEvent.keyboard('e')
+    await expect(canvas.getByRole('status')).toHaveTextContent('Completed')
+    await expect(canvas.getByText('1 result')).toBeVisible()
+    // Moving on hides the notice for good, even when coming back.
+    await rail(canvasElement, 'Done')
+    await expect(canvas.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
+    await rail(canvasElement, 'Needs review')
+    await expect(canvas.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
+    // Complete again, then undo from the notice.
+    await userEvent.click(canvas.getByRole('button', { name: /Move Friday dinner\?/ }))
+    await userEvent.keyboard('e')
+    await expect(args.onComplete).toHaveBeenLastCalledWith('m3')
+    await userEvent.click(canvas.getByRole('button', { name: 'Undo' }))
+    await expect(args.onUndoComplete).toHaveBeenCalledWith('m3')
+    await expect(canvas.getByText('1 result')).toBeVisible()
+    await expect(subject(canvasElement)).toHaveTextContent('Move Friday dinner?')
+    await expect(canvas.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
+    // The list had emptied, so focus returns to the restored row.
+    await expect(canvas.getByRole('button', { name: /Move Friday dinner\?/ })).toHaveFocus()
+  },
+}
+
+/**
+ * The caller's completion fails after a second, as when Spark is
+ * unreachable. The message leaves the list at once and comes back when the
+ * failure arrives; no Completed notice shows.
+ */
+export const FailedComplete: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  render: (args) => <WithData {...args} completeAfter={1000} failComplete />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: /Can delivery move/ }))
+    await userEvent.keyboard('e')
+    await expect(canvas.getByText('1 result')).toBeVisible()
+    await waitFor(() => expect(canvas.getByText('2 results')).toBeVisible(), { timeout: 3000 })
+    await expect(canvas.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: /^Done/ })).toHaveTextContent('1')
+  },
+}
+
+/**
+ * Spark is unreachable: the top bar says so and when it last synced. The
+ * page keeps working on the data it has.
+ */
+export const Disconnected: Story = {
+  args: {
+    topBar: {
+      ...meta.args.topBar,
+      syncStatus: 'disconnected',
+      syncLabel: 'Disconnected · last sync 10:14',
+    },
   },
 }
 
