@@ -1,0 +1,84 @@
+/* WorkbenchTemplate, the Compact workbench page layout. The slots bring their
+ * own surfaces, borders, type and focus; this places them. Token values live
+ * in src/styles/tokens.css. */
+.workbench {
+  box-sizing: border-box;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--ink);
+  background: var(--paper);
+  font: var(--text-ui);
+}
+
+/* The top bar keeps its height, whatever the slot renders; the workspace
+ * takes the rest. */
+.workbench > * {
+  flex: none;
+}
+
+/* The source rail is 184px. minmax(0, 1fr) lets the main area give way
+ * instead of widening the page. */
+.workbench > .workbench__workspace {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 184px minmax(0, 1fr);
+}
+
+/* The queue is bounded: 280px, the narrowest it is built for, up to the
+ * approved 400px. The reader takes the rest. */
+.workbench__main {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: clamp(280px, 30vw, 400px) minmax(0, 1fr);
+}
+
+/* Each pane is as tall as the workspace. The organisms fill it and scroll
+ * inside; a plain slot, such as an empty state, scrolls here instead, so the
+ * page never does. */
+.workbench__sidebar,
+.workbench__queue,
+.workbench__reader {
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.workbench__queue {
+  border-right: 1px solid var(--line);
+}
+
+/* On narrower desktops the rail takes the source's narrowest width, 156px. */
+@media (max-width: 1024px) {
+  .workbench > .workbench__workspace {
+    grid-template-columns: 156px minmax(0, 1fr);
+  }
+}
+
+/* At 600px and below the top bar sits above one pane: the queue or, as in
+ * the source's mobile reader, the reader. The rail and the other pane leave
+ * the layout, the tab order and the accessibility tree. */
+@media (max-width: 600px) {
+  .workbench > .workbench__workspace,
+  .workbench__main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workbench__sidebar,
+  .workbench--mobile-reader .workbench__queue,
+  .workbench--mobile-queue .workbench__reader {
+    display: none;
+  }
+
+  /* The queue's right border only divides it from the reader. */
+  .workbench__queue {
+    border-right: 0;
+  }
+}
