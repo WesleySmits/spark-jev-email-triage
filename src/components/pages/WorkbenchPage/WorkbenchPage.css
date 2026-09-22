@@ -1,0 +1,6 @@
+/* WorkbenchPage. The template fills this box, so it passes on the height of
+ * the caller's bounded parent. */
+.workbench-page {
+  height: 100%;
+  min-height: 0;
+}
