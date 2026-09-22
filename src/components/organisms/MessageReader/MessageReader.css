@@ -56,6 +56,22 @@
   margin-bottom: 0;
 }
 
+/* A quoted reply from formatMessageBody: set back by a rule and quieter
+ * text, nested as deep as the mail nests it. */
+.message-reader__quote {
+  padding-left: var(--s3);
+  border-left: 2px solid var(--line-strong);
+  color: var(--muted);
+}
+
+.message-reader__quote > * {
+  margin: 0 0 var(--s3);
+}
+
+.message-reader__quote > :last-child {
+  margin-bottom: 0;
+}
+
 .message-reader__review {
   max-width: 820px;
   margin-top: var(--s6);

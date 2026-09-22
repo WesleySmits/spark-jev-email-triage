@@ -13,6 +13,7 @@ import { EmptyState } from '../../molecules/EmptyState/EmptyState'
 import { LocalStatusToast } from '../../molecules/LocalStatusToast/LocalStatusToast'
 import { MessageQueue } from '../../organisms/MessageQueue/MessageQueue'
 import { MessageReader } from '../../organisms/MessageReader/MessageReader'
+import { formatMessageBody } from '../../organisms/MessageReader/formatMessageBody'
 import { Sidebar, type SidebarItem } from '../../organisms/Sidebar/Sidebar'
 import { TopBar } from '../../organisms/TopBar/TopBar'
 import { WorkbenchTemplate } from '../../templates/WorkbenchTemplate/WorkbenchTemplate'
@@ -477,7 +478,7 @@ type ReaderBodyProps = Readonly<{ body: BodyState; retry: () => void }>
 /** The open message's body, or why it isn't there (yet). */
 function ReaderBody({ body, retry }: ReaderBodyProps) {
   if (body.status === 'ready') {
-    return body.text.split(/\n{2,}/).map((paragraph, index) => <p key={index}>{paragraph}</p>)
+    return formatMessageBody(body.text)
   }
   if (body.status !== 'error') return <p>Loading message…</p>
   if (body.reason === 'missing') {
