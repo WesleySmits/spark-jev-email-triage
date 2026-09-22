@@ -5,6 +5,7 @@ dist/
 .nitro/
 .vinxi/
 storybook-static/
+.vitest/
 *.log
 .env
 .env.*
