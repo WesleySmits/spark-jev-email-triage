@@ -7,6 +7,7 @@
 import type { z } from 'zod'
 import type { emailListingSchema } from '../domain/email'
 import type { MailReader, ReadOptions } from '../domain/mail-reader'
+import { mailboxCopyId, type MailboxCopyRef } from '../domain/mailbox-copy'
 import { SparkError } from '../spark/errors'
 import { inboxSummarySchema, messageBodySchema, type InboxSummary, type MessageBody } from './inbox'
 import type { BodyRequest, LiveInbox } from './live-inbox'
@@ -56,11 +57,10 @@ export class BodyUnavailableError extends Error {
 
 export function createLiveInbox({ reader, timeZone, now = () => new Date() }: LiveInboxOptions) {
   const format = timeFormats(timeZone)
-  /** The messages the last list offered, as `mailbox id`. Bodies are read only for these. */
+  /** The mailbox copies the last list offered, by copy id. Bodies are read only for these. */
   let offered = new Set<string>()
   /** Counts list reads, so only the latest one decides what is offered. */
   let reads = 0
-  const key = (mailbox: string, id: string) => `${mailbox} ${id}`
 
   const list = async (options?: ReadOptions): Promise<LiveInbox> => {
     // Nothing is offered while a list reads, and a list that fails offers
@@ -86,7 +86,7 @@ export function createLiveInbox({ reader, timeZone, now = () => new Date() }: Li
       const messages = newestFirst(unique(listed)).map(({ listing, mailbox }) =>
         summarize(listing, mailbox, format.listed(listing.date, at)),
       )
-      if (read === reads) offered = new Set(messages.map((m) => key(m.mailbox, m.id)))
+      if (read === reads) offered = new Set(messages.map((message) => message.id))
       return { status: 'ready', readAt: format.clock(at), mailboxes, messages }
     } catch (error) {
       return { status: 'unavailable', reason: reasonFor(error) }
@@ -94,17 +94,22 @@ export function createLiveInbox({ reader, timeZone, now = () => new Date() }: Li
   }
 
   /**
-   * The plain-text body of one listed message, `null` when it has none.
-   * A message the last list didn't offer is listed again first, e.g. after
+   * The plain-text body of one listed mailbox copy, named by its copy id,
+   * `null` when it has none. It is read through the mailbox it was listed
+   * in. A copy the last list didn't offer is listed again first, e.g. after
    * a restart; if it still isn't there, the read fails.
    */
   const body = async ({ mailbox, id }: BodyRequest, options?: ReadOptions) => {
     try {
-      if (!offered.has(key(mailbox, id))) await list(options)
-      if (!offered.has(key(mailbox, id))) throw new BodyUnavailableError()
-      const thread = await reader.readThread({ mailboxId: mailbox, messageId: id }, options)
+      const ref: MailboxCopyRef = { mailboxId: mailbox, messageId: id }
+      const copyId = mailboxCopyId(ref)
+      if (!offered.has(copyId)) await list(options)
+      if (!offered.has(copyId)) throw new BodyUnavailableError()
+      const thread = await reader.readThread(ref, options)
       const text = thread.messages.find((message) => message.id === id)?.bodyText ?? null
-      return text === null ? null : messageBodySchema.parse({ id, text } satisfies MessageBody)
+      return text === null
+        ? null
+        : messageBodySchema.parse({ id: copyId, text } satisfies MessageBody)
     } catch {
       throw new BodyUnavailableError()
     }
@@ -129,7 +134,8 @@ function summarize(
   time: Pick<InboxSummary, 'time' | 'dateTime'>,
 ): InboxSummary {
   return inboxSummarySchema.parse({
-    id: listing.messageId,
+    id: mailboxCopyId({ mailboxId: mailbox.id, messageId: listing.messageId }),
+    messageId: listing.messageId,
     workflow: 'inbox',
     mailbox: mailbox.id,
     sender: shown(listing.sender) ?? 'Sender unavailable',
@@ -142,12 +148,16 @@ function summarize(
   })
 }
 
-/** The first listing of each message; one message can show in two mailboxes. */
+/**
+ * The first listing of each mailbox copy. One message id in two mailboxes,
+ * e.g. a delivery to two aliases, is two copies, and both stay.
+ */
 function unique(listed: readonly Listed[]) {
   const seen = new Set<string>()
-  return listed.filter(({ listing }) => {
-    if (seen.has(listing.messageId)) return false
-    seen.add(listing.messageId)
+  return listed.filter(({ listing, mailbox }) => {
+    const copyId = mailboxCopyId({ mailboxId: mailbox.id, messageId: listing.messageId })
+    if (seen.has(copyId)) return false
+    seen.add(copyId)
     return true
   })
 }
