@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState, type ComponentProps, type ReactNode } from 'react'
-import { fn } from 'storybook/test'
+import { expect, fn } from 'storybook/test'
 import { ReviewPanel } from '../ReviewPanel/ReviewPanel'
+import { formatMessageBody } from './formatMessageBody'
 import { MessageReader } from './MessageReader'
 
 type Props = ComponentProps<typeof MessageReader>
@@ -14,11 +15,11 @@ const body = [
   'Regards,\nMarit',
 ].join('\n\n')
 
-// What a caller does with plain text: one paragraph per blank line. The
-// reader keeps single line breaks inside a paragraph.
+// What the live page does with plain text: formatMessageBody makes one
+// paragraph per blank line, keeps single line breaks and quotes, and reduces
+// Markdown-like links to their labels.
 function paragraphs(children: ReactNode) {
-  if (typeof children !== 'string') return children
-  return children.split(/\n{2,}/).map((text, index) => <p key={index}>{text}</p>)
+  return typeof children === 'string' ? formatMessageBody(children) : children
 }
 
 // A bounded reader column like the source's: the reader fills it and only its
@@ -55,7 +56,11 @@ const meta = {
     },
   },
   argTypes: {
-    children: { control: 'text', description: 'Plain text here; one paragraph per blank line.' },
+    children: {
+      control: 'text',
+      description:
+        'Plain text here, shown through formatMessageBody; one paragraph per blank line.',
+    },
     header: { control: 'object' },
     contentLabel: { control: 'text' },
     mobileBar: { control: 'object' },
@@ -171,6 +176,39 @@ export const HostilePlainText: Story = {
       '<style>body { display: none }</style><iframe src="https://evil.example"></iframe>',
       'Kind regards,\nAccounts',
     ].join('\n\n'),
+  },
+}
+
+/**
+ * Plain text as a newsletter or reply arrives from Spark: Markdown-like links
+ * around long tracking URLs, a linked logo, bold markers and a quoted reply.
+ * Links show as their label, or the hostname when the label is empty; nothing
+ * is a link, no image loads, and the quote keeps its structure. A malformed
+ * link and a `javascript:` link with no label stay literal text.
+ */
+export const MarkdownLikeText: Story = {
+  args: {
+    header: {
+      ...meta.args.header,
+      subject: 'Your September update',
+      status: { tone: 'neutral', label: 'Newsletter' },
+    },
+    children: [
+      '[![Studio Noord](https://cdn.example.com/logo.png)](https://click.example.com/ls/click?upn=eyJhbGciOiJIUzI1NiJ9.dGhpcy1pcy1hLWxvbmctdHJhY2tpbmctdG9rZW4)',
+      '**Three workplaces, one idea.** This month we look at compact desks and what they leave out.',
+      '[Read the article](https://click.example.com/ls/click?upn=eyJ1c2VyIjoiMTIzNDU2Nzg5MCIsImNhbXBhaWduIjoic2VwdGVtYmVyIn0.long-opaque-token) · [](https://www.example.org/unsubscribe?u=8f2c1a9b7d)',
+      'Café opening: **Zaterdag 27 september** in Utrecht 🎉\nWe hope to see you there.',
+      '> On Monday, Marit Vos wrote:\n> Could you send the **final copy**?\n>\n> > Earlier: [the brief](https://docs.example.com/brief)',
+      'Not a link: [unfinished](https://example.com and [](javascript:alert(1)) stay as written.',
+    ].join('\n\n'),
+  },
+  play: async ({ canvasElement }) => {
+    const body = canvasElement.querySelector('.message-reader__body')
+    await expect(body).not.toBeNull()
+    await expect(body?.querySelectorAll('a, img, script, iframe, [href], [src]')).toHaveLength(0)
+    await expect(body?.textContent).not.toContain('click.example.com')
+    await expect(body?.textContent).toContain('Read the article · example.org')
+    await expect(body?.querySelectorAll('blockquote blockquote')).toHaveLength(1)
   },
 }
 

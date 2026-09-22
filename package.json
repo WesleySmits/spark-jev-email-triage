@@ -19,11 +19,12 @@
     "fallow": "fallow --fail-on-issues",
     "storybook": "STORYBOOK_DISABLE_TELEMETRY=true storybook dev --port 6006",
     "build-storybook": "STORYBOOK_DISABLE_TELEMETRY=true storybook build",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm fallow && pnpm build && pnpm build-storybook",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm test-storybook && pnpm fallow && pnpm build && pnpm build-storybook",
     "prepare": "husky",
     "fallow:audit": "fallow audit --base origin/main",
     "eval:jev:live": "vitest run --config vitest.live.config.ts --reporter=verbose",
-    "shadow": "tsx src/shadow/cli.ts"
+    "shadow": "tsx src/shadow/cli.ts",
+    "test-storybook": "vitest run --config vitest.storybook.config.ts"
   },
   "dependencies": {
     "@tanstack/react-router": "1.170.38",
@@ -42,6 +43,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
+    "@vitest/browser-playwright": "5.0.1",
     "eslint": "10.11.0",
     "eslint-config-prettier": "10.1.8",
     "eslint-plugin-react-hooks": "7.1.1",
@@ -51,6 +53,7 @@
     "husky": "9.1.7",
     "lint-staged": "17.5.1",
     "nitro": "3.0.260903-beta",
+    "playwright": "1.63.0",
     "postcss": "8.5.28",
     "prettier": "3.9.8",
     "storybook": "10.6.0",

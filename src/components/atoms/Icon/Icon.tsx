@@ -49,6 +49,19 @@ const paths = {
       <path d="M5 11h8a6 6 0 0 1 6 6" />
     </>
   ),
+  // Added for the Spark connection states, in the same 24px line style.
+  refresh: (
+    <>
+      <path d="M19 12a7 7 0 1 1-2.05-4.95" />
+      <path d="M19 4v4h-4" />
+    </>
+  ),
+  info: (
+    <>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 11v5M12 8v.1" />
+    </>
+  ),
 } satisfies Record<string, ReactElement>
 
 type IconName = keyof typeof paths

@@ -1,0 +1,51 @@
+/* App base styles. Load after tokens.css. Components style themselves. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font: var(--text-ui);
+}
+
+/* The workbench fills the viewport; its panes scroll, not the page. */
+.app-root {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* A full-page notice, e.g. when Spark is unavailable. */
+.app-notice {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--s6);
+}
+
+.app-notice > * {
+  width: min(100%, var(--measure-message));
+}

@@ -11,7 +11,8 @@ type MessageReaderProps = Readonly<{
   header: Omit<ComponentProps<typeof ReaderHeader>, 'subjectId' | 'className'>
   /**
    * The message body as plain React nodes, e.g. one `<p>` per paragraph. The
-   * caller turns the mail into safe text first; the reader never renders HTML.
+   * caller turns the mail into safe text first, usually with
+   * formatMessageBody; the reader never renders HTML.
    */
   children: ReactNode
   /** Accessible name of the scrollable content region. Defaults to "Message content". */

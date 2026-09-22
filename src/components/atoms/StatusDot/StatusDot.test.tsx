@@ -20,6 +20,12 @@ describe('StatusDot', () => {
     )
   })
 
+  it.each(['waiting', 'checking', 'neutral'] as const)('applies the %s tone', (tone) => {
+    expect((StatusDot({ tone }) as Element).props['className']).toBe(
+      `status-dot status-dot--${tone}`,
+    )
+  })
+
   it('is a named image with a label', () => {
     const { props } = StatusDot({ tone: 'danger', label: 'Disconnected' }) as Element
     expect(props['role']).toBe('img')

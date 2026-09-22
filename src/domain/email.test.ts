@@ -79,7 +79,8 @@ describe('emailListingSchema', () => {
     messageId: '1001',
     mailboxId: 'mailbox-1',
     from: { address: 'Sender@Example.com', name: 'Sender' },
-    subject: 'Subject',
+    sender: { text: 'Sender', cut: false },
+    subject: { text: 'Subject', cut: false },
     date: '2026-01-05T09:00:00+01:00',
   }
 
@@ -88,14 +89,31 @@ describe('emailListingSchema', () => {
   })
 
   it('accepts unavailable sender, subject, and date', () => {
-    const parsed = emailListingSchema.parse({ ...listing, from: null, subject: null, date: null })
+    const parsed = emailListingSchema.parse({
+      ...listing,
+      from: null,
+      sender: null,
+      subject: null,
+      date: null,
+    })
 
-    expect(parsed).toMatchObject({ from: null, subject: null, date: null })
+    expect(parsed).toMatchObject({ from: null, sender: null, subject: null, date: null })
+  })
+
+  it('keeps a value the list cut apart from a whole one', () => {
+    const parsed = emailListingSchema.parse({
+      ...listing,
+      from: null,
+      subject: { text: ' Your monthly statem ', cut: true },
+    })
+
+    expect(parsed.subject).toEqual({ text: 'Your monthly statem', cut: true })
   })
 
   it.each([
     ['a blank message id', { messageId: ' ' }, 'messageId'],
     ['a timestamp without offset', { date: '2026-01-05T09:00' }, 'date'],
+    ['blank listed text', { subject: { text: ' ', cut: true } }, 'subject.text'],
   ])('rejects %s', (_, overrides, path) => {
     expect(issuePaths(emailListingSchema.safeParse({ ...listing, ...overrides }))).toEqual([path])
   })
