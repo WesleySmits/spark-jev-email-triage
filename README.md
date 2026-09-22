@@ -16,17 +16,18 @@ pnpm dev
 
 ## Quality commands
 
-| Command             | Purpose                                             |
-| ------------------- | --------------------------------------------------- |
-| `pnpm format`       | Format files with Prettier                          |
-| `pnpm format:check` | Verify formatting                                   |
-| `pnpm lint`         | ESLint with type-aware rules, zero warnings         |
-| `pnpm typecheck`    | `tsc --noEmit` in strict mode                       |
-| `pnpm test`         | Run Vitest once                                     |
-| `pnpm fallow`       | Dead code, cycles, complexity, and duplication      |
-| `pnpm fallow:audit` | Fallow audit of changes against `origin/main`       |
-| `pnpm build`        | Production build                                    |
-| `pnpm check`        | Format check, lint, typecheck, test, Fallow, builds |
+| Command               | Purpose                                              |
+| --------------------- | ---------------------------------------------------- |
+| `pnpm format`         | Format files with Prettier                           |
+| `pnpm format:check`   | Verify formatting                                    |
+| `pnpm lint`           | ESLint with type-aware rules, zero warnings          |
+| `pnpm typecheck`      | `tsc --noEmit` in strict mode                        |
+| `pnpm test`           | Run Vitest once                                      |
+| `pnpm test-storybook` | Run every story and its play function in Chromium    |
+| `pnpm fallow`         | Dead code, cycles, complexity, and duplication       |
+| `pnpm fallow:audit`   | Fallow audit of changes against `origin/main`        |
+| `pnpm build`          | Production build                                     |
+| `pnpm check`          | Format check, lint, typecheck, tests, Fallow, builds |
 
 `pnpm eval:jev:live` runs the live Jev evaluation over synthetic fixtures. It
 calls the TypeSafe API, needs `TYPESAFE_API_KEY`, reports itself blocked
@@ -61,6 +62,11 @@ Git hooks:
 
 `pnpm storybook` starts Storybook on http://localhost:6006.
 `pnpm build-storybook` writes a static build to `storybook-static/`; CI runs it.
+`pnpm test-storybook` renders every story and runs its play function in
+headless Chromium through Vitest browser mode and Storybook's portable
+stories (`.storybook/stories.test.ts`). It starts no Storybook server. A
+story's `viewport` global sets the window size; other stories get 1280×1024.
+The first local run needs `pnpm exec playwright install --only-shell chromium`.
 
 ## Dokploy deployment
 
@@ -128,7 +134,8 @@ Git hooks:
 - The only secret is `TYPESAFE_API_KEY`, read server-side from the
   environment. The SDK's logging is off and its base URL is pinned. No
   deployment configuration.
-- CI runs every quality command and the build on pull requests and `main`.
+- CI runs every quality command, the Storybook play tests, and the build on
+  pull requests and `main`.
 - On pull requests, CI also runs commitlint and the Fallow changed-code audit.
 - CI fails on `git diff --check` errors or uncommitted generated files.
 - Branch protection is not configured yet, so CI results are not enforced on merge.
