@@ -20,11 +20,13 @@ type WorkbenchTemplateProps = Readonly<{
   /**
    * The one pane shown at 600px and below, under the top bar. The caller owns
    * this state, e.g. "queue" until a message opens and again after the mobile
-   * bar's back button. It has no effect on wider screens. Defaults to "reader".
-   * The pane that hides takes focus with it, so on a switch the caller moves
-   * focus into the pane that shows, e.g. the opened row after going back.
+   * bar's back button. Required, so a page without an open message can't
+   * strand mobile users on an empty reader. It has no effect on wider
+   * screens. The pane that hides takes focus with it, so on a switch the
+   * caller moves focus into the pane that shows, e.g. the opened row after
+   * going back.
    */
-  mobilePane?: 'queue' | 'reader' | undefined
+  mobilePane: 'queue' | 'reader'
   className?: string | undefined
 }>
 
@@ -66,7 +68,7 @@ export function WorkbenchTemplate({
   sidebar,
   queue,
   reader,
-  mobilePane = 'reader',
+  mobilePane,
   className,
 }: WorkbenchTemplateProps) {
   const classes = ['workbench', `workbench--mobile-${mobilePane}`, className]

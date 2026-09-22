@@ -5,18 +5,18 @@ import { describe, expect, it } from 'vitest'
 import { WorkbenchTemplate } from './WorkbenchTemplate'
 
 type Element = ReactElement<Record<string, unknown>>
+type Props = Parameters<typeof WorkbenchTemplate>[0]
 
 // WorkbenchTemplate is a plain function of its props, so the returned element
 // shows where each slot lands. Landmarks, focus, reflow and scrolling are
 // checked in Storybook.
-const slots = {
+const slots: Props = {
   topBar: <header>Top bar</header>,
   sidebar: <aside>Sidebar</aside>,
   queue: <section>Queue</section>,
   reader: <article>Reader</article>,
+  mobilePane: 'reader',
 }
-
-type Props = Parameters<typeof WorkbenchTemplate>[0]
 
 function render(overrides: Partial<Props> = {}) {
   const root = WorkbenchTemplate({ ...slots, ...overrides }) as Element
@@ -85,10 +85,12 @@ describe('WorkbenchTemplate', () => {
 
   it('bounds the queue and lets the reader take the rest on desktop', () => {
     const desktop = rules(null)
-    expect(desktop.get('.workbench')?.get('grid-template-rows')).toBe('auto minmax(0, 1fr)')
-    expect(desktop.get('.workbench__workspace')?.get('grid-template-columns')).toBe(
-      '184px minmax(0, 1fr)',
-    )
+    expect(desktop.get('.workbench')?.get('flex-direction')).toBe('column')
+    expect(desktop.get('.workbench > *')?.get('flex')).toBe('none')
+    const workspace = desktop.get('.workbench > .workbench__workspace')
+    expect(workspace?.get('flex')).toBe('1 1 auto')
+    expect(workspace?.get('min-height')).toBe('0')
+    expect(workspace?.get('grid-template-columns')).toBe('184px minmax(0, 1fr)')
     expect(desktop.get('.workbench__main')?.get('grid-template-columns')).toBe(
       'clamp(280px, 30vw, 400px) minmax(0, 1fr)',
     )
@@ -100,7 +102,9 @@ describe('WorkbenchTemplate', () => {
 
   it('narrows the rail on smaller desktops', () => {
     expect(
-      rules('(max-width: 1024px)').get('.workbench__workspace')?.get('grid-template-columns'),
+      rules('(max-width: 1024px)')
+        .get('.workbench > .workbench__workspace')
+        ?.get('grid-template-columns'),
     ).toBe('156px minmax(0, 1fr)')
   })
 
@@ -114,7 +118,9 @@ describe('WorkbenchTemplate', () => {
       expect(mobile.get(hidden)?.get('display')).toBe('none')
     }
     expect(mobile.get('.workbench__main')?.get('grid-template-columns')).toBe('minmax(0, 1fr)')
-    expect(mobile.get('.workbench__workspace')?.get('grid-template-columns')).toBe('minmax(0, 1fr)')
+    expect(mobile.get('.workbench > .workbench__workspace')?.get('grid-template-columns')).toBe(
+      'minmax(0, 1fr)',
+    )
     expect(mobile.get('.workbench__queue')?.get('border-right')).toBe('0')
   })
 })
