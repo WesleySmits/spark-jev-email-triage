@@ -65,6 +65,17 @@ export default defineConfig(
     rules: { 'no-restricted-imports': ['error', browserOnlyImports(['./*', '../*'])] },
   },
   {
+    // Routes render. They read mail only through a seam in `src/app`, which
+    // is where the server boundary and the provider stay.
+    files: ['src/routes/**/*.tsx'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [{ group: serverOnly, message: serverOnlyMessage }] },
+      ],
+    },
+  },
+  {
     languageOptions: {
       globals: { ...globals.browser, ...globals.node },
       parserOptions: {
