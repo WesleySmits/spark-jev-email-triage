@@ -37,7 +37,7 @@ const details: Readonly<Record<string, Pick<InboxFixture, 'workflow' | 'body' | 
 
 const messages: readonly WorkbenchMessage[] = QueueStories.args.messages.map((message) => {
   const { workflow, address } = details[message.id] ?? { workflow: 'review' }
-  return { ...message, workflow, address }
+  return { ...message, workflow, mailbox: message.account.marker, address }
 })
 
 const bodies = new Map(Object.entries(details).map(([id, { body }]) => [id, body]))
@@ -618,5 +618,51 @@ export const ReadOnlyMobile: Story = {
     await userEvent.click(canvas.getByRole('button', { name: /Can delivery move/ }))
     await expect(content(canvasElement)).toHaveFocus()
     await bodyShows(canvasElement, 'Hi Wesley,')
+  },
+}
+
+// Two mailboxes whose rows share one marker color, as live mail can.
+const sharedMarker = messages.map((message, index) => {
+  const mailbox = index % 2 === 0 ? 'first@mail.example' : 'second@mail.example'
+  return {
+    ...message,
+    workflow: 'inbox',
+    mailbox,
+    account: { marker: 'studio', label: mailbox },
+  } satisfies WorkbenchMessage
+})
+
+/**
+ * Live-shaped and read-only: one workflow and two mailboxes with the same
+ * marker color. A mailbox filter narrows by the mailbox itself, never by its
+ * color, and only the open message's body is asked for.
+ */
+export const SharedMarkerMailboxes: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: {
+    ...readOnly,
+    messages: sharedMarker,
+    loadBody: fn(bodiesAfter(0)),
+    workflows: [{ id: 'inbox', icon: 'inbox', label: 'Recent mail' }],
+    mailboxes: [
+      { id: 'first@mail.example', account: 'studio', label: 'first@mail.example' },
+      { id: 'second@mail.example', account: 'studio', label: 'second@mail.example' },
+    ],
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('heading', { level: 1, name: 'Recent mail' })).toBeVisible()
+    await expect(canvas.getByText('4 results')).toBeVisible()
+    await bodyShows(canvasElement, 'Hi Wesley,')
+    await rail(canvasElement, 'second@mail.example')
+    await expect(canvas.getByText('2 results')).toBeVisible()
+    await expect(
+      canvas.queryByRole('button', { name: /Can delivery move/ }),
+    ).not.toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: /Newsletter: work/ })).toBeVisible()
+    await bodyShows(canvasElement, 'The company name on invoice AL-2048')
+    await expect(args.loadBody).toHaveBeenCalledTimes(2)
+    await expect(args.loadBody).toHaveBeenLastCalledWith('m2', expect.anything())
+    await expect(canvas.queryByRole('button', { name: 'Complete' })).not.toBeInTheDocument()
   },
 }

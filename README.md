@@ -106,21 +106,39 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
 
 ## Safety status
 
-- The app's root route renders the WorkbenchPage as a demo on fictional
-  sample data from `src/app/demo.ts`. The sync status says so. Complete only
-  moves a message to Done in the page's memory; the app reads no mail, writes
-  nothing, and changes no mailbox.
+- The app's root route shows recent Spark mail, strictly read-only. Its
+  loader calls `getLiveInbox` in `src/app/live-inbox.functions.ts`, a server
+  function: it discovers the readable mailboxes (at most 5), lists the 10
+  most recent Inbox messages in each, one Spark call at a time, and returns
+  strict summaries without a body, newest first. Opening a message calls
+  `getLiveBody` for that message only; it returns that message's plain-text
+  body, or `null` when it has none, and reads only messages the last list
+  offered. Both answer only requests from this computer (loopback) and send
+  `Cache-Control: no-store`.
+- When Spark is missing, fails, or prints output that doesn't parse, the
+  page says so and shows no mail; it never falls back to sample data.
+  Errors reach the browser only as a coarse reason or a fixed message.
+- The page runs in `read-only` completion mode: no Complete, E, Completed
+  notice or Undo. The sync button only reads the inbox again.
+- Spark wiring lives in `*.server.ts` files, which TanStack Start keeps out
+  of the client build; ESLint also keeps components and stories from
+  importing `*.server`, `*.functions`, `src/spark` and Node built-ins.
+- Live mail isn't triaged yet, so every message is in one "Recent mail"
+  workflow and reads "Not triaged". Spark's list cuts long senders and
+  subjects; a cut value shows as unavailable rather than guessed.
 - `src/app/inbox.ts` is the browser-safe read model: queue rows are strict
-  summaries without a body, and the page loads one body at a time, only
-  when its message opens, through an injected loader. A late response for a
-  message that is no longer open is dropped. With `completion` set to
-  `read-only` the page offers no Complete, Undo or other mail change.
+  summaries without a body, each naming its `mailbox` (the account marker
+  is only a color, which several mailboxes may share), and the page loads
+  one body at a time, only when its message opens, through an injected
+  loader. A late response for a message that is no longer open is dropped.
+- `src/app/demo.ts` keeps fictional sample data for tests; the app no
+  longer shows it.
 - The only persistence is the local shadow-triage SQLite file (Node's
   built-in `node:sqlite`, migrated through `PRAGMA user_version`).
 - `src/spark` reads mail through the local `spark` CLI, read-only. Its command
   type allows only `accounts`, `emails`, and `thread`. It never uses a shell,
   runs one call at a time with a timeout and output limit, and logs no mail
-  content. Only the shadow command calls it.
+  content. The shadow command and the live inbox call it.
 - `src/jev` classifies one normalized thread with Jev through the official
   TypeSafe SDK. It sends a minimized state: the latest five messages with
   quoted history, URL queries, and long opaque tokens removed, bounded text,

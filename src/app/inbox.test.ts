@@ -12,6 +12,7 @@ import {
 const summary: InboxSummary = {
   id: 'a',
   workflow: 'review',
+  mailbox: 'studio',
   sender: 'Sender A',
   time: '09:00',
   subject: 'Subject A',
