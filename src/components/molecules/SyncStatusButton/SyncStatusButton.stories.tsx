@@ -13,7 +13,10 @@ const meta = {
     onClick: fn(),
   },
   argTypes: {
-    status: { control: 'inline-radio', options: ['connected', 'disconnected'] },
+    status: {
+      control: 'inline-radio',
+      options: ['connected', 'disconnected', 'waiting', 'checking', 'idle'],
+    },
     children: { control: 'text' },
     disabled: { control: 'boolean' },
   },
@@ -30,6 +33,21 @@ export const Disconnected: Story = {
 }
 
 export const Disabled: Story = { args: { disabled: true } }
+
+/** Waiting for Spark, expected back. Muted, not danger: nothing failed for good. */
+export const Waiting: Story = {
+  args: { status: 'waiting', children: 'Waiting for Spark · 09:41' },
+}
+
+/** A check runs now. */
+export const Checking: Story = {
+  args: { status: 'checking', children: 'Checking for Spark…' },
+}
+
+/** Not checked on its own, e.g. after an answer Spark couldn't give safely. */
+export const Idle: Story = {
+  args: { status: 'idle', children: 'Unexpected answer from Spark' },
+}
 
 // The caller owns the status. This story flips it on click, like the source's
 // offline preview; nothing is synced.

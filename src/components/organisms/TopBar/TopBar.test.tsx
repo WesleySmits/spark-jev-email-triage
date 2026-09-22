@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Avatar } from '../../atoms/Avatar/Avatar'
 import { Brand } from '../../molecules/Brand/Brand'
 import { SearchField } from '../../molecules/SearchField/SearchField'
-import { SyncStatusButton } from '../../molecules/SyncStatusButton/SyncStatusButton'
+import { SyncStatusButton, SyncStatusText } from '../../molecules/SyncStatusButton/SyncStatusButton'
 import { TopBar } from './TopBar'
 
 type Element = ReactElement<Record<string, unknown>>
@@ -76,6 +76,25 @@ describe('TopBar', () => {
     expect(avatar.props).toEqual({ initials: 'WS', label: 'Profiel Wesley Smits', size: 'sm' })
   })
 
+  it('disables the search while there is nothing to search', () => {
+    expect(render().search.props['disabled']).toBeUndefined()
+    expect(render({ searchDisabled: true }).search.props['disabled']).toBe(true)
+  })
+
+  it('shows the status as plain text when a click would do nothing', () => {
+    const { sync } = render({
+      syncStatus: 'idle',
+      syncLabel: 'Not on the Spark Mac',
+      onSyncClick: undefined,
+    })
+    expect(sync.type).toBe(SyncStatusText)
+    expect(sync.props).toMatchObject({
+      status: 'idle',
+      children: 'Not on the Spark Mac',
+      className: 'top-bar__sync',
+    })
+  })
+
   it('reports edits as the new query', () => {
     const onSearchChange = vi.fn()
     const { search } = render({ onSearchChange })
@@ -132,6 +151,6 @@ describe('TopBar', () => {
     expect(rules.get('.top-bar')?.get('display')).toBe('grid')
     expect(rules.get('.top-bar__search')?.get('grid-column')).toBe('1 / -1')
     expect(rules.get('.top-bar__search .search-input')?.get('height')).toBe('44px')
-    expect(rules.get('.button.top-bar__sync')?.get('min-height')).toBe('44px')
+    expect(rules.get('.top-bar .top-bar__sync')?.get('min-height')).toBe('44px')
   })
 })

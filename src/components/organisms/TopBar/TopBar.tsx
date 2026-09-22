@@ -1,7 +1,11 @@
 import { Avatar } from '../../atoms/Avatar/Avatar'
 import { Brand } from '../../molecules/Brand/Brand'
 import { SearchField } from '../../molecules/SearchField/SearchField'
-import { SyncStatusButton } from '../../molecules/SyncStatusButton/SyncStatusButton'
+import {
+  SyncStatusButton,
+  SyncStatusText,
+  type SyncStatus,
+} from '../../molecules/SyncStatusButton/SyncStatusButton'
 import './TopBar.css'
 
 type TopBarProps = Readonly<{
@@ -24,12 +28,17 @@ type TopBarProps = Readonly<{
   searchShortcut?: boolean | undefined
   /** `id` of the search input, so the caller can focus it or point a label at it. */
   searchId?: string | undefined
+  /** Disables the search, e.g. while there is no mail to search. */
+  searchDisabled?: boolean | undefined
   /** Sets the sync dot and text color. */
-  syncStatus: 'connected' | 'disconnected'
+  syncStatus: SyncStatus
   /** Visible sync text and the button's name, e.g. "Bijgewerkt 2 min geleden". */
   syncLabel: string
-  /** What the sync button does is up to the caller, e.g. show details or reconnect. */
-  onSyncClick: () => void
+  /**
+   * What the sync button does is up to the caller, e.g. show details or
+   * reconnect. Left out, the status shows as plain text instead of a button.
+   */
+  onSyncClick?: (() => void) | undefined
   /** Names the avatar, e.g. "Profiel Wesley Smits". */
   profileLabel: string
   /** One or two letters, e.g. "WS". */
@@ -73,6 +82,7 @@ export function TopBar({
   onSearchSubmit,
   searchShortcut,
   searchId,
+  searchDisabled,
   syncStatus,
   syncLabel,
   onSyncClick,
@@ -98,14 +108,21 @@ export function TopBar({
           placeholder={searchPlaceholder}
           shortcut={searchShortcut}
           value={searchValue}
+          disabled={searchDisabled}
           onChange={(event) => {
             onSearchChange(event.target.value)
           }}
         />
       </form>
-      <SyncStatusButton status={syncStatus} className="top-bar__sync" onClick={onSyncClick}>
-        {syncLabel}
-      </SyncStatusButton>
+      {onSyncClick ? (
+        <SyncStatusButton status={syncStatus} className="top-bar__sync" onClick={onSyncClick}>
+          {syncLabel}
+        </SyncStatusButton>
+      ) : (
+        <SyncStatusText status={syncStatus} className="top-bar__sync">
+          {syncLabel}
+        </SyncStatusText>
+      )}
       <Avatar initials={profileInitials} label={profileLabel} size="sm" />
     </header>
   )

@@ -17,6 +17,41 @@
   box-shadow: 0 0 0 3px var(--danger-soft);
 }
 
+/* Waiting for a connection that is expected back: hollow, so it reads as
+ * "not yet" rather than failed. The ring is --muted, 3:1 or more on every
+ * neutral surface. */
+.status-dot--waiting {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--muted);
+}
+
+/* A check is running. The pulse only eases the soft ring in and out. */
+.status-dot--checking {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  animation: status-dot-pulse 1.4s var(--ease-state) infinite alternate;
+}
+
+.status-dot--neutral {
+  background: var(--muted);
+}
+
+@keyframes status-dot-pulse {
+  from {
+    box-shadow: 0 0 0 1px var(--accent-soft);
+  }
+
+  to {
+    box-shadow: 0 0 0 4px var(--accent-soft);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-dot--checking {
+    animation: none;
+  }
+}
+
 /* Forced colors would erase the fill and the ring. Keep the dot visible in
  * the text color and keep danger's ring as a real outline. */
 @media (forced-colors: active) {
@@ -29,5 +64,14 @@
     box-shadow: none;
     outline: 1px solid CanvasText;
     outline-offset: 2px;
+  }
+
+  .status-dot--waiting {
+    background: Canvas;
+    box-shadow: inset 0 0 0 1.5px CanvasText;
+  }
+
+  .status-dot--checking {
+    box-shadow: none;
   }
 }

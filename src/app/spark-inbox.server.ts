@@ -1,23 +1,36 @@
 /**
- * The one live inbox this server reads, over the local Spark CLI. There is
- * a single reader, so Spark calls stay one at a time across requests.
+ * The one Spark reader this server uses, over the local Spark CLI, and the
+ * live inbox and readiness probe on top of it. Sharing the reader keeps
+ * Spark calls one at a time across requests.
  */
 import { createProcessTransport } from '../spark/process'
 import { createSparkMailReader } from '../spark/reader'
 import { createLiveInbox } from './live-inbox.server'
+import { createSparkReadiness } from './spark-readiness.server'
 
+// Spark Desktop prints times in the zone of the Mac it runs on.
+const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
+
+let reader: ReturnType<typeof createSparkMailReader> | undefined
 let inbox: ReturnType<typeof createLiveInbox> | undefined
+let readiness: ReturnType<typeof createSparkReadiness> | undefined
 
 /** Created on first use, so nothing runs until a request asks for mail. */
-export function sparkInbox() {
-  inbox ??= createLiveInbox({
-    reader: createSparkMailReader({
-      transport: createProcessTransport(),
-      // Spark Desktop prints times in the zone of the Mac it runs on.
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      log: () => undefined,
-    }),
-    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+function sparkReader() {
+  reader ??= createSparkMailReader({
+    transport: createProcessTransport(),
+    timeZone: timeZone(),
+    log: () => undefined,
   })
+  return reader
+}
+
+export function sparkInbox() {
+  inbox ??= createLiveInbox({ reader: sparkReader(), timeZone: timeZone() })
   return inbox
+}
+
+export function sparkReadiness() {
+  readiness ??= createSparkReadiness({ reader: sparkReader() })
+  return readiness
 }
