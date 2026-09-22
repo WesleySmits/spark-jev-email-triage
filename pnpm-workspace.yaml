@@ -1,4 +1,4 @@
 allowBuilds:
-  # esbuild (through tsx) ships its binary as an optional platform package,
-  # so its install script is not needed and stays blocked.
-  esbuild: false
+  # Dokploy runs pnpm's supply-chain policy during a clean Docker build.
+  # esbuild's installer must run so its platform binary is available to Vite.
+  esbuild: true
