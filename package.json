@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
+    "start": "node .output/server/index.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint --max-warnings=0 .",
@@ -49,6 +50,7 @@
     "globals": "17.12.0",
     "husky": "9.1.7",
     "lint-staged": "17.5.1",
+    "nitro": "3.0.260903-beta",
     "postcss": "8.5.28",
     "prettier": "3.9.8",
     "storybook": "10.6.0",
