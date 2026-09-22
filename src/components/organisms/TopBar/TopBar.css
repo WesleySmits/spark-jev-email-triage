@@ -28,7 +28,7 @@
   margin: 0;
 }
 
-.button.top-bar__sync {
+.top-bar .top-bar__sync {
   flex: 0 1 auto;
   margin-left: auto;
 }
@@ -55,7 +55,7 @@
     height: 44px;
   }
 
-  .button.top-bar__sync {
+  .top-bar .top-bar__sync {
     min-height: 44px;
     justify-self: end;
   }

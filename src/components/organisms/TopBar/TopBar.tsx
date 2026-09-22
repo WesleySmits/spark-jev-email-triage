@@ -1,7 +1,11 @@
 import { Avatar } from '../../atoms/Avatar/Avatar'
 import { Brand } from '../../molecules/Brand/Brand'
 import { SearchField } from '../../molecules/SearchField/SearchField'
-import { SyncStatusButton } from '../../molecules/SyncStatusButton/SyncStatusButton'
+import {
+  SyncStatusButton,
+  SyncStatusText,
+  type SyncStatus,
+} from '../../molecules/SyncStatusButton/SyncStatusButton'
 import './TopBar.css'
 
 type TopBarProps = Readonly<{
@@ -24,18 +28,53 @@ type TopBarProps = Readonly<{
   searchShortcut?: boolean | undefined
   /** `id` of the search input, so the caller can focus it or point a label at it. */
   searchId?: string | undefined
+  /** Disables the search, e.g. while there is no mail to search. */
+  searchDisabled?: boolean | undefined
   /** Sets the sync dot and text color. */
-  syncStatus: 'connected' | 'disconnected'
-  /** Visible sync text and the button's name, e.g. "Bijgewerkt 2 min geleden". */
+  syncStatus: SyncStatus
+  /** Visible sync text, e.g. "Updated at 09:42 · read only". */
   syncLabel: string
-  /** What the sync button does is up to the caller, e.g. show details or reconnect. */
-  onSyncClick: () => void
+  /**
+   * The sync button's accessible name when it should say what a click does,
+   * e.g. "Refresh mail · Updated at 09:42 · read only". Keep `syncLabel` in
+   * it, so voice control users can say what they see. Left out, the name is
+   * `syncLabel`.
+   */
+  syncActionLabel?: string | undefined
+  /**
+   * What the sync button does is up to the caller, e.g. show details or
+   * reconnect. Left out, the status shows as plain text instead of a button.
+   */
+  onSyncClick?: (() => void) | undefined
   /** Names the avatar, e.g. "Profiel Wesley Smits". */
   profileLabel: string
   /** One or two letters, e.g. "WS". */
   profileInitials: string
   className?: string | undefined
 }>
+
+type SyncProps = Pick<TopBarProps, 'syncStatus' | 'syncLabel' | 'syncActionLabel' | 'onSyncClick'>
+
+/** The sync status: a button when a click does something, plain text otherwise. */
+function syncElement({ syncStatus, syncLabel, syncActionLabel, onSyncClick }: SyncProps) {
+  if (!onSyncClick) {
+    return (
+      <SyncStatusText status={syncStatus} className="top-bar__sync">
+        {syncLabel}
+      </SyncStatusText>
+    )
+  }
+  return (
+    <SyncStatusButton
+      status={syncStatus}
+      className="top-bar__sync"
+      aria-label={syncActionLabel}
+      onClick={onSyncClick}
+    >
+      {syncLabel}
+    </SyncStatusButton>
+  )
+}
 
 /**
  * The product top bar from the Compact workbench: brand, current-result
@@ -58,8 +97,9 @@ type TopBarProps = Readonly<{
  *   onSearchChange={setQuery}
  *   onSearchSubmit={runSearch}
  *   syncStatus="connected"
- *   syncLabel="Bijgewerkt 2 min geleden"
- *   onSyncClick={showSyncDetails}
+ *   syncLabel="Updated at 09:42 · read only"
+ *   syncActionLabel="Refresh mail · Updated at 09:42 · read only"
+ *   onSyncClick={refresh}
  *   profileLabel="Profiel Wesley Smits"
  *   profileInitials="WS"
  * />
@@ -73,8 +113,10 @@ export function TopBar({
   onSearchSubmit,
   searchShortcut,
   searchId,
+  searchDisabled,
   syncStatus,
   syncLabel,
+  syncActionLabel,
   onSyncClick,
   profileLabel,
   profileInitials,
@@ -98,14 +140,13 @@ export function TopBar({
           placeholder={searchPlaceholder}
           shortcut={searchShortcut}
           value={searchValue}
+          disabled={searchDisabled}
           onChange={(event) => {
             onSearchChange(event.target.value)
           }}
         />
       </form>
-      <SyncStatusButton status={syncStatus} className="top-bar__sync" onClick={onSyncClick}>
-        {syncLabel}
-      </SyncStatusButton>
+      {syncElement({ syncStatus, syncLabel, syncActionLabel, onSyncClick })}
       <Avatar initials={profileInitials} label={profileLabel} size="sm" />
     </header>
   )

@@ -76,7 +76,7 @@ describe('listMailboxes', () => {
 describe('listRecentEmails', () => {
   const request = { mailboxId: 'support@example.com', limit: 3 }
 
-  it('lists messages and marks shortened or missing values unavailable', async () => {
+  it('lists messages, keeping the visible start of values Spark cut', async () => {
     const { reader } = setup(outputs())
 
     expect(await reader.listRecentEmails(request)).toEqual([
@@ -84,20 +84,23 @@ describe('listRecentEmails', () => {
         messageId: '1003',
         mailboxId: 'support@example.com',
         from: { address: 'sam@example.org', name: 'Sam Customer' },
-        subject: 'Damaged item in order EX-1002 🇳🇱',
+        sender: { text: 'Sam Customer', cut: false },
+        subject: { text: 'Damaged item in order EX-1002 🇳🇱', cut: false },
         date: '2026-01-10T12:05:00+01:00',
       },
       {
         messageId: '1002',
         mailboxId: 'support@example.com',
         from: { address: 'alerts@monitoring.example', name: null },
-        subject: null,
+        sender: { text: 'alerts@monitoring.example', cut: false },
+        subject: { text: 'A subject that is far too long to fit in the subj', cut: true },
         date: '2026-07-01T09:30:00+02:00',
       },
       {
         messageId: '1001',
         mailboxId: 'support@example.com',
         from: null,
+        sender: { text: 'Example Weekly Newsletter Tea', cut: true },
         subject: null,
         date: null,
       },

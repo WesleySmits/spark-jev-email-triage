@@ -24,6 +24,7 @@ import {
   afterRemoval,
   appliedFilter,
   defaultFilter,
+  mailboxLabel,
   neighbour,
   openedMessage,
   railGroups,
@@ -440,7 +441,10 @@ function PageRail({ state, canComplete, workflows, mailboxes }: PageRailProps) {
 
 type PaneProps = Readonly<{ state: PageState; title: string }>
 
-function Queue({ state, title }: PaneProps) {
+type QueueProps = PaneProps & Pick<PageInput, 'mailboxes'>
+
+/** The queue, headed by the workflow and the applied mailbox filter. */
+function Queue({ state, title, mailboxes }: QueueProps) {
   const count = state.shown.length
   return (
     <MessageQueue
@@ -448,7 +452,7 @@ function Queue({ state, title }: PaneProps) {
         title,
         headingLevel: 1,
         count: `${String(count)} ${count === 1 ? 'result' : 'results'}`,
-        context: 'Current filter',
+        context: mailboxLabel(state.filter.mailbox, mailboxes),
       }}
       messages={state.shown}
       currentId={state.open?.id}
@@ -615,7 +619,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             mailboxes={mailboxes}
           />
         }
-        queue={<Queue state={state} title={title} />}
+        queue={<Queue state={state} title={title} mailboxes={mailboxes} />}
         reader={
           <Reader
             state={state}

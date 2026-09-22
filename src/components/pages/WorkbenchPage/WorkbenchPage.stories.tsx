@@ -208,6 +208,9 @@ type Story = StoryObj<typeof meta>
 const rail = (root: HTMLElement, name: string) =>
   userEvent.click(within(root).getByRole('button', { name: new RegExp(`^${name}`) }))
 
+// The line under the queue title that names the applied mailbox filter.
+const queueContext = (root: HTMLElement) => root.querySelector('.queue-header__context')
+
 // The reader's heading: the open subject, or its empty state's title.
 const subject = (root: HTMLElement) =>
   within(within(root).getByRole('main')).getAllByRole('heading', { level: 2 }).at(-1)
@@ -711,7 +714,7 @@ const sharedMarker = messages.map((message, index) => {
 /**
  * Live-shaped and read-only: one workflow and two mailboxes with the same
  * marker color. A mailbox filter narrows by the mailbox itself, never by its
- * color, and only the open message's body is asked for.
+ * color, and the queue names it. Only the open message's body is asked for.
  */
 export const SharedMarkerMailboxes: Story = {
   globals: { viewport: { value: 'desktop', isRotated: false } },
@@ -729,9 +732,11 @@ export const SharedMarkerMailboxes: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByRole('heading', { level: 1, name: 'Recent mail' })).toBeVisible()
     await expect(canvas.getByText('4 results')).toBeVisible()
+    await expect(queueContext(canvasElement)).toHaveTextContent(/^All accounts$/)
     await bodyShows(canvasElement, 'Hi Wesley,')
     await rail(canvasElement, 'second@mail.example')
     await expect(canvas.getByText('2 results')).toBeVisible()
+    await expect(queueContext(canvasElement)).toHaveTextContent(/^second@mail\.example$/)
     await expect(
       canvas.queryByRole('button', { name: /Can delivery move/ }),
     ).not.toBeInTheDocument()

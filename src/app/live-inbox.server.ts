@@ -32,7 +32,7 @@ export interface LiveInboxOptions {
 }
 
 /** Why a read failed, without anything the provider said. */
-function reasonFor(error: unknown): Extract<LiveInbox, { status: 'unavailable' }>['reason'] {
+export function reasonFor(error: unknown): Extract<LiveInbox, { status: 'unavailable' }>['reason'] {
   if (!(error instanceof SparkError)) return 'failed'
   if (error.code === 'not_installed') return 'missing'
   return error.code === 'malformed_output' ? 'malformed' : 'failed'
@@ -119,7 +119,10 @@ type ShownMailbox = Readonly<{ id: string; account: Marker; label: string }>
 /** A listing with the mailbox it was listed in. */
 type Listed = Readonly<{ listing: Listing; mailbox: ShownMailbox }>
 
-/** One strict queue row for a listing. Lists can cut values, so some show as unavailable. */
+/** Listed text as the row shows it: a cut value ends in `…`, a missing one is `null`. */
+const shown = (value: Listing['subject']) => value && (value.cut ? `${value.text}…` : value.text)
+
+/** One strict queue row for a listing. Lists can cut values, so some end in `…`. */
 function summarize(
   listing: Listing,
   mailbox: ShownMailbox,
@@ -129,10 +132,10 @@ function summarize(
     id: listing.messageId,
     workflow: 'inbox',
     mailbox: mailbox.id,
-    sender: listing.from?.name ?? listing.from?.address ?? 'Sender unavailable',
+    sender: shown(listing.sender) ?? 'Sender unavailable',
     ...(listing.from && { address: listing.from.address }),
     ...time,
-    subject: listing.subject ?? 'Subject unavailable',
+    subject: shown(listing.subject) ?? 'Subject unavailable',
     snippet: '',
     account: { marker: mailbox.account, label: mailbox.label },
     status,
