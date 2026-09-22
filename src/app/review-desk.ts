@@ -11,7 +11,7 @@
  * No mailbox is changed, and no classifier is called.
  */
 import type { BodyLoader } from './inbox'
-import { liveBodyLoader, liveWorkflows, type LiveInbox } from './live-inbox'
+import { liveBodyLoader, liveWorkflows, type ClassifiedInbox } from './live-inbox'
 import { getLiveBody, getLiveInbox } from './live-inbox.functions'
 import type { ConnectionReason } from './reconnect'
 import type { SparkReadiness } from './spark-readiness'
@@ -21,11 +21,12 @@ import { getSparkReadiness } from './spark-readiness.functions'
 export type DeskReason = ConnectionReason
 
 /**
- * What one `open` found: the readable mailboxes and their recent rows,
- * without bodies, or why there are none. Plain data, so the route may hand
- * it to the browser, and `unavailable` never comes with messages.
+ * What one `open` found: the readable mailboxes, their recent rows without
+ * bodies, and what is stored about each row, or why there are none. Plain
+ * data, so the route may hand it to the browser, and `unavailable` never
+ * comes with messages.
  */
-export type DeskView = LiveInbox | Readonly<{ status: 'unavailable'; reason: 'unreachable' }>
+export type DeskView = ClassifiedInbox | Readonly<{ status: 'unavailable'; reason: 'unreachable' }>
 
 /** No rows to focus in: an unavailable desk lists nothing, sample or otherwise. */
 const rowsOf = (view: DeskView) => (view.status === 'ready' ? view.messages : [])
@@ -35,11 +36,13 @@ export const ReviewDesk = {
   workflows: liveWorkflows,
 
   /**
-   * Reads the desk once: the mailboxes this computer may read and a few
-   * recent messages in each, newest first and without bodies. It never
-   * rejects, so the page always has something to show: an app server that
-   * didn't answer is `unreachable`, like any other absence. Opening again
-   * reads again, which is all Refresh does.
+   * Reads the desk once: the mailboxes this computer may read, a few recent
+   * messages in each, newest first and without bodies, and the judgment
+   * shadow triage last stored about each of those rows. Reading judges
+   * nothing: no classifier is called, here or on opening again, which is all
+   * Refresh does. It never rejects, so the page always has something to
+   * show: an app server that didn't answer is `unreachable`, like any other
+   * absence, and a row with no stored judgment is simply unclassified.
    */
   open: (): Promise<DeskView> =>
     getLiveInbox().catch(() => ({ status: 'unavailable', reason: 'unreachable' }) as const),

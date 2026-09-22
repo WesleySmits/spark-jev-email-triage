@@ -49,6 +49,8 @@ pnpm shadow --mailbox you@example.com --apply        # classify with Jev and sto
   `--db` (default `.data/shadow-triage.sqlite`, which Git ignores).
 - `--apply` needs `TYPESAFE_API_KEY`; without it the command reports itself
   blocked.
+- `SHADOW_DATABASE_PATH` points the app at a database a run wrote elsewhere
+  with `--db`. The app only ever reads it.
 - Output is status and counts only. The exit code is `0` for completed or
   dry runs, `1` for failed, `2` for partial, `3` for blocked, and `64` for
   invalid options.
@@ -108,9 +110,10 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
 
 - The app's root route shows recent Spark mail, strictly read-only. It
   reads only through `ReviewDesk` in `src/app/review-desk.ts`, its one deep
-  read interface: `open` for the list, `focus` for one opened row's body and
-  `probe` for whether Spark answers. Everything below it stays behind that
-  module, so the route imports no server, Spark, Jev or persistence code.
+  read interface: `open` for the list and what was stored about it, `focus`
+  for one opened row's body and `probe` for whether Spark answers.
+  Everything below it stays behind that module, so the route imports no
+  server, Spark, Jev or persistence code.
 - `ReviewDesk.open` calls `getLiveInbox` in `src/app/live-inbox.functions.ts`,
   a server function: it discovers the readable mailboxes (at most 5), lists
   the 10 most recent Inbox messages in each, one Spark call at a time, and
@@ -120,6 +123,19 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
   message's plain-text body, or `null` when it has none, and reads only
   messages the last list offered. Both answer only requests from this
   computer (loopback) and send `Cache-Control: no-store`.
+- `ReviewDesk.open` also carries the judgment shadow triage last stored
+  about each listed row, read through `src/app/stored-classifications.server.ts`
+  from the local shadow database, opened read-only. Loading or refreshing
+  the page classifies nothing: no classifier is constructed and no Jev call
+  is made. A stored judgment applies to the one mailbox copy it covered, so
+  two alias copies of one delivery never share one, and only while it names
+  the current version: the latest message the store has observed in its
+  thread, the current rubric, and the pinned classifier build. Anything else
+  reads as `stale` and keeps its labels, a failed Jev attempt reads as
+  `provider_failure` and never as a classification, and a row nothing
+  applies to reads as `none`. A database that is missing, holds an
+  unsupported schema, or cannot be read gives every row `none`: all listed
+  mail still shows.
 - When Spark is missing, fails, or prints output that doesn't parse, the
   page says so and shows no mail; it never falls back to sample data.
   Errors reach the browser only as a coarse reason or a fixed message.
@@ -129,8 +145,8 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
   of the client build; ESLint also keeps components and stories from
   importing `*.server`, `*.functions`, `src/spark` and Node built-ins, and
   keeps routes from importing that server-only code at all.
-- Live mail isn't triaged yet, so every message is in one "Recent mail"
-  workflow and reads "Not triaged". Spark's list shows at most 30
+- The page shows no triage yet, stored or not, so every message is in one
+  "Recent mail" workflow and reads "Not triaged". Spark's list shows at most 30
   characters of a sender and 50 of a subject and has no uncut or
   structured form. A cut sender keeps its whole name when the address
   was cut, otherwise the visible start; a cut subject keeps its visible
