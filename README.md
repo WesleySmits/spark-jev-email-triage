@@ -106,15 +106,20 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
 
 ## Safety status
 
-- The app's root route shows recent Spark mail, strictly read-only. Its
-  loader calls `getLiveInbox` in `src/app/live-inbox.functions.ts`, a server
-  function: it discovers the readable mailboxes (at most 5), lists the 10
-  most recent Inbox messages in each, one Spark call at a time, and returns
-  strict summaries without a body, newest first. Opening a message calls
-  `getLiveBody` for that message only; it returns that message's plain-text
-  body, or `null` when it has none, and reads only messages the last list
-  offered. Both answer only requests from this computer (loopback) and send
-  `Cache-Control: no-store`.
+- The app's root route shows recent Spark mail, strictly read-only. It
+  reads only through `ReviewDesk` in `src/app/review-desk.ts`, its one deep
+  read interface: `open` for the list, `focus` for one opened row's body and
+  `probe` for whether Spark answers. Everything below it stays behind that
+  module, so the route imports no server, Spark, Jev or persistence code.
+- `ReviewDesk.open` calls `getLiveInbox` in `src/app/live-inbox.functions.ts`,
+  a server function: it discovers the readable mailboxes (at most 5), lists
+  the 10 most recent Inbox messages in each, one Spark call at a time, and
+  returns strict summaries without a body, newest first. An app server that
+  doesn't answer is reported as `unreachable`, not as an error. Opening a
+  message calls `getLiveBody` for that message only; it returns that
+  message's plain-text body, or `null` when it has none, and reads only
+  messages the last list offered. Both answer only requests from this
+  computer (loopback) and send `Cache-Control: no-store`.
 - When Spark is missing, fails, or prints output that doesn't parse, the
   page says so and shows no mail; it never falls back to sample data.
   Errors reach the browser only as a coarse reason or a fixed message.
@@ -122,7 +127,8 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
   notice or Undo. The sync button only reads the inbox again.
 - Spark wiring lives in `*.server.ts` files, which TanStack Start keeps out
   of the client build; ESLint also keeps components and stories from
-  importing `*.server`, `*.functions`, `src/spark` and Node built-ins.
+  importing `*.server`, `*.functions`, `src/spark` and Node built-ins, and
+  keeps routes from importing that server-only code at all.
 - Live mail isn't triaged yet, so every message is in one "Recent mail"
   workflow and reads "Not triaged". Spark's list shows at most 30
   characters of a sender and 50 of a subject and has no uncut or
