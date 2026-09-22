@@ -27,8 +27,12 @@ export const getLiveInbox = createServerFn({ method: 'GET' }).handler(
   },
 )
 
-/** One listed message's plain-text body, or `null` when it has none. */
-export const getLiveBody = createServerFn({ method: 'GET' })
+/**
+ * One listed message's plain-text body, or `null` when it has none. POST
+ * only so the mailbox and id travel in the request body: a GET would put
+ * them in the URL, where access logs keep them. It still only reads.
+ */
+export const getLiveBody = createServerFn({ method: 'POST' })
   .validator(bodyRequestSchema)
   .handler(async ({ data }) => {
     const { allowed, signal } = mailRequest()

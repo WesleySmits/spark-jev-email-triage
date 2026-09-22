@@ -277,6 +277,49 @@ describe('createLiveInbox body', () => {
     expect(calls.filter((call) => call.startsWith('thread'))).toEqual([])
   })
 
+  it('offers no older body once a later list fails', async () => {
+    const listings: Record<string, Listing[] | Error> = { [one]: [listing(one, '11', null)] }
+    const { live, calls } = inbox({ ...mail, listings })
+    await expect(live.list()).resolves.toMatchObject({ status: 'ready' })
+
+    listings[one] = new SparkError('timeout')
+    await expect(live.list()).resolves.toEqual({ status: 'unavailable', reason: 'failed' })
+
+    await expect(live.body({ mailbox: one, id: '11' })).rejects.toThrow(BodyUnavailableError)
+    expect(calls.filter((call) => call.startsWith('thread'))).toEqual([])
+  })
+
+  it('lets only the latest list decide what is offered', async () => {
+    const answers: ((value: MailboxAccess[] | Error) => void)[] = []
+    const threads: string[] = []
+    const reader: MailReader = {
+      listMailboxes: () =>
+        new Promise((resolve, reject) => {
+          answers.push((value) => {
+            if (value instanceof Error) reject(value)
+            else resolve(value)
+          })
+        }),
+      listRecentEmails: ({ mailboxId }) => Promise.resolve([listing(mailboxId, '11', null)]),
+      readThread: ({ messageId }) => {
+        threads.push(messageId)
+        return Promise.resolve(thread([{ id: messageId, bodyText: 'Text' }]))
+      },
+    }
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+    const older = live.list()
+    const newer = live.list()
+    answers[1]?.(new SparkError('timeout'))
+    await expect(newer).resolves.toMatchObject({ status: 'unavailable' })
+    answers[0]?.([access(one)])
+    await expect(older).resolves.toMatchObject({ status: 'ready' })
+
+    const body = live.body({ mailbox: one, id: '11' })
+    answers[2]?.(new SparkError('timeout'))
+    await expect(body).rejects.toThrow(BodyUnavailableError)
+    expect(threads).toEqual([])
+  })
+
   it('fails with a fixed message, never what the provider said', async () => {
     const { live } = inbox({
       ...mail,

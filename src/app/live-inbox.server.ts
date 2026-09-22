@@ -58,9 +58,15 @@ export function createLiveInbox({ reader, timeZone, now = () => new Date() }: Li
   const format = timeFormats(timeZone)
   /** The messages the last list offered, as `mailbox id`. Bodies are read only for these. */
   let offered = new Set<string>()
+  /** Counts list reads, so only the latest one decides what is offered. */
+  let reads = 0
   const key = (mailbox: string, id: string) => `${mailbox} ${id}`
 
   const list = async (options?: ReadOptions): Promise<LiveInbox> => {
+    // Nothing is offered while a list reads, and a list that fails offers
+    // nothing, so an older list's bodies stay closed.
+    const read = ++reads
+    offered = new Set()
     try {
       const mailboxes = (await reader.listMailboxes(options))
         .filter((access) => access.canRead)
@@ -80,7 +86,7 @@ export function createLiveInbox({ reader, timeZone, now = () => new Date() }: Li
       const messages = newestFirst(unique(listed)).map(({ listing, mailbox }) =>
         summarize(listing, mailbox, format.listed(listing.date, at)),
       )
-      offered = new Set(messages.map((message) => key(message.mailbox, message.id)))
+      if (read === reads) offered = new Set(messages.map((m) => key(m.mailbox, m.id)))
       return { status: 'ready', readAt: format.clock(at), mailboxes, messages }
     } catch (error) {
       return { status: 'unavailable', reason: reasonFor(error) }
