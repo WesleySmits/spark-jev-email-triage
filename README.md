@@ -77,16 +77,17 @@ Git hooks:
 - Stories and `.storybook/preview.ts` may not import Node built-ins, `src/spark`,
   `src/jev`, `src/shadow`, or the TypeSafe SDK (ESLint `no-restricted-imports`).
 - The sidebar order is Foundations, Atoms, Molecules, Organisms, Templates,
-  Pages. Foundations and `Atoms/Button` have stories so far.
-- `src/components/atoms/` holds atoms: a component, its CSS (tokens only) and
-  its stories. Components do not depend on Storybook or its specimen CSS. The
-  app does not import them yet.
+  Pages. Every component under `src/components/` has stories, up to
+  `Pages/Workbench`.
+- `src/components/` holds atoms, molecules, organisms, the workbench template
+  and the WorkbenchPage: each a component, its CSS (tokens only) and its
+  stories. Components do not depend on Storybook or its specimen CSS.
 - `src/styles/tokens.css` is the single design-token source. It declares
   custom properties on `:root` only, so importing it changes nothing on its
-  own. Storybook imports it in `.storybook/preview.ts`. The app deliberately
-  does not import tokens or styles in this phase. `src/styles/README.md` holds
-  the foundation rules, design decisions, provenance, and the one-line import
-  for a future consumer.
+  own. Storybook imports it in `.storybook/preview.ts`; the app imports it
+  and `src/styles/app.css`, its base styles, once in `src/routes/__root.tsx`.
+  `src/styles/README.md` holds the foundation rules, design decisions, and
+  provenance.
 - `src/foundations/` holds the Foundations stories and their Storybook-only
   specimen CSS. Specimens read token values in the browser instead of copying
   them. `contrast-pairs.test.ts` checks the maintained token pairs in
@@ -99,9 +100,12 @@ Git hooks:
 
 ## Safety status
 
-- No product features or UI. The only persistence is the local shadow-triage
-  SQLite file (Node's built-in `node:sqlite`, migrated through
-  `PRAGMA user_version`).
+- The app's root route renders the WorkbenchPage as a demo on fictional
+  sample data from `src/app/demo.ts`. The sync status says so. Complete only
+  moves a message to Done in the page's memory; the app reads no mail, writes
+  nothing, and changes no mailbox.
+- The only persistence is the local shadow-triage SQLite file (Node's
+  built-in `node:sqlite`, migrated through `PRAGMA user_version`).
 - `src/spark` reads mail through the local `spark` CLI, read-only. Its command
   type allows only `accounts`, `emails`, and `thread`. It never uses a shell,
   runs one call at a time with a timeout and output limit, and logs no mail
