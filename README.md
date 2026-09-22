@@ -124,8 +124,12 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
   of the client build; ESLint also keeps components and stories from
   importing `*.server`, `*.functions`, `src/spark` and Node built-ins.
 - Live mail isn't triaged yet, so every message is in one "Recent mail"
-  workflow and reads "Not triaged". Spark's list cuts long senders and
-  subjects; a cut value shows as unavailable rather than guessed.
+  workflow and reads "Not triaged". Spark's list shows at most 30
+  characters of a sender and 50 of a subject and has no uncut or
+  structured form. A cut sender keeps its whole name when the address
+  was cut, otherwise the visible start; a cut subject keeps its visible
+  start. Both end in `…`, and nothing is guessed. Only a blank value
+  shows as unavailable.
 - `src/app/inbox.ts` is the browser-safe read model: queue rows are strict
   summaries without a body, each naming its `mailbox` (the account marker
   is only a color, which several mailboxes may share), and the page loads

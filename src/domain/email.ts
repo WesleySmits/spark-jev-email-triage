@@ -53,14 +53,27 @@ export const mailboxSchema = z.strictObject({
 })
 
 /**
+ * Text as a list shows it. Lists cut long values; a cut value keeps only
+ * the start the list showed, never a guessed end, and says it was cut.
+ */
+const listedTextSchema = z.strictObject({
+  text: z.string().trim().min(1),
+  cut: z.boolean(),
+})
+
+/**
  * One message in a provider's recent-mail list, used to pick a thread to
- * read. Lists can shorten values, so shortened or missing values are `null`.
+ * read. Lists can shorten values: `from` is the sender only when the list
+ * shows all of it, while `sender` and `subject` hold what the list shows.
+ * Missing values are `null`.
  */
 export const emailListingSchema = z.strictObject({
   messageId: id,
   mailboxId: id,
   from: participantSchema.nullable(),
-  subject: text,
+  /** The sender's name, or its address when it has none. */
+  sender: listedTextSchema.nullable(),
+  subject: listedTextSchema.nullable(),
   /** The time the list shows for the message. */
   date: timestamp.nullable(),
 })

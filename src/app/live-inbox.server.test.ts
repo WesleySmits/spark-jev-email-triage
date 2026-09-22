@@ -32,7 +32,8 @@ const listing = (
   messageId,
   mailboxId,
   from: { address: 'sender@mail.example', name: 'Sample Sender' },
-  subject: `Subject ${messageId}`,
+  sender: { text: 'Sample Sender', cut: false },
+  subject: { text: `Subject ${messageId}`, cut: false },
   date,
   ...change,
 })
@@ -156,7 +157,11 @@ describe('createLiveInbox list', () => {
         [two]: [
           listing(two, '21', '2026-09-22T11:30:00+02:00'),
           listing(two, '11', '2026-09-22T09:15:00+02:00'),
-          listing(two, '22', '2025-12-01T08:00:00+01:00', { from: null, subject: null }),
+          listing(two, '22', '2025-12-01T08:00:00+01:00', {
+            from: null,
+            sender: null,
+            subject: null,
+          }),
           listing(two, '23', '2026-08-02T08:00:00+02:00'),
         ],
       },
@@ -193,6 +198,29 @@ describe('createLiveInbox list', () => {
       expect(message).not.toHaveProperty('body')
       expect(message).not.toHaveProperty('bodyText')
     }
+  })
+
+  it('shows the visible start of a value the list cut, ending in …', async () => {
+    const { live } = inbox({
+      mailboxes: [access(one)],
+      listings: {
+        [one]: [
+          listing(one, '11', null, {
+            from: null,
+            sender: { text: 'Newsletter Te', cut: true },
+            subject: { text: 'A long subj', cut: true },
+          }),
+          listing(one, '12', null, { from: null, sender: { text: 'Named Sender', cut: false } }),
+        ],
+      },
+    })
+    const result = await live.list()
+    if (result.status !== 'ready') throw new Error('Expected a list')
+
+    expect(result.messages[0]).toMatchObject({ sender: 'Newsletter Te…', subject: 'A long subj…' })
+    expect(result.messages[0]).not.toHaveProperty('address')
+    expect(result.messages[1]).toMatchObject({ sender: 'Named Sender', subject: 'Subject 12' })
+    expect(result.messages[1]).not.toHaveProperty('address')
   })
 
   it('is ready and empty when no mailbox is readable', async () => {
@@ -343,6 +371,56 @@ describe('isLoopback', () => {
 })
 
 describe('createLiveInbox over the Spark reader', () => {
+  it('shows the senders and subjects Spark lists, whole or cut', async () => {
+    const subject = 'Your monthly statement for account EX-1002 is ready to view online'
+    const transport: SparkTransport = (command) =>
+      Promise.resolve(
+        command.name === 'accounts'
+          ? 'Email Account: one@mail.example (Access: read-only)\n'
+          : emailsTable([
+              [
+                '4003',
+                'one@mail.example',
+                'Sam Customer <sam@a.example>',
+                '2026-09-22 09:03',
+                'Order EX-1002',
+                '',
+              ],
+              [
+                '4002',
+                'one@mail.example',
+                'Jordan Example <jordan.example@company.example>',
+                '2026-09-22 09:02',
+                subject,
+                '',
+              ],
+              [
+                '4001',
+                'one@mail.example',
+                'notifications-noreply@monitoring.example',
+                '2026-09-22 09:01',
+                'Zoë — 注文 🇳🇱',
+                '',
+              ],
+            ]),
+      )
+    const reader = createSparkMailReader({
+      transport,
+      timeZone: 'Europe/Amsterdam',
+      log: () => undefined,
+    })
+    const result = await createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now }).list()
+    if (result.status !== 'ready') throw new Error('Expected a list')
+
+    expect(
+      result.messages.map(({ sender, address, subject }) => ({ sender, address, subject })),
+    ).toEqual([
+      { sender: 'Sam Customer', address: 'sam@a.example', subject: 'Order EX-1002' },
+      { sender: 'Jordan Example', address: undefined, subject: `${subject.slice(0, 49)}…` },
+      { sender: 'notifications-noreply@monitor…', address: undefined, subject: 'Zoë — 注文 🇳🇱' },
+    ])
+  })
+
   it('only runs the read-only accounts, emails and thread commands', async () => {
     const commands: SparkCommand[] = []
     const transport: SparkTransport = (command) => {
