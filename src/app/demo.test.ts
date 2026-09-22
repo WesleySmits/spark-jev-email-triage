@@ -17,7 +17,7 @@ describe('demo data', () => {
   it('puts every message in a known workflow and mailbox', () => {
     for (const message of demoMessages) {
       expect(ids(demoWorkflows)).toContain(message.workflow)
-      expect(ids(demoMailboxes)).toContain(message.account.marker)
+      expect(ids(demoMailboxes)).toContain(message.mailbox)
     }
   })
 

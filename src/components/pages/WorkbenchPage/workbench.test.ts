@@ -22,6 +22,7 @@ function message(
   return {
     id,
     workflow,
+    mailbox: marker,
     sender: `Sender ${id}`,
     time: '09:00',
     subject: `Subject ${id}`,
@@ -66,6 +67,15 @@ describe('visibleMessages', () => {
 
   it('narrows to one mailbox', () => {
     expect(ids(visibleMessages(messages, filter({ mailbox: 'atelier' })))).toEqual(['b'])
+  })
+
+  it('narrows by mailbox id, not by the marker color mailboxes may share', () => {
+    const shared = [
+      { ...message('e', 'review', 'studio'), mailbox: 'one@mail.example' },
+      { ...message('f', 'review', 'studio'), mailbox: 'two@mail.example' },
+    ]
+    expect(ids(visibleMessages(shared, filter({ mailbox: 'two@mail.example' })))).toEqual(['f'])
+    expect(visibleMessages(shared, filter({ mailbox: 'studio' }))).toEqual([])
   })
 
   it('searches subject and snippet, ignoring case and outer spaces', () => {

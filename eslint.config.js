@@ -14,8 +14,11 @@ const storybookRecommended = /** @type {import('eslint').Linter.Config[]} */ (
   /** @type {unknown} */ (storybook.configs['flat/recommended'])
 )
 
-const serverOnlyMessage = 'Spark, Jev, shadow triage, and TypeSafe code is server-only.'
+const serverOnlyMessage =
+  'Spark, Jev, shadow triage, TypeSafe, *.server and *.functions code is server-only.'
 const serverOnly = [
+  '**/*.server',
+  '**/*.functions',
   '**/spark',
   '**/spark/**',
   '**/jev',
@@ -27,7 +30,7 @@ const serverOnly = [
 
 /** @param {string[]} extraServerOnly */
 function browserOnlyImports(extraServerOnly) {
-  const message = 'Storybook runs in the browser.'
+  const message = 'Storybook and components run in the browser.'
   return {
     paths: builtinModules.map((name) => ({ name, message })),
     patterns: [
@@ -50,8 +53,10 @@ export default defineConfig(
   reactHooks.configs.flat.recommended,
   storybookRecommended,
   {
-    // Storybook runs in the browser. Keep server code and secrets out.
-    files: ['.storybook/preview.ts', 'src/**/*.stories.tsx'],
+    // Storybook and the components run in the browser. Keep server code and secrets out.
+    files: ['.storybook/preview.ts', 'src/**/*.stories.tsx', 'src/components/**/*.{ts,tsx}'],
+    // Tests run in Node.
+    ignores: ['**/*.test.{ts,tsx}'],
     rules: { 'no-restricted-imports': ['error', browserOnlyImports([])] },
   },
   {

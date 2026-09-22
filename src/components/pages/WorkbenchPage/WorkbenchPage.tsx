@@ -72,7 +72,7 @@ type WorkbenchPageProps = Readonly<{
   /** The workflow filters, e.g. Needs review. The first is applied at the start. Counts are filled in. */
   workflows: readonly SidebarItem[]
   /**
-   * The mailbox filters, one per account. Each id is the account marker its
+   * The mailbox filters, one per mailbox. Each id is the `mailbox` its
    * messages carry. "All accounts" is added in front; counts are filled in.
    */
   mailboxes: readonly SidebarItem[]

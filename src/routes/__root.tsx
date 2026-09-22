@@ -8,7 +8,7 @@ export const Route = createRootRoute({
     meta: [
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'Spark Jev Email Triage · Demo with sample data' },
+      { title: 'Spark Jev Email Triage · Read only' },
     ],
   }),
   component: RootComponent,

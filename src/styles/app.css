@@ -37,3 +37,15 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* A full-page notice, e.g. when Spark is unavailable. */
+.app-notice {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--s6);
+}
+
+.app-notice > * {
+  width: min(100%, var(--measure-message));
+}

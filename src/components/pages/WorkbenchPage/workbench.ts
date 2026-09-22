@@ -9,6 +9,11 @@ export type WorkbenchMessage = QueueMessage &
   Readonly<{
     /** Id of the workflow it is in, one of the page's `workflows`. */
     workflow: string
+    /**
+     * Id of the mailbox it is in, one of the page's `mailboxes`. Its account
+     * marker is only a color, which several mailboxes may share.
+     */
+    mailbox: string
     /** The sender's address, shown in the reader. */
     address?: string | undefined
   }>
@@ -41,7 +46,7 @@ export function appliedFilter(
 }
 
 function inMailbox(message: WorkbenchMessage, mailbox: string) {
-  return mailbox === allMailboxes || message.account.marker === mailbox
+  return mailbox === allMailboxes || message.mailbox === mailbox
 }
 
 function hasText(message: WorkbenchMessage, query: string) {

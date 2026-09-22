@@ -17,6 +17,8 @@ export const inboxSummarySchema = z.strictObject({
   id,
   /** Id of the workflow the message is in, e.g. `review`. */
   workflow: id,
+  /** Id of the mailbox the message was listed in. `account` only shows it. */
+  mailbox: id,
   sender: z.string(),
   /** The sender's address, shown in the reader. */
   address: z.string().optional(),
@@ -27,6 +29,7 @@ export const inboxSummarySchema = z.strictObject({
   subject: z.string(),
   /** A short preview. It is all the queue and its search see of the text. */
   snippet: z.string(),
+  /** How the mailbox shows: a marker color and its always visible name. */
   account: z.strictObject({
     marker: z.enum(['studio', 'atelier', 'personal']),
     label: z.string(),
@@ -42,7 +45,7 @@ export const inboxSummarySchema = z.strictObject({
 /** One queue row. Holds no body. */
 export type InboxSummary = z.infer<typeof inboxSummarySchema>
 
-const messageBodySchema = z.strictObject({
+export const messageBodySchema = z.strictObject({
   /** The message this body belongs to. */
   id,
   /** Plain text. A blank line starts a new paragraph. */
