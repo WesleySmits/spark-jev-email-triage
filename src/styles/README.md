@@ -7,7 +7,8 @@
 
 - Import `tokens.css` once, before any other styles, at the consumer's entry
   point: `import './styles/tokens.css'`. Nothing else is needed.
-- The app does not import it yet. That is deliberate for this phase.
+- The app imports it in `src/routes/__root.tsx`, followed by its base
+  styles in `src/styles/app.css`.
 - Base styles are the consumer's job, not the token file's. They should set
   `color-scheme: light`, use `var(--text-ui)` and `var(--ink)` on the body, and
   include the focus and reduced-motion rules below.
