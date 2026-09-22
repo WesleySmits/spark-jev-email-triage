@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { useState, type ComponentProps } from 'react'
+import { useEffect, useState, type ComponentProps } from 'react'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import QueueStories from '../../organisms/MessageQueue/MessageQueue.stories'
 import ReaderStories from '../../organisms/MessageReader/MessageReader.stories'
@@ -112,14 +112,24 @@ async function filtersAndSearch(root: HTMLElement) {
   await expect(canvas.getByText('2 results')).toBeVisible()
   await expect(subject(root)).toHaveTextContent('Can delivery move a week earlier?')
 
+  // A new filter opens its first result.
   await rail(root, 'Personal')
   await expect(canvas.getByText('1 result')).toBeVisible()
-  await expect(subject(root)).toHaveTextContent('No message open')
+  await expect(subject(root)).toHaveTextContent('Move Friday dinner?')
 
   await rail(root, 'Done')
   await expect(canvas.getByRole('heading', { name: 'No results in this filter' })).toBeVisible()
+  await expect(subject(root)).toHaveTextContent('No message open')
   await userEvent.click(canvas.getByRole('button', { name: 'Reset filters' }))
   await expect(canvas.getByText('2 results')).toBeVisible()
+  await expect(canvas.getByRole('button', { name: /^Needs review/ })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await expect(canvas.getByRole('button', { name: /^All accounts/ })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
 
   await userEvent.type(canvas.getByRole('searchbox'), 'saturday')
   await expect(canvas.getByText('1 result')).toBeVisible()
@@ -138,9 +148,15 @@ async function shortcuts(root: HTMLElement) {
   await userEvent.keyboard('k')
   await expect(subject(root)).toHaveTextContent('Can delivery move a week earlier?')
   await expect(canvas.getByRole('button', { name: /Can delivery move/ })).toHaveFocus()
-  await userEvent.keyboard('e')
+  // E from a row: the next message opens and focus moves to its row.
+  await userEvent.keyboard('E')
   await expect(subject(root)).toHaveTextContent('Move Friday dinner?')
+  await expect(canvas.getByRole('button', { name: /Move Friday dinner\?/ })).toHaveFocus()
   await expect(canvas.getByRole('button', { name: /^Done/ })).toHaveTextContent('2')
+  // The Complete button on the last message: focus lands on Reset filters.
+  await userEvent.click(canvas.getByRole('button', { name: 'Complete' }))
+  await expect(subject(root)).toHaveTextContent('No message open')
+  await expect(canvas.getByRole('button', { name: 'Reset filters' })).toHaveFocus()
   await userEvent.keyboard('/')
   await expect(canvas.getByRole('searchbox')).toHaveFocus()
 }
@@ -173,6 +189,47 @@ export const Mobile: Story = {
     await expect(canvas.getByRole('region', { name: 'Message content' })).toHaveFocus()
     await userEvent.click(canvas.getByRole('button', { name: 'Back to messages' }))
     await expect(canvas.getByRole('button', { name: /Move Friday dinner\?/ })).toHaveFocus()
+    // E does nothing while the queue hides the reader.
+    await userEvent.keyboard('e')
+    await expect(canvas.getByText('2 results')).toBeVisible()
+    // Complete in the reader opens the next message and focuses its content.
+    await userEvent.click(canvas.getByRole('button', { name: /Move Friday dinner\?/ }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Complete' }))
+    await expect(subject(canvasElement)).toHaveTextContent('Can delivery move a week earlier?')
+    await expect(canvas.getByRole('region', { name: 'Message content' })).toHaveFocus()
+  },
+}
+
+// Stands in for a caller that loads: empty props first, the data a moment later.
+function LoadsLater(args: Props) {
+  const [loaded, setLoaded] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setLoaded(true)
+    }, 300)
+    return () => {
+      clearTimeout(timer)
+    }
+  }, [])
+  return loaded ? (
+    <WithData {...args} />
+  ) : (
+    <WorkbenchPage {...args} messages={[]} workflows={[]} mailboxes={[]} />
+  )
+}
+
+/**
+ * The messages and filters arrive after the page mounts, as from a request.
+ * The page applies the first workflow and opens the first result then.
+ */
+export const DataArrivesLater: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  render: (args) => <LoadsLater {...args} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByText('2 results')).toBeVisible()
+    await expect(canvas.getByRole('heading', { level: 1, name: 'Needs review' })).toBeVisible()
+    await expect(subject(canvasElement)).toHaveTextContent('Can delivery move a week earlier?')
   },
 }
 

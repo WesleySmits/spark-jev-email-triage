@@ -41,7 +41,8 @@ export function shortcutFor(event: KeyEvent): WorkbenchShortcut | null {
   if (modified || event.defaultPrevented || event.isComposing || typesText(event.target)) {
     return null
   }
-  return shortcuts.get(event.key) ?? null
+  // Shift and Caps Lock give capitals; J, K and E mean the same.
+  return shortcuts.get(event.key.length === 1 ? event.key.toLowerCase() : event.key) ?? null
 }
 
 /**

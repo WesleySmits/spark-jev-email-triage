@@ -8,8 +8,10 @@ import { WorkbenchTemplate } from '../../templates/WorkbenchTemplate/WorkbenchTe
 import { shortcutLegend, useWorkbenchShortcuts } from './useWorkbenchShortcuts'
 import {
   afterRemoval,
-  allMailboxes,
+  appliedFilter,
+  defaultFilter,
   neighbour,
+  openedMessage,
   railGroups,
   visibleMessages,
   type WorkbenchFilter,
@@ -50,35 +52,41 @@ type WorkbenchPageProps = Readonly<{
 
 const readerContent = '.workbench__reader [role="region"][tabindex]'
 const currentRow = '.workbench__queue [aria-current="true"]'
-const firstRow = '.workbench__queue li button'
+const queueControl = '.workbench__queue button'
 
-/** The page's own state: filters, the open message and the mobile pane. */
-function usePageState(
-  messages: readonly WorkbenchMessage[],
-  workflows: readonly SidebarItem[],
-  onComplete: (id: string) => void,
-) {
-  const [initial] = useState<WorkbenchFilter>(() => ({
-    workflow: workflows[0]?.id ?? '',
-    mailbox: allMailboxes,
-    query: '',
-  }))
-  const [filter, setFilter] = useState(initial)
-  const shown = visibleMessages(messages, filter)
-  const [openId, setOpenId] = useState(shown[0]?.id)
+type PageInput = Readonly<{
+  messages: readonly WorkbenchMessage[]
+  workflows: readonly SidebarItem[]
+  mailboxes: readonly SidebarItem[]
+  onComplete: (id: string) => void
+}>
+
+/**
+ * The page's own state: the chosen filters, the chosen message and the
+ * mobile pane. What applies is worked out from the current props on every
+ * render, so data that arrives or changes after mount still shows.
+ */
+function usePageState({ messages, workflows, mailboxes, onComplete }: PageInput) {
+  const [chosen, setChosen] = useState(defaultFilter)
+  const [openId, setOpenId] = useState<string>()
   const [pane, setPane] = useState<Pane>('queue')
-  const open = shown.find((message) => message.id === openId)
+  const filter = appliedFilter(chosen, workflows, mailboxes)
+  const shown = visibleMessages(messages, filter)
+  const open = openedMessage(shown, openId)
+  // With nothing to read, the reader can't be the mobile pane, now or later.
+  if (!open && pane === 'reader') setPane('queue')
+  const filterBy = (change: Partial<WorkbenchFilter>) => {
+    setChosen({ ...filter, ...change })
+    setPane('queue')
+  }
   return {
     filter,
     shown,
     open,
-    pane: open ? pane : 'queue',
-    filterBy: (change: Partial<WorkbenchFilter>) => {
-      setFilter({ ...filter, ...change })
-      setPane('queue')
-    },
+    pane,
+    filterBy,
     reset: () => {
-      setFilter(initial)
+      filterBy(defaultFilter)
     },
     openMessage: (id: string) => {
       setOpenId(id)
@@ -100,16 +108,49 @@ function usePageState(
 
 type PageState = ReturnType<typeof usePageState>
 type Root = RefObject<HTMLDivElement | null>
+type Place = 'queue' | 'reader'
 
-/** Moves focus into the pane that shows when a mobile switch hid the focused control. */
-function useFocusShownPane(root: Root, pane: Pane) {
+/** Which pane holds focus, if any. */
+function focusedPlace(): Place | null {
+  const active = document.activeElement
+  if (active?.closest('.workbench__reader')) return 'reader'
+  return active?.closest('.workbench__queue') ? 'queue' : null
+}
+
+function focusIsHidden() {
+  const active = document.activeElement
+  return active instanceof HTMLElement && !active.checkVisibility()
+}
+
+/** Focuses the reader's content, or the open row, else the queue's first control. */
+function focusInto(root: HTMLElement, place: Place, hasOpen: boolean) {
+  const selectors = place === 'reader' && hasOpen ? [readerContent] : [currentRow, queueControl]
+  selectors
+    .map((selector) => root.querySelector<HTMLElement>(selector))
+    .find(Boolean)
+    ?.focus()
+}
+
+/** Where focus should go now, if anywhere, and clears the Complete note. */
+function takePlace(restoreRef: RefObject<Place | null>, pane: Place) {
+  const place = restoreRef.current ?? (focusIsHidden() ? pane : null)
+  restoreRef.current = null
+  return place
+}
+
+/**
+ * Keeps focus in the page when the control that had it goes away: a mobile
+ * pane switch hides it, and Complete removes the row or reader that held
+ * it. `restoreRef` names the pane focus was in before Complete.
+ */
+function useKeepFocus(root: Root, restoreRef: RefObject<Place | null>, state: PageState) {
+  const { pane } = state
+  const openId = state.open?.id
+  const count = state.shown.length
   useEffect(() => {
-    const active = document.activeElement
-    if (!(active instanceof HTMLElement) || active.checkVisibility()) return
-    root.current
-      ?.querySelector<HTMLElement>(pane === 'reader' ? readerContent : currentRow)
-      ?.focus()
-  }, [root, pane])
+    const place = takePlace(restoreRef, pane)
+    if (place && root.current) focusInto(root.current, place, openId !== undefined)
+  }, [root, restoreRef, pane, openId, count])
 }
 
 /** Keeps the open row in view, and brings focus along when it was on a row. */
@@ -121,7 +162,7 @@ function useFollowCurrentRow(root: Root, openId: string | undefined) {
   }, [root, openId])
 }
 
-function useShortcuts(state: PageState, searchId: string) {
+function useShortcuts(root: Root, state: PageState, complete: () => void, searchId: string) {
   useWorkbenchShortcuts({
     next: () => {
       state.step(1)
@@ -129,16 +170,19 @@ function useShortcuts(state: PageState, searchId: string) {
     previous: () => {
       state.step(-1)
     },
-    complete: state.complete,
+    // Only what the user can see: on mobile the queue hides the reader.
+    complete: () => {
+      if (root.current?.querySelector('.workbench__reader')?.checkVisibility()) complete()
+    },
     search: () => {
       document.getElementById(searchId)?.focus()
     },
   })
 }
 
-type PaneProps = Readonly<{ state: PageState; title: string }>
+type PaneProps = Readonly<{ state: PageState; title: string; complete: () => void }>
 
-function Queue({ state, title }: PaneProps) {
+function Queue({ state, title }: Omit<PaneProps, 'complete'>) {
   const count = state.shown.length
   return (
     <MessageQueue
@@ -171,7 +215,7 @@ function initials(name: string) {
     .join('')
 }
 
-function Reader({ state, title }: PaneProps) {
+function Reader({ state, title, complete }: PaneProps) {
   const { shown, open } = state
   if (!open) {
     return (
@@ -200,7 +244,7 @@ function Reader({ state, title }: PaneProps) {
         },
       }}
       actions={{
-        primaryAction: { label: 'Complete', icon: 'check', shortcut: 'E', onClick: state.complete },
+        primaryAction: { label: 'Complete', icon: 'check', shortcut: 'E', onClick: complete },
       }}
     >
       {open.body.split(/\n{2,}/).map((paragraph, index) => (
@@ -241,11 +285,16 @@ export function WorkbenchPage({
   onComplete,
   topBar,
 }: WorkbenchPageProps) {
-  const state = usePageState(messages, workflows, onComplete)
+  const state = usePageState({ messages, workflows, mailboxes, onComplete })
   const searchId = useId()
   const root = useRef<HTMLDivElement>(null)
-  useShortcuts(state, searchId)
-  useFocusShownPane(root, state.pane)
+  const restoreRef = useRef<Place | null>(null)
+  const complete = () => {
+    restoreRef.current = focusedPlace()
+    state.complete()
+  }
+  useShortcuts(root, state, complete, searchId)
+  useKeepFocus(root, restoreRef, state)
   useFollowCurrentRow(root, state.open?.id)
   const title = workflows.find((item) => item.id === state.filter.workflow)?.label ?? ''
   return (
@@ -263,11 +312,7 @@ export function WorkbenchPage({
               state.filterBy({ query })
             }}
             onSearchSubmit={() => {
-              const queue = root.current
-              ;(
-                queue?.querySelector<HTMLElement>(currentRow) ??
-                queue?.querySelector<HTMLElement>(firstRow)
-              )?.focus()
+              if (root.current) focusInto(root.current, 'queue', false)
             }}
           />
         }
@@ -282,7 +327,7 @@ export function WorkbenchPage({
           />
         }
         queue={<Queue state={state} title={title} />}
-        reader={<Reader state={state} title={title} />}
+        reader={<Reader state={state} title={title} complete={complete} />}
       />
     </div>
   )

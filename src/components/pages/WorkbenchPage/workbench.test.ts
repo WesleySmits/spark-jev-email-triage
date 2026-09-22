@@ -3,7 +3,10 @@ import type { SidebarItem } from '../../organisms/Sidebar/Sidebar'
 import {
   afterRemoval,
   allMailboxes,
+  appliedFilter,
+  defaultFilter,
   neighbour,
+  openedMessage,
   railGroups,
   visibleMessages,
   type WorkbenchFilter,
@@ -108,6 +111,39 @@ describe('railGroups', () => {
     })
     expect(workflow?.items.map((item) => item.count)).toEqual([2, 1, 0])
     expect(mailbox?.items.map((item) => item.count)).toEqual([3, 2, 1])
+  })
+})
+
+describe('appliedFilter', () => {
+  it('keeps a known workflow and mailbox', () => {
+    const chosen = filter({ workflow: 'action', mailbox: 'studio', query: 'x' })
+    expect(appliedFilter(chosen, workflows, mailboxes)).toEqual(chosen)
+  })
+
+  it('starts on the first workflow and all mailboxes', () => {
+    expect(appliedFilter(defaultFilter, workflows, mailboxes)).toEqual(filter())
+  })
+
+  it('falls back when the chosen filters are no longer offered', () => {
+    const stale = filter({ workflow: 'gone', mailbox: 'gone', query: 'x' })
+    expect(appliedFilter(stale, workflows, mailboxes)).toEqual(filter({ query: 'x' }))
+  })
+
+  it('applies no workflow until the workflows arrive', () => {
+    expect(appliedFilter(defaultFilter, [], [])).toEqual(filter({ workflow: '' }))
+    expect(visibleMessages(messages, appliedFilter(defaultFilter, [], []))).toEqual([])
+  })
+})
+
+describe('openedMessage', () => {
+  it('keeps the chosen message while it is in the list', () => {
+    expect(openedMessage(messages, 'c')?.id).toBe('c')
+  })
+
+  it('opens the first row without a choice, or when the choice left the list', () => {
+    expect(openedMessage(messages, undefined)?.id).toBe('a')
+    expect(openedMessage(messages, 'gone')?.id).toBe('a')
+    expect(openedMessage([], 'a')).toBeUndefined()
   })
 })
 

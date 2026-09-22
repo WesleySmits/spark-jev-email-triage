@@ -17,6 +17,28 @@ export type WorkbenchFilter = Readonly<{ workflow: string; mailbox: string; quer
 /** The mailbox filter that shows every account. */
 export const allMailboxes = 'all'
 
+/** Where the page starts and what Reset goes back to: the first workflow, all mailboxes. */
+export const defaultFilter: WorkbenchFilter = { workflow: '', mailbox: allMailboxes, query: '' }
+
+const hasItem = (items: readonly SidebarItem[], id: string) => items.some((item) => item.id === id)
+
+/**
+ * The filter as applied to the current props. A workflow or mailbox that
+ * isn't (or is no longer) among them falls back to the first workflow or to
+ * all mailboxes, so data that arrives or changes later still shows.
+ */
+export function appliedFilter(
+  filter: WorkbenchFilter,
+  workflows: readonly SidebarItem[],
+  mailboxes: readonly SidebarItem[],
+): WorkbenchFilter {
+  return {
+    workflow: hasItem(workflows, filter.workflow) ? filter.workflow : (workflows[0]?.id ?? ''),
+    mailbox: hasItem(mailboxes, filter.mailbox) ? filter.mailbox : allMailboxes,
+    query: filter.query,
+  }
+}
+
 function inMailbox(message: WorkbenchMessage, mailbox: string) {
   return mailbox === allMailboxes || message.account.marker === mailbox
 }
@@ -85,6 +107,11 @@ export function neighbour(
   const index = messages.findIndex((message) => message.id === id)
   if (index === -1) return messages[0]?.id
   return messages[Math.min(Math.max(index + step, 0), messages.length - 1)]?.id
+}
+
+/** The open message: the chosen one while it is in the list, else the first row. */
+export function openedMessage(messages: readonly WorkbenchMessage[], id: string | undefined) {
+  return messages.find((message) => message.id === id) ?? messages[0]
 }
 
 /** What to open once `id` leaves the list: the next row, else the previous one. */

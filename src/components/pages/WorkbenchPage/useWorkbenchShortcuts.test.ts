@@ -34,9 +34,15 @@ describe('shortcutFor', () => {
     expect(press('j', { target: null })).toBe('next')
   })
 
-  it('ignores other keys, capitals and inherited object keys', () => {
+  it('takes capitals from Shift or Caps Lock', () => {
+    expect(press('J')).toBe('next')
+    expect(press('K')).toBe('previous')
+    expect(press('E')).toBe('complete')
+  })
+
+  it('ignores other keys and inherited object keys', () => {
     expect(press('x')).toBeNull()
-    expect(press('J')).toBeNull()
+    expect(press('Enter')).toBeNull()
     expect(press('constructor')).toBeNull()
   })
 
