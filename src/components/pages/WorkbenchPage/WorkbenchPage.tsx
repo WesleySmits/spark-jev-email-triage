@@ -34,7 +34,8 @@ type WorkbenchPageProps = Readonly<{
   /**
    * Marks the open message done, from its Complete button or `E`. The caller
    * changes the data, e.g. moves it to the Done workflow; the page opens the
-   * next message in the list.
+   * next message in the list. It may update later: until `messages` holds a
+   * new version of the completed message, the page leaves it out.
    */
   onComplete: (id: string) => void
   /** Sync status and profile. The page owns the search. */
@@ -61,6 +62,24 @@ type PageInput = Readonly<{
   onComplete: (id: string) => void
 }>
 
+const none: ReadonlySet<WorkbenchMessage> = new Set()
+
+/**
+ * The messages without those handed to `onComplete` that the caller hasn't
+ * changed yet. A caller may update its data later; until it passes a new
+ * version of a completed message, that message isn't shown, counted, opened
+ * or completed again. The new version shows wherever it now belongs.
+ */
+function usePendingCompletion(messages: readonly WorkbenchMessage[]) {
+  const [pending, setPending] = useState(none)
+  const live = messages.filter((message) => !pending.has(message))
+  const markPending = (message: WorkbenchMessage) => {
+    const unchanged = [...pending].filter((item) => messages.includes(item))
+    setPending(new Set(unchanged).add(message))
+  }
+  return [live, markPending] as const
+}
+
 /**
  * The page's own state: the chosen filters, the chosen message and the
  * mobile pane. What applies is worked out from the current props on every
@@ -70,8 +89,9 @@ function usePageState({ messages, workflows, mailboxes, onComplete }: PageInput)
   const [chosen, setChosen] = useState(defaultFilter)
   const [openId, setOpenId] = useState<string>()
   const [pane, setPane] = useState<Pane>('queue')
+  const [live, markPending] = usePendingCompletion(messages)
   const filter = appliedFilter(chosen, workflows, mailboxes)
-  const shown = visibleMessages(messages, filter)
+  const shown = visibleMessages(live, filter)
   const open = openedMessage(shown, openId)
   // With nothing to read, the reader can't be the mobile pane, now or later.
   if (!open && pane === 'reader') setPane('queue')
@@ -80,6 +100,7 @@ function usePageState({ messages, workflows, mailboxes, onComplete }: PageInput)
     setPane('queue')
   }
   return {
+    messages: live,
     filter,
     shown,
     open,
@@ -97,6 +118,7 @@ function usePageState({ messages, workflows, mailboxes, onComplete }: PageInput)
     },
     complete: () => {
       if (!open) return
+      markPending(open)
       setOpenId(afterRemoval(shown, open.id))
       onComplete(open.id)
     },
@@ -319,7 +341,12 @@ export function WorkbenchPage({
         sidebar={
           <Sidebar
             label="Filters"
-            groups={railGroups({ messages, filter: state.filter, workflows, mailboxes })}
+            groups={railGroups({
+              messages: state.messages,
+              filter: state.filter,
+              workflows,
+              mailboxes,
+            })}
             onSelect={(groupId, itemId) => {
               state.filterBy({ [groupId]: itemId })
             }}

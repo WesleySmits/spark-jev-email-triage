@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 
 export type WorkbenchShortcut = 'next' | 'previous' | 'complete' | 'search'
 
@@ -48,10 +48,12 @@ export function shortcutFor(event: KeyEvent): WorkbenchShortcut | null {
 /**
  * Listens on the document while mounted and calls the matching handler. The
  * handlers may change on every render; the listener always calls the latest.
+ * A layout effect updates them before the browser can deliver another key,
+ * so a press never reaches the handlers of the previous render.
  */
 export function useWorkbenchShortcuts(handlers: Readonly<Record<WorkbenchShortcut, () => void>>) {
   const latest = useRef(handlers)
-  useEffect(() => {
+  useLayoutEffect(() => {
     latest.current = handlers
   })
   useEffect(() => {

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect, useState, type ComponentProps } from 'react'
-import { expect, fn, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import QueueStories from '../../organisms/MessageQueue/MessageQueue.stories'
 import ReaderStories from '../../organisms/MessageReader/MessageReader.stories'
 import SidebarStories from '../../organisms/Sidebar/Sidebar.stories'
@@ -42,20 +42,49 @@ const [workflowGroup, mailboxGroup] = SidebarStories.args.groups
 
 const completed = { label: 'Completed', tone: 'done' } as const
 
-// Stands in for the data owner: Complete moves the message to Done.
-function WithData(args: Props) {
+type Timing = Readonly<{
+  /** Milliseconds before the data arrives. Left out: there from the start. */
+  loadAfter?: number | undefined
+  /** Milliseconds before a completion shows in the data. Left out: at once. */
+  completeAfter?: number | undefined
+}>
+
+/** Whether `delay` has passed since mount; true at once without a delay. */
+function useAfter(delay: number | undefined) {
+  const [passed, setPassed] = useState(delay === undefined)
+  useEffect(() => {
+    if (delay === undefined) return
+    const timer = setTimeout(() => {
+      setPassed(true)
+    }, delay)
+    return () => {
+      clearTimeout(timer)
+    }
+  }, [delay])
+  return passed
+}
+
+const markDone = (id: string) => (message: WorkbenchMessage) =>
+  message.id === id ? { ...message, workflow: 'done', status: completed } : message
+
+// Stands in for the data owner. Complete moves the message to Done, at once
+// or after `completeAfter`. One page stays mounted while the data loads.
+function WithData({ loadAfter, completeAfter, ...args }: Props & Timing) {
   const [data, setData] = useState(args.messages)
+  const loaded = useAfter(loadAfter)
   return (
     <WorkbenchPage
       {...args}
-      messages={data}
+      messages={loaded ? data : []}
+      workflows={loaded ? args.workflows : []}
+      mailboxes={loaded ? args.mailboxes : []}
       onComplete={(id) => {
         args.onComplete(id)
-        setData(
-          data.map((message) =>
-            message.id === id ? { ...message, workflow: 'done', status: completed } : message,
-          ),
-        )
+        const apply = () => {
+          setData((current) => current.map(markDone(id)))
+        }
+        if (completeAfter === undefined) apply()
+        else setTimeout(apply, completeAfter)
       }}
     />
   )
@@ -200,36 +229,42 @@ export const Mobile: Story = {
   },
 }
 
-// Stands in for a caller that loads: empty props first, the data a moment later.
-function LoadsLater(args: Props) {
-  const [loaded, setLoaded] = useState(false)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setLoaded(true)
-    }, 300)
-    return () => {
-      clearTimeout(timer)
-    }
-  }, [])
-  return loaded ? (
-    <WithData {...args} />
-  ) : (
-    <WorkbenchPage {...args} messages={[]} workflows={[]} mailboxes={[]} />
-  )
-}
-
 /**
  * The messages and filters arrive after the page mounts, as from a request.
  * The page applies the first workflow and opens the first result then.
  */
 export const DataArrivesLater: Story = {
   globals: { viewport: { value: 'desktop', isRotated: false } },
-  render: (args) => <LoadsLater {...args} />,
+  render: (args) => <WithData {...args} loadAfter={300} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(await canvas.findByText('2 results')).toBeVisible()
     await expect(canvas.getByRole('heading', { level: 1, name: 'Needs review' })).toBeVisible()
     await expect(subject(canvasElement)).toHaveTextContent('Can delivery move a week earlier?')
+  },
+}
+
+/**
+ * The caller takes a second to record each completion, as a request would.
+ * A completed message leaves the list at once and can't be completed twice;
+ * it shows under Done when the data catches up.
+ */
+export const SlowComplete: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  render: (args) => <WithData {...args} completeAfter={1000} />,
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: /Can delivery move/ }))
+    await userEvent.keyboard('eee')
+    await expect(canvas.getByText('0 results')).toBeVisible()
+    await expect(args.onComplete).toHaveBeenCalledTimes(2)
+    await expect(args.onComplete).toHaveBeenNthCalledWith(1, 'm1')
+    await expect(args.onComplete).toHaveBeenNthCalledWith(2, 'm3')
+    await waitFor(
+      () => expect(canvas.getByRole('button', { name: /^Done/ })).toHaveTextContent('3'),
+      { timeout: 3000 },
+    )
+    await expect(canvas.getByText('0 results')).toBeVisible()
   },
 }
 
