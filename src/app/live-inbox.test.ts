@@ -2,13 +2,14 @@ import { describe, expect, it, vi } from 'vitest'
 import type { InboxSummary } from './inbox'
 import { bodyRequestSchema, liveBodyLoader } from './live-inbox'
 
-const summary = (id: string, mailbox: string): InboxSummary => ({
-  id,
+const summary = (messageId: string, mailbox: string): InboxSummary => ({
+  id: `${mailbox} copy of ${messageId}`,
+  messageId,
   workflow: 'inbox',
   mailbox,
   sender: 'Sample Sender',
   time: '09:00',
-  subject: `Subject ${id}`,
+  subject: `Subject ${messageId}`,
   snippet: '',
   account: { marker: 'studio', label: mailbox },
   status: { label: 'Not triaged', tone: 'neutral' },
@@ -36,14 +37,20 @@ describe('bodyRequestSchema', () => {
 })
 
 describe('liveBodyLoader', () => {
-  const messages = [summary('11', 'one@mail.example'), summary('21', 'two@mail.example')]
+  const messages = [
+    summary('11', 'one@mail.example'),
+    summary('21', 'two@mail.example'),
+    // The same message id as an alias copy in another mailbox.
+    summary('11', 'two@mail.example'),
+  ]
 
   it("asks for one message in the mailbox its summary names, with the page's signal", async () => {
-    const fetchBody = vi.fn(() => Promise.resolve({ id: '21', text: 'Hello' }))
+    const row = 'two@mail.example copy of 21'
+    const fetchBody = vi.fn(() => Promise.resolve({ id: row, text: 'Hello' }))
     const { signal } = new AbortController()
 
-    await expect(liveBodyLoader(messages, fetchBody)('21', { signal })).resolves.toEqual({
-      id: '21',
+    await expect(liveBodyLoader(messages, fetchBody)(row, { signal })).resolves.toEqual({
+      id: row,
       text: 'Hello',
     })
     expect(fetchBody).toHaveBeenCalledExactlyOnceWith(
@@ -52,12 +59,31 @@ describe('liveBodyLoader', () => {
     )
   })
 
+  it('asks for each copy of one message id through its own mailbox', async () => {
+    const fetchBody = vi.fn(() => Promise.resolve(null))
+    const { signal } = new AbortController()
+    const load = liveBodyLoader(messages, fetchBody)
+
+    await load('two@mail.example copy of 11', { signal })
+    await load('one@mail.example copy of 11', { signal })
+
+    expect(fetchBody.mock.calls).toEqual([
+      [{ mailbox: 'two@mail.example', id: '11' }, signal],
+      [{ mailbox: 'one@mail.example', id: '11' }, signal],
+    ])
+  })
+
   it('resolves to null for an id it was not given, without asking', async () => {
     const fetchBody = vi.fn(() => Promise.resolve(null))
+    const { signal } = new AbortController()
+    const sample: InboxSummary = { ...summary('31', 'one@mail.example'), messageId: undefined }
+    const load = liveBodyLoader([...messages, sample], fetchBody)
 
-    await expect(
-      liveBodyLoader(messages, fetchBody)('99', { signal: new AbortController().signal }),
-    ).resolves.toBeNull()
+    await expect(load('99', { signal })).resolves.toBeNull()
+    // A message id is not a row's identity.
+    await expect(load('11', { signal })).resolves.toBeNull()
+    // A row without a provider message id has nothing to read.
+    await expect(load(sample.id, { signal })).resolves.toBeNull()
     expect(fetchBody).not.toHaveBeenCalled()
   })
 })

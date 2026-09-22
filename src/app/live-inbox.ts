@@ -35,10 +35,11 @@ export type LiveInbox =
       reason: 'local-only' | 'missing' | 'failed' | 'malformed'
     }>
 
-/** One body request: a message the server listed, in the mailbox it was listed in. */
+/** One body request: a mailbox copy the server listed, by its mailbox and message id. */
 export const bodyRequestSchema = z.strictObject({
   /** The mailbox id as listed. Spark keeps its case, so it isn't lowercased. */
   mailbox: z.email(),
+  /** Spark's message id, not the row's `id`. */
   id: z.string().regex(/^[1-9][0-9]{0,18}$/),
 })
 
@@ -47,17 +48,21 @@ export type BodyRequest = z.infer<typeof bodyRequestSchema>
 type FetchBody = (request: BodyRequest, signal: AbortSignal) => Promise<MessageBody | null>
 
 /**
- * A body loader for the listed messages. It asks `fetchBody` for one
- * message, in the mailbox its summary names; an id it wasn't given resolves
- * to `null` without asking.
+ * A body loader for the listed messages. For a row it asks `fetchBody` for
+ * that row's mailbox copy: its message id, in the mailbox its summary names.
+ * A row it wasn't given, or one without a message id, resolves to `null`
+ * without asking.
  */
 export function liveBodyLoader(
   messages: readonly InboxSummary[],
   fetchBody: FetchBody,
 ): BodyLoader {
-  const mailboxes = new Map(messages.map((message) => [message.id, message.mailbox]))
+  const copies = new Map<string, BodyRequest>()
+  for (const { id, mailbox, messageId } of messages) {
+    if (messageId !== undefined) copies.set(id, { mailbox, id: messageId })
+  }
   return (id, { signal }) => {
-    const mailbox = mailboxes.get(id)
-    return mailbox === undefined ? Promise.resolve(null) : fetchBody({ mailbox, id }, signal)
+    const copy = copies.get(id)
+    return copy === undefined ? Promise.resolve(null) : fetchBody(copy, signal)
   }
 }

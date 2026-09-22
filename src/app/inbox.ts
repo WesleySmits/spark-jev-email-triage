@@ -14,7 +14,13 @@ import { z } from 'zod'
 const id = z.string().trim().min(1)
 
 export const inboxSummarySchema = z.strictObject({
+  /**
+   * The row's own identity, unique in the queue. For provider mail it names
+   * the mailbox copy, so one message id listed in two mailboxes is two rows.
+   */
   id,
+  /** The provider's id for the message in `mailbox`. Sample mail has none. */
+  messageId: id.optional(),
   /** Id of the workflow the message is in, e.g. `review`. */
   workflow: id,
   /** Id of the mailbox the message was listed in. `account` only shows it. */
@@ -46,7 +52,7 @@ export const inboxSummarySchema = z.strictObject({
 export type InboxSummary = z.infer<typeof inboxSummarySchema>
 
 export const messageBodySchema = z.strictObject({
-  /** The message this body belongs to. */
+  /** The row this body belongs to: its summary's `id`. */
   id,
   /** Plain text. A blank line starts a new paragraph. */
   text: z.string(),
