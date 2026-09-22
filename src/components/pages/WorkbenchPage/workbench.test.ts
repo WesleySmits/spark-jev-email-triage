@@ -5,6 +5,7 @@ import {
   allMailboxes,
   appliedFilter,
   defaultFilter,
+  mailboxLabel,
   neighbour,
   openedMessage,
   railGroups,
@@ -120,6 +121,13 @@ describe('railGroups', () => {
     })
     expect(workflow?.items.map((item) => item.count)).toEqual([2, 1, 0])
     expect(mailbox?.items.map((item) => item.count)).toEqual([3, 2, 1])
+  })
+})
+
+describe('mailboxLabel', () => {
+  it('names the applied mailbox, or All accounts', () => {
+    expect(mailboxLabel('atelier', mailboxes)).toBe('Atelier Linden')
+    expect(mailboxLabel(allMailboxes, mailboxes)).toBe('All accounts')
   })
 })
 

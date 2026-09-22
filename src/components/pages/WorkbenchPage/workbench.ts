@@ -23,6 +23,13 @@ export type WorkbenchFilter = Readonly<{ workflow: string; mailbox: string; quer
 /** The mailbox filter that shows every account. */
 export const allMailboxes = 'all'
 
+const allAccounts: SidebarItem = { id: allMailboxes, icon: 'inbox', label: 'All accounts' }
+
+/** The applied mailbox filter's name, e.g. "All accounts" or the mailbox's label. */
+export function mailboxLabel(mailbox: string, mailboxes: readonly SidebarItem[]) {
+  return mailboxes.find((item) => item.id === mailbox)?.label ?? allAccounts.label
+}
+
 /** Where the page starts and what Reset goes back to: the first workflow, all mailboxes. */
 export const defaultFilter: WorkbenchFilter = { workflow: '', mailbox: allMailboxes, query: '' }
 
@@ -93,10 +100,7 @@ export function railGroups({ messages, filter, workflows, mailboxes }: RailInput
       id: 'mailbox',
       label: 'Mailboxes',
       selectedId: filter.mailbox,
-      items: withCounts(
-        [{ id: allMailboxes, icon: 'inbox', label: 'All accounts' }, ...mailboxes],
-        'mailbox',
-      ),
+      items: withCounts([allAccounts, ...mailboxes], 'mailbox'),
     },
   ]
 }

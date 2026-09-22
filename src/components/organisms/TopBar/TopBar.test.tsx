@@ -81,6 +81,18 @@ describe('TopBar', () => {
     expect(render({ searchDisabled: true }).search.props['disabled']).toBe(true)
   })
 
+  it('names the sync button by what it does when the caller says so', () => {
+    expect(render().sync.props['aria-label']).toBeUndefined()
+    const { sync } = render({
+      syncLabel: 'Updated at 09:42 · read only',
+      syncActionLabel: 'Refresh mail · Updated at 09:42 · read only',
+    })
+    expect(sync.props).toMatchObject({
+      'aria-label': 'Refresh mail · Updated at 09:42 · read only',
+      children: 'Updated at 09:42 · read only',
+    })
+  })
+
   it('shows the status as plain text when a click would do nothing', () => {
     const { sync } = render({
       syncStatus: 'idle',

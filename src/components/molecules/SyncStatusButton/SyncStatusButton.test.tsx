@@ -60,6 +60,15 @@ describe('SyncStatusButton', () => {
     expect(onClick).not.toHaveBeenCalled()
   })
 
+  it('takes a name that says what a click does and keeps the status visible', () => {
+    const { root, text } = render({
+      'aria-label': 'Refresh mail · Updated at 09:42 · read only',
+      children: 'Updated at 09:42 · read only',
+    })
+    expect(root.props['aria-label']).toBe('Refresh mail · Updated at 09:42 · read only')
+    expect(text.props['children']).toBe('Updated at 09:42 · read only')
+  })
+
   it.each([
     ['waiting', 'waiting'],
     ['checking', 'checking'],
