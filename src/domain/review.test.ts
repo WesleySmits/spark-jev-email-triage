@@ -60,6 +60,12 @@ describe('humanReviewSchema', () => {
     expect(result.success).toBe(false)
   })
 
+  it('keeps a time written in any offset as the instant it names', () => {
+    expect(review({ reviewedAt: '2026-09-21T12:00:00+02:00' }).reviewedAt).toBe(
+      '2026-09-21T10:00:00.000Z',
+    )
+  })
+
   it('refuses a correction that chooses no labels, and an unnamed reviewer', () => {
     expect(
       humanReviewSchema.safeParse({ ...review(), verdict: { decision: 'corrected' } }).success,
@@ -175,6 +181,24 @@ describe('effectiveOutcome', () => {
       decision: 'confirmed',
       labels: { category: 'notification', priority: 'low' },
       reviewedAt: '2026-09-23T09:00:00.000Z',
+    })
+  })
+
+  // Two moments written in two offsets, as a caller that builds its reviews
+  // rather than parsing them may still hand them over. As text the `+02:00`
+  // correction reads as the later of the two, and it happened an hour before
+  // the confirmation: sorting on the spelling would let it win.
+  it('prefers the review that happened last, whatever offset it was written in', () => {
+    const abroad: HumanReview = {
+      ...review({ verdict: corrected('suspicious', 'urgent') }),
+      reviewedAt: '2026-09-21T12:00:00+02:00',
+    }
+    const after = review({ reviewedAt: '2026-09-21T11:00:00Z' })
+
+    expect(effectiveOutcome(unverified, [abroad, after])).toMatchObject({
+      decision: 'confirmed',
+      labels: { category: 'notification', priority: 'low' },
+      reviewedAt: '2026-09-21T11:00:00.000Z',
     })
   })
 

@@ -20,6 +20,11 @@
  *   the version before that is refused rather than applied to the new one.
  *   See `admitReview`, which is the only gate; storage adds no rule of its
  *   own beyond writing what was admitted.
+ * - A review happens at one instant, and the store keeps it as one. Two
+ *   reviews written in different offsets order by when they happened, not
+ *   by how their timestamps read: `2026-09-21T12:00:00+02:00` came before
+ *   `2026-09-21T11:00:00Z`, however the two sort as text. Every time here
+ *   is normalized to UTC as it is parsed, and compared as an instant.
  * - A review decides labels and nothing else. Like a classification, it
  *   authorizes no mailbox action, and nothing here reads or changes a
  *   mailbox: reviewing runs no provider command at all.
@@ -54,13 +59,21 @@ const reviewVerdictSchema = z.discriminatedUnion('decision', [
   z.strictObject({ decision: z.literal('corrected'), labels: reviewedLabelsSchema }),
 ])
 
+/**
+ * One instant, written the same way every time. The same moment can be
+ * written in any offset, and those spellings do not sort as they happened,
+ * so a time is normalized here instead of being compared as it was given.
+ */
+export const utcInstant = (value: string) => new Date(value).toISOString()
+
 export const humanReviewSchema = z.strictObject({
   /** The classification reviewed, and with it the version expected to hold. */
   classification: judgedSubjectSchema,
   verdict: reviewVerdictSchema,
   /** Who reviewed, as this computer names them. Never a mailbox address. */
   reviewer: z.string().trim().min(1),
-  reviewedAt: z.iso.datetime({ offset: true }),
+  /** Accepted in any offset, kept in UTC, so stored reviews compare as written. */
+  reviewedAt: z.iso.datetime({ offset: true }).transform(utcInstant),
 })
 
 export type HumanReview = Readonly<z.infer<typeof humanReviewSchema>>
@@ -138,11 +151,12 @@ export type EffectiveOutcome =
   /** Nothing proposed labels for this row, so nothing decides them. */
   | Readonly<{ decidedBy: 'nobody' }>
 
-/** Newest first. Reviews recorded at the same moment keep the given order. */
+/**
+ * Newest first, by the instant each review names rather than by how that
+ * instant was written. Reviews of one moment keep the given order.
+ */
 const newestFirst = (reviews: readonly HumanReview[]) =>
-  [...reviews].sort((a, b) =>
-    a.reviewedAt < b.reviewedAt ? 1 : a.reviewedAt > b.reviewedAt ? -1 : 0,
-  )
+  [...reviews].sort((a, b) => Date.parse(b.reviewedAt) - Date.parse(a.reviewedAt))
 
 /**
  * The outcome to show for one classification, given every review stored for

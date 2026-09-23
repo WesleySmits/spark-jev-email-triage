@@ -79,6 +79,31 @@ const reviewsOf = (db: DatabaseSync, ref: MailboxCopyRef) =>
 const judgmentsOf = (db: DatabaseSync, ref: MailboxCopyRef): readonly StoredJudgment[] =>
   readJudgments(db, [ref]).get(mailboxCopyId(ref)) ?? []
 
+/** A row written straight to the table, as another writer might leave one. */
+const insertRow = (
+  db: DatabaseSync,
+  row: { decision: string; category: string; priority: string; reviewedAt: string },
+) => {
+  db.exec(
+    `INSERT INTO reviews (
+       judgment_id, mailbox_id, message_id, thread_id, latest_message_id, rubric,
+       classifier_version, decision, category, priority, reviewer, reviewed_at
+     ) SELECT id, '${one}', '11', '11', '11', '${currentTriageRubric}', '${jevModel}',
+       '${row.decision}', ${row.category}, ${row.priority}, 'wesley', '${row.reviewedAt}'
+     FROM judgments`,
+  )
+}
+
+/** The times the table holds, as written, oldest row first. */
+const storedTimes = (db: DatabaseSync) =>
+  z
+    .array(z.object({ reviewed_at: z.string() }))
+    .parse(db.prepare('SELECT reviewed_at FROM reviews ORDER BY id').all())
+    .map((row) => row.reviewed_at)
+
+const timesOf = (db: DatabaseSync, ref: MailboxCopyRef) =>
+  reviewsOf(db, ref).map((stored) => stored.reviewedAt)
+
 const countOf = (db: DatabaseSync, table: string) =>
   z.object({ n: z.int() }).parse(db.prepare(`SELECT count(*) AS n FROM ${table}`).get()).n
 
@@ -160,6 +185,26 @@ describe('recordReview', () => {
     })
   })
 
+  // The same two moments in two offsets. As text the `+02:00` correction
+  // reads as the later of the two, and it happened an hour before the
+  // confirmation that followed it.
+  it('stores every review in UTC, so the table orders by when a review happened', () => {
+    const db = judged()
+
+    recordReview(
+      db,
+      review({ verdict: correction, reviewedAt: '2026-09-21T12:00:00+02:00' }),
+      judge,
+    )
+    recordReview(db, review({ reviewedAt: '2026-09-21T11:00:00Z' }), judge)
+
+    expect(storedTimes(db)).toEqual(['2026-09-21T10:00:00.000Z', '2026-09-21T11:00:00.000Z'])
+    expect(timesOf(db, copy(one, '11'))).toEqual([
+      '2026-09-21T11:00:00.000Z',
+      '2026-09-21T10:00:00.000Z',
+    ])
+  })
+
   it('runs no Spark command and reaches no classifier', () => {
     const db = judged()
 
@@ -188,23 +233,38 @@ describe('the stored reviews', () => {
 
   it('never let a confirmation carry labels, or a correction go without them', () => {
     const db = judged()
-    const insert = (decision: string, category: string) => {
-      db.exec(
-        `INSERT INTO reviews (
-           judgment_id, mailbox_id, message_id, thread_id, latest_message_id, rubric,
-           classifier_version, decision, category, priority, reviewer, reviewed_at
-         ) SELECT id, '${one}', '11', '11', '11', '${currentTriageRubric}', '${jevModel}',
-           '${decision}', ${category}, 'urgent', 'wesley', '2026-09-21T10:00:00.000Z'
-         FROM judgments`,
-      )
-    }
+    const reviewedAt = '2026-09-21T10:00:00.000Z'
 
     expect(() => {
-      insert('corrected', 'NULL')
+      insertRow(db, { decision: 'corrected', category: 'NULL', priority: 'NULL', reviewedAt })
     }).toThrow(/CHECK constraint/)
     expect(() => {
-      insert('confirmed', "'suspicious'")
+      insertRow(db, {
+        decision: 'confirmed',
+        category: "'suspicious'",
+        priority: "'urgent'",
+        reviewedAt,
+      })
     }).toThrow(/CHECK constraint/)
+  })
+
+  // This module writes UTC, so only another writer can leave one in some
+  // other offset. It still has to read as the moment it names.
+  it('order by when a review happened, not by how its time was written', () => {
+    const db = judged()
+    insertRow(db, {
+      decision: 'confirmed',
+      category: 'NULL',
+      priority: 'NULL',
+      reviewedAt: '2026-09-21T12:00:00+02:00',
+    })
+
+    recordReview(db, review({ reviewedAt: '2026-09-21T11:00:00Z' }), judge)
+
+    expect(timesOf(db, copy(one, '11'))).toEqual([
+      '2026-09-21T11:00:00.000Z',
+      '2026-09-21T10:00:00.000Z',
+    ])
   })
 
   it('never lend one mailbox copy of a message id to another', () => {

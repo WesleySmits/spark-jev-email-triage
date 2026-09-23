@@ -22,6 +22,7 @@ import { mailboxCopyId, type MailboxCopyRef } from '../domain/mailbox-copy'
 import {
   admitReview,
   humanReviewSchema,
+  utcInstant,
   type HumanReview,
   type ReviewRefusal,
 } from '../domain/review'
@@ -83,7 +84,8 @@ export function recordReview(
       decision: review.verdict.decision,
       ...chosen(review.verdict),
       reviewer: review.reviewer,
-      reviewedAt: review.reviewedAt,
+      // Stored in UTC, so the column orders by when a review happened.
+      reviewedAt: utcInstant(review.reviewedAt),
     })
     // The admitted classification came from a classified judgment with this
     // exact subject, so the select above finds it. Storing nothing is still
@@ -94,13 +96,18 @@ export function recordReview(
   })
 }
 
-/** Every review of one mailbox copy, newest first. */
+/**
+ * Every review of one mailbox copy, newest first. The order comes from the
+ * instant each row names, not from its text: this module writes UTC, and a
+ * row another writer left in some other offset still sorts by when it
+ * happened. One whose time SQLite cannot read sorts last rather than newest.
+ */
 const query = `
   SELECT thread_id, latest_message_id, rubric, classifier_version,
          decision, category, priority, reviewer, reviewed_at
   FROM reviews
   WHERE mailbox_id = :mailboxId AND message_id = :messageId
-  ORDER BY reviewed_at DESC, id DESC`
+  ORDER BY strftime('%Y-%m-%dT%H:%M:%fZ', reviewed_at) DESC, id DESC`
 
 const rowsSchema = z.array(
   z.object({
