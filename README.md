@@ -29,9 +29,12 @@ pnpm dev
 | `pnpm build`          | Production build                                     |
 | `pnpm check`          | Format check, lint, typecheck, tests, Fallow, builds |
 
-`pnpm eval:jev:live` runs the live Jev evaluation over synthetic fixtures. It
-calls the TypeSafe API, needs `TYPESAFE_API_KEY`, reports itself blocked
-without it, and is never part of `pnpm test` or CI.
+`pnpm eval:jev:live` runs the live Jev evaluation over the reviewed
+evaluation set. It calls the TypeSafe API, needs `TYPESAFE_API_KEY`, reports
+itself blocked without it, and is never part of `pnpm test` or CI. It reports
+what each case expects beside what policy did, and how often the two agree on
+category and on handling; a provider failure is no judgment and counts in
+neither figure.
 
 ## Shadow triage
 
@@ -208,6 +211,23 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
   low-confidence category to review and reports an uncertain priority
   without forcing review. Suspicion only raises review priority. Nothing
   authorizes a mailbox action, and only the shadow command calls it.
+- `src/eval/reviewed-set.ts` is the reviewed evaluation set: the invented,
+  sanitized threads triage is measured against, each with the category,
+  priority, handling and the argument for them that a person settled on
+  against the rubric. It covers ambiguous, suspicious, personal, purchase and
+  notification mail among the rest. An assistant proposed every case and a
+  named person then read all of them, keeping most and correcting two; each
+  case's `curation` says who proposed it, who read it, when, and whether that
+  reading changed it. Expectations are never taken from a classifier answer
+  or from policy, and the set calls nothing, so its tests run in CI with no
+  provider, network or secret; only `pnpm eval:jev:live` reaches Jev. Each
+  case names the thread it was written against by subject, latest message and
+  a digest of the whole parsed thread, along with the rubric id, so any edit
+  to that mail — a body, a sender, an attachment or an earlier message — or a
+  bumped rubric fails the test until the labels are read again, and each
+  records its provenance. `src/eval/README.md` holds the review record and the
+  provenance and privacy rules, including what sanitizing a real message
+  would require.
 - `src/domain/rubric.ts` holds the opinionated default rubric for any Spark
   inbox, personal or work: the categories `personal`, `notification`,
   `security`, `purchase`, `newsletter`, `promotion`, `suspicious`, and

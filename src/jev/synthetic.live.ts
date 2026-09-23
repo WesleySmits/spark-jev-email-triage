@@ -1,80 +1,80 @@
 /**
- * Live Jev evaluation over synthetic fixtures only. It never reads a real
- * mailbox and reports blocked when TYPESAFE_API_KEY is absent. Agreement is
- * reported, not asserted: thresholds are not calibrated yet.
+ * Live Jev evaluation over the reviewed evaluation set. It never reads a real
+ * mailbox and reports blocked when TYPESAFE_API_KEY is absent. What each
+ * thread should come back as is written in `src/eval/reviewed-set.ts`, never
+ * by this run. Agreement is reported, not asserted: the thresholds are not
+ * calibrated yet.
  */
 import { describe, expect, it } from 'vitest'
-import type { z } from 'zod'
-import { threadSchema } from '../domain/email'
-import { syntheticThreads } from '../domain/fixtures'
-import type { categorySchema } from '../domain/triage'
+import {
+  reviewedCases,
+  reviewedMailboxAddress,
+  reviewedThread,
+  type ReviewedCase,
+} from '../eval/reviewed-set'
+import { handlingAgrees } from '../eval/handling-agreement'
 import { createJevClassifier, type JevClassification } from './classifier'
 import { apiKeyVariable, readJevConfig } from './config'
 import { resolveClassification } from './policy'
 import { createSdkTransport } from './transport'
-
-type FixtureName = keyof typeof syntheticThreads
-
-const expectedCategory: Record<FixtureName, z.infer<typeof categorySchema>> = {
-  customerQuestion: 'personal',
-  invoice: 'purchase',
-  systemAlert: 'notification',
-  serviceNotification: 'notification',
-  securityNotice: 'security',
-  newsletter: 'newsletter',
-  coldSales: 'promotion',
-  suspicious: 'suspicious',
-  promptInjection: 'suspicious',
-  ambiguous: 'personal',
-  multiMessage: 'personal',
-}
 
 const provenance = (classification: JevClassification) =>
   classification.status === 'classified'
     ? { model: classification.model, inputTokens: classification.usage.inputTokens }
     : { failure: classification.failure.code }
 
-function labels(classification: JevClassification) {
+function labels(reviewed: ReviewedCase, classification: JevClassification) {
   const outcome = resolveClassification(classification)
-  if (outcome.status !== 'classified') return { review: outcome.review }
+  const agrees = handlingAgrees(reviewed.expectation, outcome)
+  if (outcome.status !== 'classified') return { review: outcome.review, handlingAgrees: agrees }
   return {
     category: outcome.category,
     confidence: Number(outcome.confidence.toFixed(3)),
     priority: outcome.priority,
     review: outcome.review,
+    handlingAgrees: agrees,
     reviewPriority: outcome.reviewPriority,
     suspicion: outcome.suspicionSignals.join(', '),
   }
 }
 
-const report = (name: FixtureName, classification: JevClassification) => ({
-  fixture: name,
-  expected: expectedCategory[name],
+const report = (reviewed: ReviewedCase, classification: JevClassification) => ({
+  fixture: reviewed.fixture,
+  expected: reviewed.expectation.category,
+  expectedPriority: reviewed.expectation.priority,
+  expectedHandling: reviewed.expectation.handling,
   status: classification.status,
   ...provenance(classification),
-  ...labels(classification),
+  ...labels(reviewed, classification),
 })
 
 const config = readJevConfig(process.env)
 const blocked = config.status === 'missing_credentials'
 
-describe('Jev on synthetic fixtures (live)', () => {
+describe('Jev on the reviewed evaluation set (live)', () => {
   const title = blocked
     ? `BLOCKED: ${apiKeyVariable} is not set`
-    : 'classifies every synthetic thread with a valid response'
+    : 'classifies every reviewed thread with a valid response'
 
   it.skipIf(blocked)(title, async () => {
     if (config.status !== 'configured') return
     const classify = createJevClassifier(createSdkTransport({ apiKey: config.apiKey }))
     const rows = []
     // Serial, to stay well inside rate limits.
-    for (const name of Object.keys(expectedCategory) as FixtureName[]) {
-      const thread = threadSchema.parse(syntheticThreads[name])
-      rows.push(report(name, await classify({ thread, mailboxAddress: 'inbox@example.com' })))
+    for (const reviewed of reviewedCases) {
+      const request = {
+        thread: reviewedThread(reviewed),
+        mailboxAddress: reviewedMailboxAddress,
+      }
+      rows.push(report(reviewed, await classify(request)))
     }
-    const agreed = rows.filter((row) => row.category === row.expected).length
+    // A provider failure is no judgment, so it is outside both figures.
+    const judged = rows.filter((row) => row.handlingAgrees !== null)
+    const onCategory = judged.filter((row) => row.category === row.expected).length
+    const onHandling = judged.filter((row) => row.handlingAgrees === true).length
     console.table(rows)
-    console.info(`Category agreement: ${String(agreed)}/${String(rows.length)}`)
+    console.info(`Category agreement: ${String(onCategory)}/${String(judged.length)}`)
+    console.info(`Handling agreement: ${String(onHandling)}/${String(judged.length)}`)
 
     expect(rows.map((row) => row.status)).not.toContain('provider_failure')
   })
