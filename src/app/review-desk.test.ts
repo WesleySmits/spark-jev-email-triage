@@ -1,6 +1,6 @@
 /**
- * `ReviewDesk` over a mocked Spark. Only the two things a unit test cannot
- * run are stood in for:
+ * `ReviewDesk` over a mocked Spark and a real, temporary shadow database.
+ * Only the things a unit test cannot run are stood in for:
  *
  * - `spark/process`, the subprocess runner, answers with synthetic CLI
  *   output instead of starting Spark.
@@ -11,19 +11,32 @@
  *   like an app server that didn't answer. It covers no more than that hop:
  *   `live-inbox.functions.test.ts` owns the boundary's surface and
  *   `live-inbox.server.test.ts` the loopback gate.
+ * - `jev/transport` and `jev/classifier`, which stand in only to fail. The
+ *   desk must never reach them, and these tests assert that it doesn't.
  *
  * Everything below the hop is real: the shared Spark reader with its
- * parsers, and `createLiveInbox` with its mailbox-copy authorization. So
- * these tests show that the seam reaches those protections, not only that
- * it calls something. `live-inbox.server.test.ts` owns the protections
- * themselves; nothing here restates them.
+ * parsers, `createLiveInbox` with its mailbox-copy authorization, and the
+ * SQLite database judgments are read from. So these tests show that the seam
+ * reaches those protections, not only that it calls something.
+ * `live-inbox.server.test.ts` owns the read protections themselves and
+ * `domain/stored-classification.test.ts` the applicability rules; nothing
+ * here restates them.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mailboxCopyId } from '../domain/mailbox-copy'
+import { currentTriageRubric } from '../domain/triage'
+import { jevModel } from '../jev/questions'
+import { databasePathVariable } from '../shadow/config'
+import { openDatabase } from '../shadow/database'
+import { jevFailure, jevJudgment, storeJudgments, type StoredEntry } from '../shadow/fixtures'
 import type { SparkCommand } from '../spark/commands'
 import { SparkError } from '../spark/errors'
 import { emailsTable, emptyEmailsOutput, threadText } from '../spark/fixtures'
-import { ReviewDesk } from './review-desk'
+import { ReviewDesk, type DeskView } from './review-desk'
 
 const spark = vi.hoisted(() => ({
   /** Answers one Spark command, or throws as its runner does. */
@@ -36,14 +49,29 @@ vi.mock('../spark/process', () => ({
   createProcessTransport: () => (command: SparkCommand) => spark.run(command),
 }))
 
+// Reading mail must never classify it. Both stand-ins only fail, so a call
+// would break the reading that made it instead of passing unnoticed.
+const jev = vi.hoisted(() => ({
+  createSdkTransport: vi.fn(() => {
+    throw new Error('Reading mail must not reach Jev')
+  }),
+  createJevClassifier: vi.fn(() => {
+    throw new Error('Reading mail must not classify it')
+  }),
+}))
+
+vi.mock('../jev/transport', () => ({ createSdkTransport: jev.createSdkTransport }))
+vi.mock('../jev/classifier', () => ({ createJevClassifier: jev.createJevClassifier }))
+
 /** Rejects as a request that never reached the app server does. */
 const lost = () => Promise.reject(new Error('The app server did not answer'))
 
 vi.mock('./live-inbox.functions', async () => {
   const { bodyRequestSchema } = await import('./live-inbox')
+  const { deskReading } = await import('./review-desk.server')
   const { sparkInbox } = await import('./spark-inbox.server')
   return {
-    getLiveInbox: () => (spark.unreachable ? lost() : sparkInbox().list()),
+    getLiveInbox: () => (spark.unreachable ? lost() : deskReading()),
     getLiveBody: ({ data, signal }: { data: unknown; signal: AbortSignal }) =>
       spark.unreachable ? lost() : sparkInbox().body(bodyRequestSchema.parse(data), { signal }),
   }
@@ -124,11 +152,46 @@ const threadIds = () =>
 
 const { signal } = new AbortController()
 
+/** A disposable directory, so each test reads a database of its own. */
+let directory: string
+let databasePath: string
+
 beforeEach(() => {
   spark.unreachable = false
   spark.run.mockReset()
   spark.run.mockImplementation(answerSpark(aliased))
+  jev.createSdkTransport.mockClear()
+  jev.createJevClassifier.mockClear()
+  directory = mkdtempSync(join(tmpdir(), 'review-desk-test-'))
+  // Nothing is written here until a test stores a judgment, so the desk
+  // starts with no database at all.
+  databasePath = join(directory, 'shadow.sqlite')
+  process.env[databasePathVariable] = databasePath
 })
+
+afterEach(() => {
+  Reflect.deleteProperty(process.env, databasePathVariable)
+  rmSync(directory, { recursive: true, force: true })
+})
+
+/** Stores judgments the way one `pnpm shadow --apply` run does. */
+function shadowRun(entries: readonly StoredEntry[]) {
+  const db = openDatabase(databasePath)
+  try {
+    storeJudgments(db, entries)
+  } finally {
+    db.close()
+  }
+}
+
+/** What the reading holds about its listed rows. */
+const classificationsIn = (view: DeskView) => (view.status === 'ready' ? view.classifications : {})
+
+/** What the reading holds about one listed row. */
+const classificationOf = (view: DeskView, id: string) => classificationsIn(view)[id]
+
+const listed = (view: DeskView) =>
+  view.status === 'ready' ? view.messages.map((row) => row.id) : []
 
 describe('ReviewDesk.open', () => {
   it('lists a row per mailbox copy, each naming the mailbox it was read in', async () => {
@@ -167,13 +230,16 @@ describe('ReviewDesk.focus', () => {
   it('reads the opened row through its own mailbox, naming the copy it belongs to', async () => {
     const focus = ReviewDesk.focus(await ReviewDesk.open())
 
+    // No run has stored anything here, so each body says so and shows.
     await expect(focus(copy(two, '11'), { signal })).resolves.toEqual({
       id: copy(two, '11'),
       text: 'Body of 11',
+      classification: { state: 'none' },
     })
     await expect(focus(copy(one, '12'), { signal })).resolves.toEqual({
       id: copy(one, '12'),
       text: 'Body of 12',
+      classification: { state: 'none' },
     })
     expect(threadIds()).toEqual(['11', '12'])
   })
@@ -224,5 +290,179 @@ describe('ReviewDesk.probe', () => {
 describe('ReviewDesk.workflows', () => {
   it('offers the one workflow live mail has while it is not triaged', () => {
     expect(ReviewDesk.workflows).toEqual([{ id: 'inbox', icon: 'inbox', label: 'Recent mail' }])
+  })
+})
+
+describe('ReviewDesk.open, stored classifications', () => {
+  it('projects the stored judgment of a row, without sharing it with another mailbox copy', async () => {
+    shadowRun([{ mailboxId: one, messageIds: ['11'], classification: jevJudgment('11') }])
+
+    const view = await ReviewDesk.open()
+
+    // Listing reads no thread, so nothing here can prove the judgment holds.
+    expect(classificationOf(view, copy(one, '11'))).toMatchObject({
+      state: 'unverified',
+      subject: {
+        copy: { mailboxId: one, messageId: '11' },
+        latestMessageId: '11',
+        rubric: currentTriageRubric,
+        classifierVersion: jevModel,
+      },
+      labels: { category: 'personal', priority: 'high', review: 'auto_accepted' },
+    })
+    // The same message id in the other mailbox is another copy. Nothing here
+    // is evidence that one delivery reached both, so the judgment stays put.
+    expect(classificationOf(view, copy(two, '11'))).toEqual({ state: 'none' })
+    expect(classificationOf(view, copy(one, '12'))).toEqual({ state: 'none' })
+  })
+
+  it('reads a judgment of an earlier version of the thread as stale, failed retry or not', async () => {
+    shadowRun([
+      { mailboxId: one, messageIds: ['11'], classification: jevJudgment('11') },
+      {
+        mailboxId: one,
+        messageIds: ['11', '13'],
+        classification: jevFailure('11'),
+        judgedAt: '2026-09-21T09:00:00.000Z',
+      },
+    ])
+
+    expect(classificationOf(await ReviewDesk.open(), copy(one, '11'))).toMatchObject({
+      state: 'stale',
+      reason: 'newer_message',
+      subject: { latestMessageId: '11' },
+      labels: { category: 'personal' },
+    })
+  })
+
+  it('reads a judgment by another classifier build as stale, and keeps its labels', async () => {
+    shadowRun([
+      {
+        mailboxId: one,
+        messageIds: ['12'],
+        classification: { ...jevJudgment('12'), requestedModel: 'jev-1.12.0' },
+      },
+    ])
+
+    expect(classificationOf(await ReviewDesk.open(), copy(one, '12'))).toMatchObject({
+      state: 'stale',
+      reason: 'classifier',
+      subject: { classifierVersion: 'jev-1.12.0' },
+      labels: { category: 'personal' },
+    })
+  })
+
+  it('reads a failed attempt as a failure, never as a classification', async () => {
+    shadowRun([{ mailboxId: one, messageIds: ['12'], classification: jevFailure('12') }])
+
+    const classification = classificationOf(await ReviewDesk.open(), copy(one, '12'))
+
+    expect(classification).toMatchObject({ state: 'provider_failure', errorCode: 'timeout' })
+    expect(classification).not.toHaveProperty('labels')
+  })
+
+  it('lists every row as unclassified while no run has stored anything', async () => {
+    const view = await ReviewDesk.open()
+
+    expect(listed(view)).toEqual([copy(one, '11'), copy(two, '11'), copy(one, '12')])
+    expect(Object.values(classificationsIn(view))).toEqual([
+      { state: 'none' },
+      { state: 'none' },
+      { state: 'none' },
+    ])
+  })
+
+  it('reports judgments it cannot read as unavailable, not as absent, and lists all mail', async () => {
+    writeFileSync(databasePath, 'not a database')
+
+    const view = await ReviewDesk.open()
+
+    expect(listed(view)).toEqual([copy(one, '11'), copy(two, '11'), copy(one, '12')])
+    expect(classificationOf(view, copy(one, '11'))).toEqual({
+      state: 'unavailable',
+      reason: 'unreadable',
+    })
+  })
+
+  it('reports a database this build cannot migrate as unavailable', async () => {
+    // A file at the path with no schema yet: a run would migrate it, a
+    // reading may not, so what it holds stays unknown.
+    new DatabaseSync(databasePath).close()
+
+    expect(classificationOf(await ReviewDesk.open(), copy(one, '11'))).toEqual({
+      state: 'unavailable',
+      reason: 'unsupported_schema',
+    })
+  })
+
+  it('classifies nothing when the page loads or refreshes', async () => {
+    shadowRun([{ mailboxId: one, messageIds: ['11'], classification: jevJudgment('11') }])
+
+    const view = await ReviewDesk.open()
+    await ReviewDesk.open()
+    await ReviewDesk.focus(view)(copy(one, '11'), { signal })
+
+    expect(jev.createSdkTransport).not.toHaveBeenCalled()
+    expect(jev.createJevClassifier).not.toHaveBeenCalled()
+    // Listing reads no thread either: only the body of the opened row does.
+    expect(commands()).toEqual([
+      'accounts',
+      'emails',
+      'emails',
+      'accounts',
+      'emails',
+      'emails',
+      'thread',
+    ])
+  })
+})
+
+describe('ReviewDesk.focus, verifying a stored classification', () => {
+  it('reads a judgment as current only once a thread proves it names this version', async () => {
+    shadowRun([{ mailboxId: one, messageIds: ['11'], classification: jevJudgment('11') }])
+    const view = await ReviewDesk.open()
+
+    expect(classificationOf(view, copy(one, '11'))).toMatchObject({ state: 'unverified' })
+    await expect(ReviewDesk.focus(view)(copy(one, '11'), { signal })).resolves.toMatchObject({
+      text: 'Body of 11',
+      classification: {
+        state: 'current',
+        subject: { copy: { mailboxId: one, messageId: '11' }, latestMessageId: '11' },
+        labels: { category: 'personal' },
+      },
+    })
+  })
+
+  it('reads it as stale when the thread now ends in a message stored later than it', async () => {
+    shadowRun([{ mailboxId: one, messageIds: ['11'], classification: jevJudgment('11') }])
+    const view = await ReviewDesk.open()
+    // The mailbox moved on after the run: the thread now holds a reply that
+    // nothing has stored, which only reading that thread can show.
+    spark.run.mockImplementation((command) =>
+      command.name === 'thread'
+        ? Promise.resolve(
+            threadText('Shared subject', [
+              { id: '11', from: sender, date: '2026-09-22 09:15', body: 'Body of 11' },
+              { id: '13', from: sender, date: '2026-09-22 10:00', body: 'A reply' },
+            ]),
+          )
+        : answerSpark(aliased)(command),
+    )
+
+    await expect(ReviewDesk.focus(view)(copy(one, '11'), { signal })).resolves.toMatchObject({
+      text: 'Body of 11',
+      classification: { state: 'stale', reason: 'newer_message', labels: { category: 'personal' } },
+    })
+  })
+
+  it('still reads the body when the stored judgments cannot be read', async () => {
+    const view = await ReviewDesk.open()
+    writeFileSync(databasePath, 'not a database')
+
+    await expect(ReviewDesk.focus(view)(copy(one, '11'), { signal })).resolves.toEqual({
+      id: copy(one, '11'),
+      text: 'Body of 11',
+      classification: { state: 'unavailable', reason: 'unreadable' },
+    })
   })
 })

@@ -4,8 +4,9 @@
  */
 import { createServerFn } from '@tanstack/react-start'
 import { getRequest, getRequestIP, setResponseHeaders } from '@tanstack/react-start/server'
-import { bodyRequestSchema, type LiveInbox } from './live-inbox'
+import { bodyRequestSchema, type ClassifiedInbox } from './live-inbox'
 import { BodyUnavailableError, isLoopback } from './live-inbox.server'
+import { deskReading } from './review-desk.server'
 import { sparkInbox } from './spark-inbox.server'
 
 /**
@@ -18,12 +19,16 @@ function mailRequest() {
   return { allowed: isLoopback(getRequestIP()), signal: getRequest().signal }
 }
 
-/** Recent mail as bounded summaries, without bodies, or why it is unavailable. */
+/**
+ * Recent mail as bounded summaries, without bodies, with the stored judgment
+ * of each row, or why it is unavailable. It reads only: no classifier is
+ * called, so refreshing the page classifies nothing.
+ */
 export const getLiveInbox = createServerFn({ method: 'GET' }).handler(
-  async (): Promise<LiveInbox> => {
+  async (): Promise<ClassifiedInbox> => {
     const { allowed, signal } = mailRequest()
     if (!allowed) return { status: 'unavailable', reason: 'local-only' }
-    return sparkInbox().list({ signal })
+    return deskReading({ signal })
   },
 )
 

@@ -9,6 +9,17 @@ import { maxListLimit } from '../spark/commands'
 
 const isTimeZone = (zone: string) => Intl.supportedValuesOf('timeZone').includes(zone)
 
+/** Where a run stores its judgments, and where review reads them back. */
+const defaultDatabasePath = '.data/shadow-triage.sqlite'
+
+/** Points review at a database a run wrote elsewhere, as `--db` does. */
+export const databasePathVariable = 'SHADOW_DATABASE_PATH'
+
+export function readDatabasePath(env: Readonly<Record<string, string | undefined>>): string {
+  const path = env[databasePathVariable]?.trim()
+  return path === undefined || path === '' ? defaultDatabasePath : path
+}
+
 export const shadowConfigSchema = z.strictObject({
   /** The address of the Spark account or shared inbox to read. */
   mailbox: mailboxSchema.shape.address,
@@ -22,7 +33,7 @@ export const shadowConfigSchema = z.strictObject({
   jevConcurrency: z.int().min(1).max(4).default(2),
   jevTimeoutMs: z.int().min(1_000).max(30_000).default(10_000),
   sparkTimeoutMs: z.int().min(1_000).max(60_000).default(15_000),
-  databasePath: z.string().trim().min(1).default('.data/shadow-triage.sqlite'),
+  databasePath: z.string().trim().min(1).default(defaultDatabasePath),
   /** The zone Spark Desktop prints times in; defaults to this Mac's zone. */
   timeZone: z
     .string()

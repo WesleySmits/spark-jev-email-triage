@@ -8,8 +8,12 @@
  *   other extra field is rejected instead of passing through.
  * - A body names the message it belongs to, so a response for another
  *   message is never shown.
+ * - A body may carry what the thread its read returned proves about the
+ *   judgment stored for that row. It is evidence about the row, never a new
+ *   judgment: nothing classifies to answer a body read.
  */
 import { z } from 'zod'
+import { storedClassificationSchema } from '../domain/stored-classification'
 
 const id = z.string().trim().min(1)
 
@@ -56,6 +60,11 @@ export const messageBodySchema = z.strictObject({
   id,
   /** Plain text. A blank line starts a new paragraph. */
   text: z.string(),
+  /**
+   * What the stored judgment for this row says, now that a thread was read
+   * for it. Absent when no judgment was looked up at all, as for fixtures.
+   */
+  classification: storedClassificationSchema.optional(),
 })
 
 export type MessageBody = z.infer<typeof messageBodySchema>
