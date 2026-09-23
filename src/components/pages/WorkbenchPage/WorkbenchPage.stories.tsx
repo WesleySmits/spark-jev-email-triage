@@ -8,6 +8,7 @@ import TopBarStories from '../../organisms/TopBar/TopBar.stories'
 import { fixtureBodyLoader, type BodyLoader, type InboxFixture } from '../../../app/inbox'
 import type { DeskReviewOutcome, DeskReviewRequest, RowReview } from '../../../app/desk-review'
 import type { StoredClassification } from '../../../domain/stored-classification'
+import type { ListedEvidence } from './classification'
 import type { WorkbenchMessage } from './workbench'
 import { WorkbenchPage } from './WorkbenchPage'
 
@@ -1486,5 +1487,146 @@ export const ReviewStaysOnItsOwnRow: Story = {
     await expect(evidence(canvasElement)).toHaveTextContent('Needs a person')
     await expect(evidence(canvasElement)).not.toHaveTextContent('by a person')
     await expect(result(canvasElement)).toHaveTextContent('Choose a category first')
+  },
+}
+
+// The same row, judged again by a later run after a reply arrived in its
+// thread. It is another version of the same mailbox copy, so a choice made
+// about the version before it does not carry over.
+const m1Newer: StoredClassification = {
+  ...m1Unsure,
+  subject: { ...subjectOf('m1'), latestMessageId: '13' },
+  judgedAt: '2026-09-23T10:00:00.000Z',
+}
+
+const newerStates: Readonly<Record<string, StoredClassification>> = {
+  ...storedStates,
+  m1: m1Newer,
+}
+
+const reviewedSince = projected({ decision: 'corrected', labels: suspicious })
+
+/**
+ * Stands in for the route's loader across a refresh that changes something
+ * about the open row. Refresh moves to the next reading; the row stays open,
+ * so the page is handed new data without the reader being built again.
+ */
+function WithNextReading({ next, ...args }: Props & { next: ListedEvidence }) {
+  const [refreshed, setRefreshed] = useState(false)
+  return (
+    <WorkbenchPage
+      {...args}
+      classifications={refreshed ? next : args.classifications}
+      topBar={{
+        ...args.topBar,
+        syncActionLabel: 'Refresh mail',
+        onSyncClick: () => {
+          setRefreshed(true)
+        },
+      }}
+    />
+  )
+}
+
+/** The reading a Refresh brings: the same row, judged again since. */
+const newerReading: ListedEvidence = { reading: 'reading-2', states: newerStates }
+
+/** The reading a Refresh brings: the same row, reviewed since. */
+const reviewedReading: ListedEvidence = {
+  reading: 'reading-2',
+  states: unsureStates,
+  reviews: { m1: reviewedSince },
+}
+
+/**
+ * A refresh brings another version of the row that is already open, so the
+ * reader is never built again. A category chosen about the version before it
+ * is not carried over: the panel starts again, and the save that follows
+ * names the version now shown rather than pairing it with the old choice.
+ */
+export const PanelFollowsANewerVersion: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewing({ outcome: recorded }),
+  render: (args) => <WithNextReading {...args} next={newerReading} />,
+  play: async ({ args, canvasElement }) => {
+    const rows = within(canvasElement)
+    await reviewReady(canvasElement)
+    await pick(canvasElement, 'Suspicious')
+    await expect(result(canvasElement)).toHaveTextContent('Not saved yet')
+
+    await refresh(canvasElement)
+
+    // The same row is still open, and the panel is asking again.
+    await expect(subject(canvasElement)).toHaveTextContent('Can delivery move a week earlier?')
+    await expect(rows.getByRole('radio', { name: 'Suspicious' })).not.toBeChecked()
+    await expect(result(canvasElement)).toHaveTextContent('Choose a category first')
+    await expect(save(canvasElement)).toBeDisabled()
+
+    await pick(canvasElement, 'Notification')
+    await userEvent.click(save(canvasElement))
+    await resultShows(canvasElement, 'Review saved')
+    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledTimes(1)
+    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith({
+      classification: { ...subjectOf('m1'), latestMessageId: '13' },
+      verdict: { decision: 'corrected', labels: { category: 'notification', priority: 'high' } },
+    })
+  },
+}
+
+/**
+ * A refresh brings a review stored since the page listed the row, without the
+ * row closing. The panel takes it up: the stored category is the one chosen
+ * and the result says the review was saved.
+ */
+export const PanelFollowsAReviewStoredSince: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewing({ outcome: recorded }),
+  render: (args) => <WithNextReading {...args} next={reviewedReading} />,
+  play: async ({ canvasElement }) => {
+    const rows = within(canvasElement)
+    await reviewReady(canvasElement)
+    await expect(result(canvasElement)).toHaveTextContent('Choose a category first')
+
+    await refresh(canvasElement)
+
+    await expect(rows.getByRole('radio', { name: 'Suspicious' })).toBeChecked()
+    await expect(result(canvasElement)).toHaveTextContent('Review saved')
+    await expect(evidence(canvasElement)).toHaveTextContent('Corrected by a person')
+    await expect(rows.getByRole('button', { name: reviewableRow })).toHaveTextContent('Suspicious')
+  },
+}
+
+/**
+ * A refresh lands while a save is still on its way. The panel is left alone
+ * until the answer is in: the request named the version that was shown when
+ * it went out, and the store decides that on its own terms. Here it refuses
+ * it as no longer current, which is still announced, and only then does the
+ * panel start again on the version the refresh brought.
+ */
+export const RefreshDuringSaveIsLeftAlone: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewing({ outcome: { status: 'refused', reason: 'stale_subject' }, delay: 1000 }),
+  render: (args) => <WithNextReading {...args} next={newerReading} />,
+  play: async ({ args, canvasElement }) => {
+    const rows = within(canvasElement)
+    await saveChosen(canvasElement, 'Suspicious')
+    await expect(result(canvasElement)).toHaveTextContent('Saving review')
+
+    await refresh(canvasElement)
+    // Still saving, and still about what was chosen when it went out.
+    await expect(result(canvasElement)).toHaveTextContent('Saving review')
+    await expect(rows.getByRole('radio', { name: 'Suspicious' })).toBeChecked()
+
+    await waitFor(() => expect(announced(canvasElement)).toHaveTextContent('Not saved'), {
+      timeout: 3000,
+    })
+    await expect(announced(canvasElement)).toHaveTextContent('no longer the current one')
+    // The answer is in, so the panel takes up the version the refresh brought.
+    await expect(result(canvasElement)).toHaveTextContent('Choose a category first')
+    await expect(rows.getByRole('radio', { name: 'Suspicious' })).not.toBeChecked()
+    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith({
+      classification: subjectOf('m1'),
+      verdict: { decision: 'corrected', labels: { category: 'suspicious', priority: 'high' } },
+    })
   },
 }

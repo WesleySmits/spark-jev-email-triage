@@ -8,6 +8,7 @@ import {
   reviewPanelCopy,
   reviewRequest,
   reviewResult,
+  reviewSignature,
   type Reviewable,
   type ReviewCategoryValue,
   type ReviewState,
@@ -28,11 +29,30 @@ type ReviewActionProps = Readonly<{
   onSave: SaveReview
 }>
 
+/**
+ * What the panel holds, and what it holds it about. `signature` names the
+ * version being reviewed and the review stored for it, so a reading that
+ * changes either can be noticed without the row closing.
+ */
+type Held = Readonly<{
+  signature: string
+  chosen: ReviewCategoryValue | null
+  state: ReviewState
+  announcement: string
+}>
+
 /** Where the panel starts: on a review already stored, or on nothing chosen. */
-function startFrom(saved: RowReview | undefined) {
-  if (saved === undefined) return { chosen: null, state: { status: 'choosing' } as ReviewState }
+function startFrom(signature: string, saved: RowReview | undefined, announcement = ''): Held {
+  if (saved === undefined) {
+    return { signature, chosen: null, state: { status: 'choosing' }, announcement }
+  }
   const chosen = saved.labels.category
-  return { chosen, state: { status: 'saved', decision: saved.decision, chosen } as ReviewState }
+  return {
+    signature,
+    chosen,
+    state: { status: 'saved', decision: saved.decision, chosen },
+    announcement,
+  }
 }
 
 /** What one outcome leaves behind. A recorded review names what it decided. */
@@ -55,32 +75,52 @@ function stateFor(
  * The selection and the save, with only the latest save counting. A person
  * who chooses again while one is on its way is answered about that choice,
  * not about the one they left behind.
+ *
+ * A reading can hand the same open row another version of its classification,
+ * or a review stored since, without the row closing and this being built
+ * again. When it does, what was chosen was chosen about what was shown
+ * before, so the panel starts again from what the store now says rather than
+ * letting a later save pair an old choice with the version now named.
+ *
+ * A save already on its way is left alone: its request went out naming the
+ * version that was shown then, the store decides that on its own terms, and
+ * the change is taken up once the answer is in. The answer is kept and still
+ * announced, so nobody is left wondering what became of what they pressed.
  */
 function useReview(reviewable: Reviewable, saved: RowReview | undefined, onSave: SaveReview) {
-  const start = startFrom(saved)
-  const [chosen, setChosen] = useState<ReviewCategoryValue | null>(start.chosen)
-  const [state, setState] = useState<ReviewState>(start.state)
-  // Only what happened here is announced. A review the reading already held
-  // is shown, not read out: nothing happened for the person to be told of.
-  const [announcement, setAnnouncement] = useState('')
+  const signature = reviewSignature(reviewable, saved)
+  const [held, setHeld] = useState(() => startFrom(signature, saved))
+  const shown =
+    held.signature === signature || held.state.status === 'saving'
+      ? held
+      : startFrom(signature, saved, held.announcement)
+  if (shown !== held) setHeld(shown)
   const latest = useRef(0)
-  const settle = (next: ReviewState, original: string) => {
-    setState(next)
-    setAnnouncement(reviewAnnouncement(next, original))
+  const settle = (state: ReviewState, original: string) => {
+    setHeld((current) => ({
+      ...current,
+      state,
+      // Only what happened here is announced. A review the reading already
+      // held is shown, not read out: nothing happened to tell anyone of.
+      announcement: reviewAnnouncement(state, original),
+    }))
   }
   const choose = (value: ReviewCategoryValue) => {
     latest.current += 1
-    setChosen(value)
-    setState({ status: 'unsaved' })
-    setAnnouncement('')
+    setHeld((current) => ({
+      ...current,
+      chosen: value,
+      state: { status: 'unsaved' },
+      announcement: '',
+    }))
   }
   const save = (original: string) => {
+    const { chosen } = shown
     if (chosen === null) return
     latest.current += 1
     const attempt = latest.current
     const request = reviewRequest(reviewable, chosen)
-    setState({ status: 'saving' })
-    setAnnouncement('')
+    setHeld((current) => ({ ...current, state: { status: 'saving' }, announcement: '' }))
     void onSave(request).then(
       (outcome) => {
         if (attempt === latest.current) settle(stateFor(outcome, request, chosen), original)
@@ -90,7 +130,7 @@ function useReview(reviewable: Reviewable, saved: RowReview | undefined, onSave:
       },
     )
   }
-  return { chosen, state, announcement, choose, save } as const
+  return { ...shown, choose, save } as const
 }
 
 /**
@@ -104,7 +144,9 @@ function useReview(reviewable: Reviewable, saved: RowReview | undefined, onSave:
  *
  * A review already stored for that same version is what the panel opens on,
  * so a correction saved earlier is still chosen after a refresh, and a later
- * confirmation replaces it. Only what happens here is announced.
+ * confirmation replaces it. A reading that brings another version of the row,
+ * or a review stored since, makes the panel start again from that, whether or
+ * not the row closed in between. Only what happens here is announced.
  *
  * Every state a save passes through is visible and announced: nothing
  * chosen, chosen but unsaved, saving, saved, refused as no longer current,

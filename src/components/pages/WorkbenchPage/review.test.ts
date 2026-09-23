@@ -18,6 +18,7 @@ import {
   reviewPanelCopy,
   reviewRequest,
   reviewResult,
+  reviewSignature,
   reviewableIn,
   verdictFor,
   type ReviewState,
@@ -107,6 +108,78 @@ describe('verdictFor', () => {
       classification: subject,
       verdict: { decision: 'corrected', labels: { category: 'personal', priority: 'low' } },
     })
+  })
+})
+
+describe('reviewSignature', () => {
+  const reviewable = { subject, labels }
+  const saved = {
+    decidedBy: 'reviewer',
+    decision: 'corrected',
+    labels: { category: 'suspicious', priority: 'urgent' },
+    reviewer: 'wesley',
+    reviewedAt: '2026-09-23T08:30:00.000Z',
+  } as const
+  const signature = reviewSignature(reviewable, undefined)
+
+  it('is the same for the same version, labels and stored review', () => {
+    expect(reviewSignature({ subject: { ...subject }, labels: { ...labels } }, undefined)).toBe(
+      signature,
+    )
+    expect(reviewSignature(reviewable, { ...saved })).toBe(reviewSignature(reviewable, saved))
+  })
+
+  it('changes with every part of the version being reviewed', () => {
+    const moved = [
+      { ...subject, copy: { ...subject.copy, mailboxId: 'two@mail.example' } },
+      { ...subject, copy: { ...subject.copy, messageId: '12' } },
+      { ...subject, threadId: '12' },
+      { ...subject, latestMessageId: '13' },
+      { ...subject, rubric: 'email-triage.v3' },
+      { ...subject, classifierVersion: 'jev-1.14.0' },
+    ]
+
+    for (const version of moved) {
+      expect(reviewSignature({ subject: version, labels }, undefined)).not.toBe(signature)
+    }
+  })
+
+  it("changes with the model's own labels, which decide what a choice means", () => {
+    // The same category is a confirmation against one judgment and a
+    // correction against another, so a choice cannot outlive them.
+    expect(
+      reviewSignature({ subject, labels: { ...labels, category: 'personal' } }, undefined),
+    ).not.toBe(signature)
+    expect(
+      reviewSignature({ subject, labels: { ...labels, priority: 'urgent' } }, undefined),
+    ).not.toBe(signature)
+  })
+
+  it('changes when a review is stored, changed or gone', () => {
+    expect(reviewSignature(reviewable, saved)).not.toBe(signature)
+    expect(reviewSignature(reviewable, { ...saved, decision: 'confirmed' })).not.toBe(
+      reviewSignature(reviewable, saved),
+    )
+    expect(
+      reviewSignature(reviewable, { ...saved, labels: { category: 'personal', priority: 'low' } }),
+    ).not.toBe(reviewSignature(reviewable, saved))
+    expect(
+      reviewSignature(reviewable, { ...saved, reviewedAt: '2026-09-23T09:30:00.000Z' }),
+    ).not.toBe(reviewSignature(reviewable, saved))
+  })
+
+  it('ignores what does not change what is being reviewed', () => {
+    // Confidence, the model's own review need and who reviewed decide
+    // nothing a choice is made against.
+    expect(reviewSignature({ subject, labels: { ...labels, confidence: 0.1 } }, undefined)).toBe(
+      signature,
+    )
+    expect(
+      reviewSignature({ subject, labels: { ...labels, review: 'auto_accepted' } }, undefined),
+    ).toBe(signature)
+    expect(reviewSignature(reviewable, { ...saved, reviewer: 'someone else' })).toBe(
+      reviewSignature(reviewable, saved),
+    )
   })
 })
 

@@ -16,7 +16,8 @@
  *   state and nothing about the message, so the same words may be announced,
  *   shown and logged.
  */
-import type { DeskReviewRequest } from '../../../app/desk-review'
+import type { DeskReviewRequest, RowReview } from '../../../app/desk-review'
+import { mailboxCopyId } from '../../../domain/mailbox-copy'
 import type { ReviewRefusal } from '../../../domain/review'
 import type {
   ClassificationLabels,
@@ -71,6 +72,45 @@ export function verdictFor(
     ? { decision: 'confirmed' }
     : { decision: 'corrected', labels: { category: chosen, priority: labels.priority } }
 }
+
+/** The exact version a subject names, as one comparable value. */
+const subjectId = (subject: JudgedSubject) =>
+  JSON.stringify([
+    mailboxCopyId(subject.copy),
+    subject.threadId,
+    subject.latestMessageId,
+    subject.rubric,
+    subject.classifierVersion,
+  ])
+
+/**
+ * What the panel is asking about, as one comparable value: the version being
+ * reviewed, the labels a choice is judged against, and the review already
+ * stored for it.
+ *
+ * A reading may hand the page another version of the same open row, or a
+ * review stored since it listed one, without the row closing. A choice was
+ * made about what was shown at the time, so when this changes the panel has
+ * to start again from what the store now says: otherwise a later save would
+ * pair a choice made about the version before with the version now named.
+ * The model's own labels are in it because they decide what a choice means —
+ * the same category is a confirmation against one judgment and a correction
+ * against another.
+ *
+ * The reading's id is deliberately not: it is new on every refresh, even when
+ * nothing about the row changed, and starting again then would throw away a
+ * review the person had just saved for no reason at all.
+ */
+export const reviewSignature = (reviewable: Reviewable, saved: RowReview | undefined) =>
+  JSON.stringify([
+    subjectId(reviewable.subject),
+    reviewable.labels.category,
+    reviewable.labels.priority,
+    saved?.decision ?? null,
+    saved?.labels.category ?? null,
+    saved?.labels.priority ?? null,
+    saved?.reviewedAt ?? null,
+  ])
 
 /** The request for one review of `reviewable`, naming the version shown. */
 export const reviewRequest = (

@@ -197,11 +197,14 @@ describe('evidenceIn, what a person decided', () => {
       readUnder('reading-1', 'm1', corrected),
     )
     expect(later.openReview).toBe(corrected)
+  })
 
-    // And a read that found none leaves the row with none, rather than
-    // showing a decision the store no longer applies to that row.
-    const gone = evidenceIn(listed, 'm1', readUnder('reading-1', 'm1'))
-    expect(gone.openReview).toBeUndefined()
+  it('never lets a read that carries no review take the listed one away', () => {
+    // Reviews are only appended, and the read names the version the listing
+    // named, so it has no way of finding that a listed review has gone. A
+    // loader that carries no reviews at all is the same case, and neither
+    // may leave the row looking unreviewed.
+    expect(evidenceIn(listed, 'm1', readUnder('reading-1', 'm1')).openReview).toBe(corrected)
   })
 
   it('keeps what the reading itself said where no body read has answered it', () => {
