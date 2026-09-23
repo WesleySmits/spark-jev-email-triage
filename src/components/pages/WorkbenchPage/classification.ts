@@ -137,14 +137,21 @@ export function evidenceIn(
       ? body
       : undefined
   const open = openId === undefined ? undefined : evidenceFor(stored(openId), read?.classification)
-  // A body read that answered the listing read the store as it is now, so a
-  // review it found is newer than what the listing carried: one saved since
-  // then shows without anything being listed again. A read that carries none
-  // adds nothing and never takes the listing's answer away — reviews are only
-  // ever appended, and a read names the same version the listing did, so it
-  // has no way of finding that one it listed has gone. A loader that carries
-  // no reviews at all, as fixtures do, is the same case.
-  const openReview = openId === undefined ? undefined : (read?.review ?? reviewed(openId))
+  // A review a body read carries was projected from the judgment that read
+  // named, and decides that judgment alone. So it counts only where that
+  // judgment is the one being shown: a read naming another version is not
+  // promoted above, and its reviewer's decision must not be shown beside the
+  // version that stayed either. What the reading listed stands instead.
+  //
+  // Where the read did answer the listing, it read the store as it is now, so
+  // a review saved since shows without anything being listed again. A read
+  // that carries none adds nothing and never takes the listing's answer away:
+  // reviews are only ever appended, and the read names the version the
+  // listing named, so it has no way of finding that a listed one has gone. A
+  // loader that carries no reviews at all, as fixtures do, is the same case.
+  const answering =
+    read?.classification !== undefined && read.classification === open ? read : undefined
+  const openReview = openId === undefined ? undefined : (answering?.review ?? reviewed(openId))
   return {
     open,
     openReview,

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { RowReview } from '../../../app/desk-review'
 import type {
   ClassificationLabels,
   StoredClassification,
@@ -174,11 +175,33 @@ describe('evidenceIn, what a person decided', () => {
     reviews: { m1: corrected },
   } as const
 
-  const readUnder = (reading: string, id: string, review?: typeof corrected): BodyState =>
+  /**
+   * A body of `id` read under `reading`, carrying what it found about the
+   * row: the judgment it named, and any review of that judgment.
+   */
+  const readUnder = (
+    reading: string,
+    id: string,
+    review?: RowReview,
+    classification: StoredClassification = current,
+  ): BodyState =>
     settleBody(requestBody(idleBody, id, reading), 1, {
       ok: true,
-      body: { id, text: 'Hello', classification: current, ...(review && { review }) },
+      body: { id, text: 'Hello', classification, ...(review && { review }) },
     })
+
+  // A judgment of a later version of the same copy, as a run stored after
+  // the reading listed this row would be. It is not the judgment the page is
+  // showing, so nothing the store says about it describes what is shown.
+  const otherJudgment: StoredClassification = {
+    state: 'current',
+    subject: { ...subject, latestMessageId: '13' },
+    judgedAt: '2026-09-23T10:00:00.000Z',
+    labels,
+  }
+
+  /** A review of that other judgment, distinct from the listed one. */
+  const reviewOfOther: RowReview = { ...confirmed, reviewedAt: '2026-09-24T08:00:00.000Z' }
 
   it('shows what the reading projected, so a refresh keeps a saved review', () => {
     const evidence = evidenceIn(listed, 'm1', idleBody)
@@ -197,6 +220,41 @@ describe('evidenceIn, what a person decided', () => {
       readUnder('reading-1', 'm1', corrected),
     )
     expect(later.openReview).toBe(corrected)
+  })
+
+  it("keeps another judgment's reviewer off the judgment being shown", () => {
+    // The read named a later version of the copy, so it is not promoted; the
+    // decision a person made about that version may not be shown beside the
+    // version that stayed either, however fresh the read was.
+    const evidence = evidenceIn(
+      listed,
+      'm1',
+      readUnder('reading-1', 'm1', reviewOfOther, otherJudgment),
+    )
+
+    expect(evidence.open).toBe(unverified)
+    expect(evidence.openReview).toBe(corrected)
+    expect(evidence.reviewOf('m1')).not.toBe(reviewOfOther)
+  })
+
+  it('shows no reviewer at all where only another judgment has one', () => {
+    const evidence = evidenceIn(
+      { ...listed, reviews: {} },
+      'm1',
+      readUnder('reading-1', 'm1', reviewOfOther, otherJudgment),
+    )
+
+    expect(evidence.open).toBe(unverified)
+    expect(evidence.openReview).toBeUndefined()
+  })
+
+  it('takes a fresh review from a read that did answer the listed judgment', () => {
+    // The same judgment the listing named, so what the read found about it
+    // is about what is shown, and the newer answer is the one that counts.
+    const evidence = evidenceIn(listed, 'm1', readUnder('reading-1', 'm1', reviewOfOther))
+
+    expect(evidence.open).toBe(current)
+    expect(evidence.openReview).toBe(reviewOfOther)
   })
 
   it('never lets a read that carries no review take the listed one away', () => {
