@@ -145,6 +145,28 @@ const migrations: readonly string[] = [
 
   DROP TABLE corrections;
   `,
+  // 3: the identity and result of each logical Save. A retry with the same
+  // request id reads this row instead of appending another review. The row
+  // and its review (or refusal) commit together, and neither can be changed.
+  `
+  CREATE TABLE review_requests (
+    request_id TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('recorded', 'refused')),
+    refusal_reason TEXT,
+    review_id INTEGER REFERENCES reviews (id),
+    CHECK ((status = 'recorded') = (review_id IS NOT NULL AND refusal_reason IS NULL)),
+    CHECK ((status = 'refused') = (refusal_reason IS NOT NULL AND review_id IS NULL))
+  ) STRICT;
+
+  CREATE TRIGGER review_requests_are_never_changed BEFORE UPDATE ON review_requests BEGIN
+    SELECT RAISE(ABORT, 'A review request result cannot be changed');
+  END;
+
+  CREATE TRIGGER review_requests_are_never_removed BEFORE DELETE ON review_requests BEGIN
+    SELECT RAISE(ABORT, 'A review request result cannot be removed');
+  END;
+  `,
 ]
 
 export const schemaVersion = migrations.length
@@ -159,8 +181,19 @@ export class ShadowDatabaseError extends Error {
     super(
       code === 'newer_schema'
         ? `Database schema ${String(version)} is newer than this app supports`
-        : `Database schema ${String(version)} needs migrating; run with --apply once`,
+        : `Database schema ${String(version)} needs migrating; run pnpm shadow --migrate --db <path>`,
     )
+  }
+}
+
+export class ShadowMigrationError extends Error {
+  override readonly name = 'ShadowMigrationError'
+
+  constructor(
+    readonly code:
+      'missing_database' | 'unsupported_source' | 'unhealthy_database' | 'legacy_corrections',
+  ) {
+    super(code)
   }
 }
 
@@ -217,10 +250,48 @@ export function migrate(db: DatabaseSync): void {
   if (current > schemaVersion) throw new ShadowDatabaseError('newer_schema', current)
   migrations.slice(current).forEach((sql, index) => {
     transaction(db, () => {
-      db.exec(sql)
-      db.exec(`PRAGMA user_version = ${String(current + index + 1)}`)
+      applyMigration(db, sql, current + index + 1)
     })
   })
+}
+
+function applyMigration(db: DatabaseSync, sql: string, version: number): void {
+  db.exec(sql)
+  db.exec(`PRAGMA user_version = ${String(version)}`)
+}
+
+/** Upgrade an existing, healthy schema-1 or schema-2 file. Never creates one. */
+export function migrateExistingDatabase(path: string): 'migrated' | 'current' {
+  if (!existsSync(path)) throw new ShadowMigrationError('missing_database')
+  const db = new DatabaseSync(path)
+  try {
+    db.exec(`PRAGMA foreign_keys = ON; PRAGMA busy_timeout = ${String(busyTimeoutMs)}`)
+    const version = userVersion(db)
+    if (version === schemaVersion) {
+      if (checkDatabase(db).length > 0) throw new ShadowMigrationError('unhealthy_database')
+      return 'current'
+    }
+    if (version !== 1 && version !== 2) throw new ShadowMigrationError('unsupported_source')
+    transaction(db, () => {
+      if (checkDatabaseHealth(db).length > 0) throw new ShadowMigrationError('unhealthy_database')
+
+      if (version === 1) {
+        // The old table was a placeholder; refuse to discard unexpected decisions.
+        const corrections = db.prepare('SELECT COUNT(*) AS count FROM corrections').get()
+        if (z.object({ count: z.int().nonnegative() }).parse(corrections).count > 0) {
+          throw new ShadowMigrationError('legacy_corrections')
+        }
+      }
+
+      migrations.slice(version).forEach((migration, index) => {
+        applyMigration(db, migration, version + index + 1)
+      })
+      if (checkDatabase(db).length > 0) throw new ShadowMigrationError('unhealthy_database')
+    })
+    return 'migrated'
+  } finally {
+    db.close()
+  }
 }
 
 const userVersionRow = z.object({ user_version: z.int().nonnegative() })
@@ -244,10 +315,16 @@ export function transaction<T>(db: DatabaseSync, work: () => T): T {
 
 /** Problems found in a database: wrong schema version, corruption, or broken references. */
 export function checkDatabase(db: DatabaseSync): string[] {
+  return [
+    ...(userVersion(db) === schemaVersion ? [] : ['schema_version']),
+    ...checkDatabaseHealth(db),
+  ]
+}
+
+function checkDatabaseHealth(db: DatabaseSync): string[] {
   const integrity = db.prepare('PRAGMA integrity_check').all()
   const foreignKeys = db.prepare('PRAGMA foreign_key_check').all()
   return [
-    ...(userVersion(db) === schemaVersion ? [] : ['schema_version']),
     ...(JSON.stringify(integrity) === JSON.stringify([{ integrity_check: 'ok' }])
       ? []
       : ['integrity']),
