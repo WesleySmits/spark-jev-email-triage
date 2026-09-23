@@ -89,11 +89,13 @@ export type HumanReview = Readonly<z.infer<typeof humanReviewSchema>>
  *   copies. One copy's review never travels to another.
  * - `unreadable`: what the store holds could not be read, so whether the
  *   review applies is unknown. Refusing keeps that uncertainty visible.
+ * - `request_conflict`: the same Save id was used with different content.
  *
  * Every reason is a content-free code: none of them names a subject, an
  * address or a body, so one may be shown or logged as it is.
  */
-export type ReviewRefusal = 'stale_subject' | 'unclassified' | 'other_copy' | 'unreadable'
+export type ReviewRefusal =
+  'stale_subject' | 'unclassified' | 'other_copy' | 'unreadable' | 'request_conflict'
 
 export type ReviewAdmission =
   Readonly<{ status: 'admitted' }> | Readonly<{ status: 'refused'; reason: ReviewRefusal }>

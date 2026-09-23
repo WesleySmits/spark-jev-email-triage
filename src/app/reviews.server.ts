@@ -14,10 +14,9 @@
  *
  * Who reviewed and when are decided here rather than sent by a browser. The
  * reviewer is this computer's account name, never a mailbox address, and the
- * time is this computer's clock. A recorded review is answered with what a
- * reading of the store would now project for that row, so the page can show
- * it at once without listing anything again and without making up a reviewer
- * or a time of its own. Nothing that fails here says more than a coarse
+ * time is this computer's clock. A recorded review is answered with its
+ * original stored result, so a replay returns the same reviewer and time.
+ * Nothing that fails here says more than a coarse
  * status: no subject, address or body leaves this module.
  */
 import { existsSync } from 'node:fs'
@@ -27,10 +26,9 @@ import { humanReviewSchema } from '../domain/review'
 import { currentTriageRubric } from '../domain/triage'
 import { jevModel } from '../jev/questions'
 import { readDatabasePath } from '../shadow/config'
-import { openForWriting } from '../shadow/database'
-import { recordReview } from '../shadow/reviews'
-import type { DeskReviewOutcome, DeskReviewRequest } from './desk-review'
-import { storedReviewFor } from './stored-classifications.server'
+import { openForWriting, openReadOnly } from '../shadow/database'
+import { readReviewRequest, recordReview } from '../shadow/reviews'
+import type { DeskReviewOutcome, DeskReviewReadback, DeskReviewRequest } from './desk-review'
 
 /** The versions a stored judgment must name to still be the one reviewed. */
 const currentJudge = { rubric: currentTriageRubric, classifierVersion: jevModel }
@@ -68,35 +66,23 @@ function opened(path: string): DatabaseSync | null {
  * store is untouched.
  */
 function append(db: DatabaseSync, request: DeskReviewRequest, now: () => Date): DeskReviewOutcome {
+  let review: ReturnType<typeof humanReviewSchema.parse>
   try {
-    const review = humanReviewSchema.parse({
-      ...request,
+    review = humanReviewSchema.parse({
+      classification: request.classification,
+      verdict: request.verdict,
       reviewer: localReviewer(),
       reviewedAt: now().toISOString(),
     })
-    return recordReview(db, review, currentJudge)
   } catch {
-    // A write that did not go through is never reported as one that did.
     return failed
   }
-}
-
-/**
- * What the store now projects for the copy, or nothing when it cannot be
- * read. This runs after a review is committed, so its failing says nothing
- * about whether that review was stored, and it is never allowed to say so:
- * the page would show a review that could not be saved and offer to try
- * again, and trying again would append the same decision a second time.
- * Showing no reviewer until the next reading is the smaller loss by far.
- */
-function projected(db: DatabaseSync, copy: DeskReviewRequest['classification']['copy']) {
   try {
-    // Read back rather than assembled from what was just written: a
-    // confirmation carries no labels of its own, and the row may have been
-    // judged again in between, so only the store can say what it now shows.
-    return storedReviewFor(db, copy)
+    return recordReview(db, review, currentJudge, request.requestId)
   } catch {
-    return undefined
+    // A failure during the transaction or commit may have an uncertain
+    // outcome. Replaying the same id is safe if the store did commit.
+    return { status: 'unknown' }
   }
 }
 
@@ -122,8 +108,33 @@ export function storeReview(
   try {
     const written = append(db, request, now)
     if (written.status !== 'recorded') return written
-    return { status: 'recorded', review: projected(db, request.classification.copy) }
+    try {
+      const original = readReviewRequest(db, request)
+      return original.status === 'recorded' ? original : written
+    } catch {
+      // The commit already happened. A failed projection cannot undo it.
+      return written
+    }
   } finally {
     db.close()
+  }
+}
+
+/** Reads the original result of this Save id without touching mail or writing data. */
+export function reviewStatus(
+  request: DeskReviewRequest,
+  env: Env = process.env,
+): DeskReviewReadback {
+  const path = readDatabasePath(env)
+  if (!existsSync(path)) return { status: 'absent' }
+  try {
+    const db = openReadOnly(path)
+    try {
+      return readReviewRequest(db, request)
+    } finally {
+      db.close()
+    }
+  } catch {
+    return { status: 'unavailable' }
   }
 }

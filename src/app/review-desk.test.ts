@@ -22,6 +22,7 @@
  * `domain/stored-classification.test.ts` the applicability rules; nothing
  * here restates them.
  */
+import { randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -452,6 +453,7 @@ function shownSubject(view: DeskView, id: string) {
 }
 
 const confirming = (view: DeskView, id: string): DeskReviewRequest => ({
+  requestId: randomUUID(),
   classification: shownSubject(view, id),
   verdict: { decision: 'confirmed' },
 })
@@ -479,6 +481,7 @@ describe('ReviewDesk.review', () => {
 
     await expect(
       ReviewDesk.review({
+        requestId: randomUUID(),
         classification: shownSubject(view, copy(one, '11')),
         verdict: { decision: 'corrected', labels: { category: 'suspicious', priority: 'urgent' } },
       }),
@@ -513,18 +516,19 @@ describe('ReviewDesk.review', () => {
 
     await expect(
       ReviewDesk.review({
+        requestId: randomUUID(),
         classification: { ...shown, copy: { mailboxId: two, messageId: '11' } },
         verdict: { decision: 'confirmed' },
       }),
     ).resolves.toEqual({ status: 'refused', reason: 'unclassified' })
   })
 
-  it('reports an app server that did not answer as failed, never as recorded', async () => {
+  it('reports an app server that did not answer as unknown, never as recorded', async () => {
     shadowRun([{ mailboxId: one, messageIds: ['11'], classification: jevJudgment('11') }])
     const shown = confirming(await ReviewDesk.open(), copy(one, '11'))
     spark.unreachable = true
 
-    await expect(ReviewDesk.review(shown)).resolves.toEqual({ status: 'failed' })
+    await expect(ReviewDesk.review(shown)).resolves.toEqual({ status: 'unknown' })
   })
 })
 
@@ -533,6 +537,7 @@ const reviewOf = (view: DeskView, id: string) =>
   view.status === 'ready' ? view.reviews[id] : undefined
 
 const correcting = (view: DeskView, id: string): DeskReviewRequest => ({
+  requestId: randomUUID(),
   classification: shownSubject(view, id),
   verdict: { decision: 'corrected', labels: { category: 'suspicious', priority: 'urgent' } },
 })

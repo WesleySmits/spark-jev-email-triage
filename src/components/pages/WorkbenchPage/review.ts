@@ -116,7 +116,7 @@ export const reviewSignature = (reviewable: Reviewable, saved: RowReview | undef
 export const reviewRequest = (
   reviewable: Reviewable,
   chosen: ReviewCategoryValue,
-): DeskReviewRequest => ({
+): Omit<DeskReviewRequest, 'requestId'> => ({
   classification: reviewable.subject,
   verdict: verdictFor(chosen, reviewable.labels),
 })
@@ -128,7 +128,8 @@ export const reviewRequest = (
  * - `saving`: the request is on its way.
  * - `saved`: it was recorded, as a confirmation or a correction.
  * - `refused`: the store would not take it, and said why.
- * - `failed`: nothing was stored and it was not a refusal.
+ * - `failed`: the server answered that nothing was stored.
+ * - `unknown`: the answer was lost, so the store must be checked before retry.
  */
 export type ReviewState =
   | Readonly<{ status: 'choosing' }>
@@ -137,6 +138,7 @@ export type ReviewState =
   | Readonly<{ status: 'saved'; decision: 'confirmed' | 'corrected'; chosen: ReviewCategoryValue }>
   | Readonly<{ status: 'refused'; reason: ReviewRefusal }>
   | Readonly<{ status: 'failed' }>
+  | Readonly<{ status: 'unknown' }>
 
 /** Result copy beside the save button: a line, and a second one under it. */
 export type ReviewResult = Readonly<{ title: string; detail: string }>
@@ -179,11 +181,22 @@ const refusals = {
     title: 'Not saved',
     detail: 'What is stored could not be read, so nothing was recorded. Try again.',
   },
+  request_conflict: {
+    title: 'Not saved',
+    detail:
+      'This save request was already used for another decision. Refresh before reviewing again.',
+  },
 } as const satisfies Record<ReviewRefusal, ReviewResult>
 
 const failure: ReviewResult = {
   title: 'Not saved',
   detail: `The review could not be stored, so nothing was recorded. ${unchanged} Try again.`,
+}
+
+const unknown: ReviewResult = {
+  title: 'Save outcome unknown',
+  detail:
+    'The connection lost the answer. The review may have been saved. Check its result or retry this save safely. Your mailbox is unchanged.',
 }
 
 /** What a recorded review says it did, without ever saying the mail moved. */
@@ -210,6 +223,8 @@ export function reviewResult(state: ReviewState, original: string): ReviewResult
       return refusals[state.reason]
     case 'failed':
       return failure
+    case 'unknown':
+      return unknown
     default:
       return waiting[state.status]
   }

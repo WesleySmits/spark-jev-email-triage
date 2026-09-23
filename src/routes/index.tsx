@@ -141,7 +141,15 @@ function Page({ inbox, root, onReady }: PageProps) {
         workflows={ReviewDesk.workflows}
         mailboxes={inbox.mailboxes}
         completion={{ mode: 'read-only' }}
-        review={{ mode: 'enabled', onSaveReview: ReviewDesk.review }}
+        review={{
+          mode: 'enabled',
+          onSaveReview: ReviewDesk.review,
+          onCheckReview: async (subject) => {
+            const result = await ReviewDesk.check(subject)
+            if (result.status === 'recorded') reread()
+            return result
+          },
+        }}
         topBar={{
           syncStatus: 'connected',
           syncLabel,

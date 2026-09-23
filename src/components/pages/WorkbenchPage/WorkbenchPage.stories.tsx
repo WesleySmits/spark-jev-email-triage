@@ -1078,7 +1078,11 @@ const reviewing = (
     loadBody: fn(
       provingBodies(states === unsureStates ? { m1: m1UnsureCurrent } : { m1: m1Current }),
     ),
-    review: { mode: 'enabled', onSaveReview: fn(answering(answer)) },
+    review: {
+      mode: 'enabled',
+      onSaveReview: fn(answering(answer)),
+      onCheckReview: fn(() => Promise.resolve({ status: 'unavailable' as const })),
+    },
   }) satisfies Partial<Props>
 
 /** The review panel in the reader, or nothing when none is offered. */
@@ -1387,6 +1391,7 @@ function WithStoredReviews(args: Props) {
       }}
       review={{
         mode: 'enabled',
+        onCheckReview: () => Promise.resolve({ status: 'unavailable' }),
         onSaveReview: (request) => {
           setReviews({ m1: projected(request.verdict) })
           return Promise.resolve(recorded)

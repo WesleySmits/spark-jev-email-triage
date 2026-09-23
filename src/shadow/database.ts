@@ -145,6 +145,28 @@ const migrations: readonly string[] = [
 
   DROP TABLE corrections;
   `,
+  // 3: the identity and result of each logical Save. A retry with the same
+  // request id reads this row instead of appending another review. The row
+  // and its review (or refusal) commit together, and neither can be changed.
+  `
+  CREATE TABLE review_requests (
+    request_id TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('recorded', 'refused')),
+    refusal_reason TEXT,
+    review_id INTEGER REFERENCES reviews (id),
+    CHECK ((status = 'recorded') = (review_id IS NOT NULL AND refusal_reason IS NULL)),
+    CHECK ((status = 'refused') = (refusal_reason IS NOT NULL AND review_id IS NULL))
+  ) STRICT;
+
+  CREATE TRIGGER review_requests_are_never_changed BEFORE UPDATE ON review_requests BEGIN
+    SELECT RAISE(ABORT, 'A review request result cannot be changed');
+  END;
+
+  CREATE TRIGGER review_requests_are_never_removed BEFORE DELETE ON review_requests BEGIN
+    SELECT RAISE(ABORT, 'A review request result cannot be removed');
+  END;
+  `,
 ]
 
 export const schemaVersion = migrations.length

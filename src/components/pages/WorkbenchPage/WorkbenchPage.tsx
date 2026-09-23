@@ -10,6 +10,8 @@ import {
 } from 'react'
 import type { RowReview } from '../../../app/desk-review'
 import type { BodyLoader } from '../../../app/inbox'
+import { sameSubject } from '../../../domain/review'
+import type { DeskReviewRequest } from '../../../app/desk-review'
 import type { StoredClassification } from '../../../domain/stored-classification'
 import { ClassificationEvidence } from '../../molecules/ClassificationEvidence/ClassificationEvidence'
 import { DisconnectedState } from '../../molecules/DisconnectedState/DisconnectedState'
@@ -31,7 +33,7 @@ import {
   type ListedEvidence,
   type RecordedReviews,
 } from './classification'
-import { ReviewAction, type SaveReview } from './ReviewAction'
+import { ReviewAction, type CheckReview, type SaveReview } from './ReviewAction'
 import { reviewableIn } from './review'
 import { useMessageBody } from './useMessageBody'
 import { shortcutLegend, useWorkbenchShortcuts } from './useWorkbenchShortcuts'
@@ -93,6 +95,7 @@ type WorkbenchReview =
        */
       mode: 'enabled'
       onSaveReview: SaveReview
+      onCheckReview: CheckReview
     }>
 
 type WorkbenchPageProps = Readonly<{
@@ -334,21 +337,44 @@ function noticeFor(shown: Shown | undefined, now: Spot) {
  *
  * Only a save the store recorded is kept, and only the answer the store gave
  * for it: nothing here invents a reviewer or a time, and a refusal or a
- * failure records nothing at all. What is kept stops applying on its own once
+ * failure or unknown result records nothing here. What is kept stops applying on its own once
  * a row no longer shows the version it named, so none of it has to be thrown
  * away by hand.
  */
 function useRecordedReviews(review: WorkbenchReview | undefined) {
   const [recorded, setRecorded] = useState<RecordedReviews>({})
-  if (review?.mode !== 'enabled') return { recorded, save: undefined } as const
+  // An unknown write remains blocked when its row is closed and reopened.
+  const uncertain = useRef(new Map<string, DeskReviewRequest>())
+  if (review?.mode !== 'enabled') return { recorded, save: undefined, resolve: undefined } as const
   const { onSaveReview } = review
   return {
     recorded,
+    resolve: (id: string) => {
+      uncertain.current.delete(id)
+    },
     /** Saves one review of the row `id`, and keeps what the store answered. */
     save:
       (id: string): SaveReview =>
       async (request) => {
-        const outcome = await onSaveReview(request)
+        const previous = uncertain.current.get(id)
+        if (
+          previous !== undefined &&
+          sameSubject(previous.classification, request.classification) &&
+          previous.requestId !== request.requestId
+        ) {
+          return { status: 'unknown' }
+        }
+        let outcome: Awaited<ReturnType<SaveReview>>
+        try {
+          outcome = await onSaveReview(request)
+        } catch {
+          outcome = { status: 'unknown' }
+        }
+        if (outcome.status === 'unknown') {
+          uncertain.current.set(id, request)
+          return outcome
+        }
+        uncertain.current.delete(id)
         if (outcome.status !== 'recorded') return outcome
         const stored = outcome.review
         if (stored !== undefined) {
@@ -640,10 +666,14 @@ function readerEvidence(
  */
 function readerReview(
   save: ((id: string) => SaveReview) | undefined,
+  resolve: ((id: string) => void) | undefined,
+  check: CheckReview | undefined,
   evidence: Evidence,
   openId: string | undefined,
 ) {
-  if (save === undefined || openId === undefined) return undefined
+  if (save === undefined || resolve === undefined || check === undefined || openId === undefined) {
+    return undefined
+  }
   const reviewable = reviewableIn(evidence.open)
   if (reviewable === undefined) return undefined
   return (
@@ -652,6 +682,10 @@ function readerReview(
       reviewable={reviewable}
       saved={evidence.openReview}
       onSave={save(openId)}
+      onCheck={check}
+      onResolved={() => {
+        resolve(openId)
+      }}
     />
   )
 }
@@ -805,7 +839,13 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             retry={retry}
             evidence={evidence.open}
             reviewed={evidence.openReview}
-            review={readerReview(reviews.save, evidence, state.open?.id)}
+            review={readerReview(
+              reviews.save,
+              reviews.resolve,
+              props.review?.mode === 'enabled' ? props.review.onCheckReview : undefined,
+              evidence,
+              state.open?.id,
+            )}
           />
         }
       />
