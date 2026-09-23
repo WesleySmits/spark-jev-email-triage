@@ -186,7 +186,7 @@ describe('runShadowTriage', () => {
     await run({ reader: spark.reader })
 
     const dump = JSON.stringify(
-      ['runs', 'threads', 'judgments', 'judgment_messages', 'corrections'].map((table) =>
+      ['runs', 'threads', 'judgments', 'judgment_messages', 'reviews'].map((table) =>
         db.prepare(`SELECT * FROM ${table}`).all(),
       ),
     )
