@@ -100,7 +100,7 @@ because none of them is evidence for another.
 
 ```sh
 curl -fsS http://localhost:3000/health   # which commit is running
-pnpm readback:spark                      # whether Spark answers here
+pnpm readback:spark                      # whether Spark answers on this host
 ```
 
 ## Dokploy deployment
@@ -322,7 +322,10 @@ pnpm readback:spark                      # whether Spark answers here
   back to a known commit. It is not a Spark check.
 - `pnpm readback:spark` is the live Spark check, deliberately apart from
   health: one read-only `spark accounts` call through the app's own probe,
-  one line of output, and no address, subject, count or body.
+  one line of output, and no address, subject, count or body. It speaks for
+  the host it ran on and says so, so a deployment's connectivity is only what
+  that deployment's own runtime answered; where the probe cannot run there,
+  `docs/runbook.md` has it reported as blocked rather than as ready.
 - The shadow-triage database stores:
   - mailbox, thread, and message ids
   - the scrubbed, truncated subject and latest sender that Jev saw

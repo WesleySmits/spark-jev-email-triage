@@ -5,8 +5,8 @@ step. Four things are decided separately and are reported separately: the
 **build**, the **merge**, the **deployment**, and the **live result**. One is
 never evidence for another. A green build says nothing about what is merged,
 a merge says nothing about what is deployed, a healthy deployment says
-nothing about whether Spark answers, and a Spark that answers says nothing
-about which code asked it.
+nothing about whether Spark answers, and a Spark that answers on one host
+says nothing about which code asked it or about any other host.
 
 ## 1. Build: the required check
 
@@ -44,9 +44,7 @@ gh api -X POST repos/WesleySmits/spark-jev-email-triage/rulesets \
   "name": "release gates",
   "target": "branch",
   "enforcement": "active",
-  "bypass_actors": [
-    { "actor_type": "RepositoryRole", "actor_id": 5, "bypass_mode": "always" }
-  ],
+  "bypass_actors": [],
   "conditions": {
     "ref_name": {
       "include": ["refs/heads/main", "refs/heads/feature/human-triage-review"],
@@ -92,15 +90,19 @@ What each part is for, and why it is no larger than this:
   every intervening merge; the check itself is unaffected.
 - **`deletion` and `non_fast_forward`.** These branches cannot be deleted or
   force-pushed, so history cannot be rewritten under a merged release.
-- **`bypass_actors`: the repository admin role, `always`.** This is the
-  rollback path. A revert still goes through a pull request in the ordinary
-  case, but an admin can act when CI itself is broken. Without a bypass, a
-  repository whose CI cannot run is a repository that cannot be rolled back.
-  Confirm in the read-back that actor id 5 is the admin role for this
-  repository.
+- **`bypass_actors`: empty.** Nobody is exempt, including the repository
+  admin. This repository has one maintainer, so a standing admin bypass would
+  mean the person doing the merge is the person the check does not apply to,
+  and the check would be advisory for the only account that ever merges.
+  There is no honest way to call that enforcement. Rollback does not need a
+  standing exemption; see _Rollback_ below for what to do when CI itself is
+  broken.
 
-`actor_id` values and rule shapes are GitHub's, not this repository's. Read
-the applied ruleset back rather than assuming this document applied cleanly.
+The field names above are GitHub's own, taken from the REST documentation for
+_Create a repository ruleset_ (read 2026-09-23). No role or actor id is
+published here, because none is needed and an unverified one would be a guess
+in a document people act on. GitHub may change rule shapes, so read the
+applied ruleset back rather than assuming this document applied cleanly.
 
 ### Reading protection back
 
@@ -115,14 +117,23 @@ The last two answer with the rules that apply to a branch, whether they come
 from a ruleset or from classic branch protection, which is the read that
 matters. Enforcement may be claimed only once that read shows the
 `pull_request` and `required_status_checks` rules on both branches, with
-`required-checks` as the context. Until then, say that the check exists and
-that protection is not applied.
+`required-checks` as the context, **and** the ruleset's `bypass_actors` is
+empty. Until then, say that the check exists and that protection is not
+applied.
+
+A check an actor is exempt from is not enforced for that actor. If a bypass
+is ever added, say who is exempt whenever enforcement is reported, rather than
+reporting the check as enforced for everyone.
 
 ## 2. Merge
 
 Merge through the pull request, once `required-checks` is green on the head
-commit. Record the merge commit: that SHA, and no branch name, is what a
-deployment is built from and what a rollback goes back to.
+commit. Ticket pull requests into `feature/human-triage-review` are
+squash-merged, so one lands as one commit; pull requests from that branch
+into `main` are merge commits. Either way, record the SHA the merge produced
+on the target branch, not the SHA of the branch that was merged: that commit,
+and no branch name, is what a deployment is built from and what a rollback
+goes back to. _Rollback_ below says which revert each kind takes.
 
 ## 3. Deployment: which commit is running
 
@@ -175,13 +186,13 @@ and compare that commit with the merge commit from step 2. They must be the
 same string. A deployment whose commit cannot be read is not released; it is
 rolled back.
 
-## 4. Live result: does Spark answer
+## 4. Live result: does Spark answer, where the deployment runs
 
 Separate from health, and run deliberately:
 
 ```sh
 pnpm readback:spark
-spark: ready
+spark on this host: ready
 ```
 
 It makes one read-only Spark call — `spark accounts` — through the same probe
@@ -190,14 +201,49 @@ ready, `1` unavailable, `64` invalid options. A failure prints a coarse
 reason, `missing`, `failed`, `malformed` or `local-only`, and no address,
 count, subject or body.
 
-It runs where Spark runs, which is the Mac holding the mail, and it says
-nothing about which build is deployed. Report it as its own result:
+### It only speaks for the host it ran on
 
-> build `<sha>` green · merged as `<sha>` · deployed commit `<sha>` from
-> `/health` · `pnpm readback:spark`: ready
+Spark is read through a CLI on the machine that holds the mail, so an answer
+is the connectivity of that one host and of nothing else. A run on a
+maintainer's Mac is a **local** result. It is not the deployed application's
+connectivity, and reporting it as such would claim a thing nobody observed.
 
-Say "not run" where one of the four was not run. Nothing here licenses
-reporting a step that was skipped as passed.
+**A live deployed result comes from the deployment's own runtime**, the host
+or container that serves the application:
+
+```sh
+docker exec <container> pnpm readback:spark     # the container that serves the app
+ssh <runtime-host> 'cd <app> && pnpm readback:spark'
+```
+
+If the probe cannot run there at all — the usual case today, because Spark
+Desktop is macOS-only while `Dockerfile.app` runs a Linux container — then
+deployed connectivity is **blocked**, and blocked is what is reported. It is
+not `unavailable`, which would mean the runtime asked and got no answer, and
+it is certainly not `ready`. A deployment that cannot reach Spark serves a
+page that says Spark is away; that is the application behaving correctly, and
+it is a fact the release report should carry rather than hide.
+
+Do not add a public endpoint to work around this. The application's own
+readiness probe already answers loopback requests only, on purpose, because
+mail belongs to the computer it lives on; a remotely reachable Spark probe
+would be a new way to learn about someone's mail setup from off that machine.
+Run the readback on the runtime, or report blocked.
+
+### Reporting a release
+
+The four results are written separately and none is folded into another:
+
+> build `<sha>`: `required-checks` green
+> merged as `<sha>`
+> deployed commit `<sha>`, read from `GET /health` on `<host>`
+> deployed Spark connectivity: `blocked` — the probe cannot run on the
+> runtime (Linux container, no Spark Desktop)
+> local Spark connectivity (`<maintainer's Mac>`): `ready`
+
+Say "not run" where one of them was not run, and "blocked" where it could not
+be. Nothing here licenses reporting a step that was skipped, or a host that
+was never asked, as passed.
 
 ## Rollback
 
@@ -207,12 +253,50 @@ The deployment and the source roll back separately.
    commit with its own `APP_COMMIT_SHA`. Confirm with `GET /health` that the
    commit it answers with is the one intended. This is the fast path and
    needs no repository change.
-2. **Source.** Revert through a pull request: `git revert -m 1 <merge sha>`
-   on a branch, then merge it once `required-checks` is green. History is not
-   rewritten, so the reverted commit stays readable and can be re-applied.
-3. **When CI itself is broken**, an admin may bypass the ruleset, which is
-   why `bypass_actors` holds the admin role. Write down what was bypassed and
-   why, and restore the ordinary path before the next release.
+2. **Source.** Revert through a pull request, then merge it once
+   `required-checks` is green. History is not rewritten, so the reverted
+   commit stays readable and can be re-applied.
+
+   Which revert depends on what is being undone, because the two branches are
+   merged differently. Ticket pull requests into
+   `feature/human-triage-review` are **squash-merged**, so each lands as one
+   ordinary commit with one parent (`#67`, `#68`, `#69` are these). Pull
+   requests from `feature/human-triage-review` into `main` are **merge
+   commits** with two parents (`Merge pull request #63`, `#64`, `#65` are
+   these). Check before reverting, rather than remembering:
+
+   ```sh
+   git rev-list --parents -n 1 <sha>    # one sha after it: squash; two: merge commit
+   git revert <squash-sha>              # a squashed ticket commit
+   git revert -m 1 <merge-sha>          # a merge commit, keeping its first parent
+   ```
+
+   `-m 1` on a squashed commit fails with a mainline error, and leaving it off
+   a merge commit fails too, so the check above is the whole trick. Reverting
+   a merge commit on `main` backs out everything that merge brought in, which
+   is a batch of ticket commits, not one; revert the squashed commits on the
+   feature branch instead when only one ticket is at fault.
+
+   Step 1 needs no repository change at all, which is the point: the fast way
+   back is redeploying a known commit, not editing protection. Step 2 is an
+   ordinary pull request and passes the same check as any other change.
+
+3. **When CI itself is broken** and a revert cannot go green, an admin may
+   change the ruleset explicitly and temporarily. Nobody is standingly exempt,
+   so this is a recorded act, not a quiet one:
+   1. Read the ruleset back first and keep that copy:
+      `gh api repos/WesleySmits/spark-jev-email-triage/rulesets/<id> > ruleset-before.json`
+   2. Make the smallest change that unblocks the revert — set the ruleset's
+      `enforcement` to `disabled`, or drop the `required_status_checks` rule —
+      and say in the incident note what was changed, by whom, when and why.
+   3. Merge the revert.
+   4. Restore immediately from the copy, and read it back again to prove the
+      rules are as they were, with `bypass_actors` still empty.
+
+   The change is visible either way: ruleset edits appear in the repository's
+   audit log, and step 4's read-back is what closes the incident. While
+   enforcement is off, the check is not enforced, and any release report
+   covering that window must say so.
 
 Force-pushing or deleting `main` or `feature/human-triage-review` is not a
 rollback path and the ruleset refuses both.

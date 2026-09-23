@@ -1,17 +1,24 @@
 /**
- * The `pnpm readback:spark` command: does Spark answer on this computer,
- * right now.
+ * The `pnpm readback:spark` command: does Spark answer on the host this
+ * command runs on, right now.
  *
- * It is deliberately apart from the health endpoint. Health says which
- * commit is deployed and nothing more; this says whether the mail provider
- * answers and nothing more. A release reports both, separately, because one
- * is never evidence for the other: a healthy build with no Spark reads no
- * mail, and a reachable Spark says nothing about what is deployed.
+ * It proves nothing about any other host, which is why it says so in its own
+ * output. Spark is read through a CLI on the machine holding the mail, so an
+ * answer here is only the connectivity of here. A deployed application's
+ * connectivity is what that deployment's own runtime answers, and a runtime
+ * this command cannot run on has no live result at all rather than this one.
+ *
+ * It is also deliberately apart from the health endpoint. Health says which
+ * commit is deployed and nothing more; this says whether Spark answers and
+ * nothing more. A release reports both, separately, because one is never
+ * evidence for the other: a healthy build with no Spark reads no mail, and a
+ * reachable Spark says nothing about what is deployed.
  *
  * It reads: one mailbox listing, which is `spark accounts`, through the same
  * probe the app uses. The listing is proof that Spark answered and is then
  * dropped, so no address, subject, count or body is ever kept or printed.
- * Output is one line: a status and, where it failed, a coarse reason.
+ * Output is one line: the host it speaks for, a status and, where it failed,
+ * a coarse reason.
  */
 import type { SparkReadiness } from '../app/spark-readiness'
 import { createSparkReadiness } from '../app/spark-readiness.server'
@@ -21,6 +28,12 @@ import { createSparkMailReader } from '../spark/reader'
 export const exitCodes = { ok: 0, unavailable: 1, usage: 64 } as const
 
 const usage = 'usage: pnpm readback:spark'
+
+/**
+ * What the answer speaks for. Every line names it, so a result read later
+ * cannot be taken for the connectivity of a host it never reached.
+ */
+const scope = 'spark on this host'
 
 /** One readiness answer, however it was obtained. */
 export type SparkProbe = () => Promise<SparkReadiness>
@@ -49,9 +62,9 @@ export async function main(
   }
   const answer = await probe()
   if (answer.status === 'ready') {
-    print('spark: ready')
+    print(`${scope}: ready`)
     return exitCodes.ok
   }
-  print(`spark: unavailable (${answer.reason})`)
+  print(`${scope}: unavailable (${answer.reason})`)
   return exitCodes.unavailable
 }
