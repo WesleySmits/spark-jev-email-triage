@@ -1,8 +1,11 @@
 import './Badge.css'
 
 type BadgeProps = Readonly<{
-  /** `review` is uncertain and needs a person, `done` is completed. */
-  tone?: 'neutral' | 'review' | 'done' | undefined
+  /**
+   * `review` is uncertain and needs a person, `done` is completed, and
+   * `danger` is failed or disconnected.
+   */
+  tone?: 'neutral' | 'review' | 'done' | 'danger' | undefined
   /** Always visible text: color alone never carries the state. */
   children: string
 }>
@@ -14,6 +17,7 @@ type BadgeProps = Readonly<{
  * import { Badge } from '../components/atoms/Badge/Badge'
  *
  * <Badge tone="review">Needs review</Badge>
+ * <Badge tone="danger">Triage failed</Badge>
  * <Badge>Invoice</Badge>
  */
 export function Badge({ tone = 'neutral', children }: BadgeProps) {

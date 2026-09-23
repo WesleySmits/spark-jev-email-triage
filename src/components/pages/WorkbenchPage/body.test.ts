@@ -23,6 +23,14 @@ describe('settleBody', () => {
     })
   })
 
+  it('keeps what the read proved about the row, when it proved anything', () => {
+    const classification = { state: 'none' } as const
+    expect(
+      settleBody(loading, 1, { ok: true, body: { id: 'a', text: 'Hello', classification } }),
+    ).toEqual({ status: 'ready', id: 'a', request: 1, text: 'Hello', classification })
+    expect(settleBody(loading, 1, text('a', 'Hello'))).not.toHaveProperty('classification')
+  })
+
   it('reports a missing body and a provider failure apart', () => {
     expect(settleBody(loading, 1, { ok: true, body: null })).toMatchObject({
       status: 'error',

@@ -132,6 +132,7 @@ function Page({ inbox, root, onReady }: PageProps) {
     <div ref={root} className="app-root">
       <WorkbenchPage
         messages={inbox.messages}
+        classifications={inbox.classifications}
         loadBody={ReviewDesk.focus(inbox)}
         workflows={ReviewDesk.workflows}
         mailboxes={inbox.mailboxes}
@@ -148,9 +149,12 @@ function Page({ inbox, root, onReady }: PageProps) {
   )
 }
 
-// Recent Spark mail, strictly read-only. Rows arrive without bodies; one body
-// loads when its message opens. Refresh only reads again. While Spark is
-// away the workbench waits in place and reads the inbox once it answers.
+// Recent Spark mail, strictly read-only, beside what shadow triage last
+// stored about it. Rows arrive without bodies; one body loads when its
+// message opens, and that read is the only thing that can say a stored
+// judgment still describes the row. Refresh only reads again, and neither it
+// nor opening a row calls a classifier. While Spark is away the workbench
+// waits in place and reads the inbox once it answers.
 function Home() {
   const inbox = Route.useLoaderData()
   const router = useRouter()

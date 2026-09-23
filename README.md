@@ -159,9 +159,22 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
   of the client build; ESLint also keeps components and stories from
   importing `*.server`, `*.functions`, `src/spark` and Node built-ins, and
   keeps routes from importing that server-only code at all.
-- The page shows no triage yet, stored or not, so every message is in one
-  "Recent mail" workflow and reads "Not triaged". Spark's list shows at most 30
-  characters of a sender and 50 of a subject and has no uncut or
+- Live mail is not triaged in the app, so every message is in one "Recent
+  mail" workflow. Each row shows what shadow triage last stored about it
+  instead: "Triage current", "Triage from earlier", "Triage outdated",
+  "Triage failed", "Not triaged" or "Triage unreadable", always as words
+  beside their tone, with the model's category where labels apply. The
+  reader repeats that state under its header and says what it means, with
+  the category, the priority and whether the priority was uncertain, whether
+  the model accepted its own labels or sent them to a person, and when it
+  was judged. `auto_accepted` reads as the model accepting its labels, never
+  as a review by a person; no probability is shown, so nothing suggests the
+  model's confidence is calibrated. The page offers no way to save a review
+  or change a mailbox. Only the row whose body was read can say "Triage
+  current", and only for the very judgment the reading listed: a judgment the
+  store already contradicts is never promoted back, and a proof that a later
+  reading has outlived is dropped rather than kept. Spark's list shows at
+  most 30 characters of a sender and 50 of a subject and has no uncut or
   structured form. A cut sender keeps its whole name when the address
   was cut, otherwise the visible start; a cut subject keeps its visible
   start. Both end in `…`, and nothing is guessed. Only a blank value

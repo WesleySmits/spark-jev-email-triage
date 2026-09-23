@@ -1,4 +1,5 @@
 import type { MessageBody } from '../../../app/inbox'
+import type { StoredClassification } from '../../../domain/stored-classification'
 
 /**
  * The body of the open message. Every request gets a number; only the
@@ -6,7 +7,8 @@ import type { MessageBody } from '../../../app/inbox'
  *
  * - `idle`: no message is open.
  * - `loading`: request `request` for message `id` is on its way.
- * - `ready`: the text arrived.
+ * - `ready`: the text arrived, with whatever the thread that read returned
+ *   proved about the row's stored judgment.
  * - `error`: the message has no body (`missing`), or the provider failed.
  * - `stale`: what is held belongs to another message than the open one.
  *   It is never shown; the page asks for the open message instead.
@@ -14,7 +16,17 @@ import type { MessageBody } from '../../../app/inbox'
 export type BodyState =
   | Readonly<{ status: 'idle' }>
   | Readonly<{ status: 'loading'; id: string; request: number }>
-  | Readonly<{ status: 'ready'; id: string; request: number; text: string }>
+  | Readonly<{
+      status: 'ready'
+      id: string
+      request: number
+      text: string
+      /**
+       * What the thread this body was read from proves about the judgment
+       * stored for the row. Absent when the read carried none, as fixtures do.
+       */
+      classification?: StoredClassification | undefined
+    }>
   | Readonly<{
       status: 'error'
       id: string
@@ -56,5 +68,6 @@ export function settleBody(state: BodyState, request: number, outcome: BodyOutco
     return { status: 'error', id, request, reason: 'provider' }
   }
   if (outcome.body === null) return { status: 'error', id, request, reason: 'missing' }
-  return { status: 'ready', id, request, text: outcome.body.text }
+  const { text, classification } = outcome.body
+  return { status: 'ready', id, request, text, ...(classification && { classification }) }
 }

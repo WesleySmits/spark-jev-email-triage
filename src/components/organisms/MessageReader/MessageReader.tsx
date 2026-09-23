@@ -17,6 +17,12 @@ type MessageReaderProps = Readonly<{
   children: ReactNode
   /** Accessible name of the scrollable content region. Defaults to "Message content". */
   contentLabel?: string | undefined
+  /**
+   * Shown above the body in the same scroll, directly under the header, e.g.
+   * a ClassificationEvidence about the open message. It describes the
+   * message, so it stays beside it.
+   */
+  evidence?: ReactNode
   /** Shown under the body in the same scroll, e.g. a ReviewPanel the caller controls. */
   review?: ReactNode
   /** The footer actions and note. See ReaderActionBar. Leave it out to show no footer. */
@@ -26,8 +32,8 @@ type MessageReaderProps = Readonly<{
 
 /**
  * The message reader: on mobile a contextual bar, then the header, one
- * scrollable region with the body and an optional review, and the action
- * footer, from the source's `.reader`.
+ * scrollable region with an optional evidence strip, the body and an
+ * optional review, and the action footer, from the source's `.reader`.
  *
  * Presentational only. The caller owns the message, every string, the review
  * panel's state, every action and any announcement; the reader fetches
@@ -44,6 +50,7 @@ type MessageReaderProps = Readonly<{
  *   key={message.id}
  *   mobileBar={{ title: 'Studio Noord', context: '1 of 3 in Needs review', onBack: showList }}
  *   header={{ subject: message.subject, sender: message.sender }}
+ *   evidence={<ClassificationEvidence {...evidence} />}
  *   review={<ReviewPanel {...review} />}
  *   actions={{ primaryAction: { label: 'Archive', shortcut: 'E', onClick: archive } }}
  * >
@@ -55,6 +62,7 @@ export function MessageReader({
   header,
   children,
   contentLabel = 'Message content',
+  evidence,
   review,
   actions,
   className,
@@ -67,6 +75,7 @@ export function MessageReader({
       <ReaderHeader {...header} subjectId={subjectId} />
       {/* Focusable so keyboard users can scroll it; named so focus announces it. */}
       <div className="message-reader__scroll" role="region" aria-label={contentLabel} tabIndex={0}>
+        {evidence && <div className="message-reader__evidence">{evidence}</div>}
         <div className="message-reader__body">{children}</div>
         {review && <div className="message-reader__review">{review}</div>}
       </div>

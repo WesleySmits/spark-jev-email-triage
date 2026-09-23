@@ -8,6 +8,8 @@ import {
   type RefObject,
 } from 'react'
 import type { BodyLoader } from '../../../app/inbox'
+import type { StoredClassification } from '../../../domain/stored-classification'
+import { ClassificationEvidence } from '../../molecules/ClassificationEvidence/ClassificationEvidence'
 import { DisconnectedState } from '../../molecules/DisconnectedState/DisconnectedState'
 import { EmptyState } from '../../molecules/EmptyState/EmptyState'
 import { LocalStatusToast } from '../../molecules/LocalStatusToast/LocalStatusToast'
@@ -18,6 +20,7 @@ import { Sidebar, type SidebarItem } from '../../organisms/Sidebar/Sidebar'
 import { TopBar } from '../../organisms/TopBar/TopBar'
 import { WorkbenchTemplate } from '../../templates/WorkbenchTemplate/WorkbenchTemplate'
 import type { BodyState } from './body'
+import { classificationView, evidenceFor, judgedText, rowState } from './classification'
 import { useMessageBody } from './useMessageBody'
 import { shortcutLegend, useWorkbenchShortcuts } from './useWorkbenchShortcuts'
 import {
@@ -78,6 +81,14 @@ type WorkbenchPageProps = Readonly<{
    * messages carry. "All accounts" is added in front; counts are filled in.
    */
   mailboxes: readonly SidebarItem[]
+  /**
+   * What triage stored about each row, by the row's id. A row with an entry
+   * shows that state instead of its own status and, once open, the evidence
+   * behind it; a row without one keeps the status it came with. Nothing here
+   * classifies: the caller passes what was stored, and only the open row's
+   * body may carry a stronger reading of it.
+   */
+  classifications?: Readonly<Record<string, StoredClassification>> | undefined
   /** Whether Complete is offered, and what it does. */
   completion: WorkbenchCompletion
   /** Sync status and profile. The page owns the search. */
@@ -441,10 +452,12 @@ function PageRail({ state, canComplete, workflows, mailboxes }: PageRailProps) {
 
 type PaneProps = Readonly<{ state: PageState; title: string }>
 
-type QueueProps = PaneProps & Pick<PageInput, 'mailboxes'>
+type QueueProps = PaneProps &
+  Pick<PageInput, 'mailboxes'> &
+  Readonly<{ evidenceOf: Evidence['of'] }>
 
 /** The queue, headed by the workflow and the applied mailbox filter. */
-function Queue({ state, title, mailboxes }: QueueProps) {
+function Queue({ state, title, mailboxes, evidenceOf }: QueueProps) {
   const count = state.shown.length
   return (
     <MessageQueue
@@ -454,7 +467,7 @@ function Queue({ state, title, mailboxes }: QueueProps) {
         count: `${String(count)} ${count === 1 ? 'result' : 'results'}`,
         context: mailboxLabel(state.filter.mailbox, mailboxes),
       }}
-      messages={state.shown}
+      messages={queueRows(state.shown, evidenceOf)}
       currentId={state.open?.id}
       onOpen={state.openMessage}
       empty={
@@ -505,6 +518,58 @@ function ReaderBody({ body, retry }: ReaderBodyProps) {
   )
 }
 
+type Evidence = Readonly<{
+  /** What applies to the open row, including what its body read proved. */
+  open: StoredClassification | undefined
+  /** What applies to any row, open or not. */
+  of: (id: string) => StoredClassification | undefined
+}>
+
+/**
+ * What is known about each row. Only the open row's own body counts as
+ * evidence about it, and only while that body is the one being held: a
+ * response for another row, or one a later reading has outlived, is not
+ * evidence about this one.
+ */
+function evidenceIn(
+  classifications: WorkbenchPageProps['classifications'],
+  openId: string | undefined,
+  body: BodyState,
+): Evidence {
+  const listed = (id: string) => classifications?.[id]
+  const read = body.status === 'ready' ? body.classification : undefined
+  const open = openId === undefined ? undefined : evidenceFor(listed(openId), read)
+  return { open, of: (id) => (id === openId ? open : listed(id)) }
+}
+
+/** The rows as the queue shows them: a stored state replaces the row's own status. */
+function queueRows(messages: readonly WorkbenchMessage[], evidenceOf: Evidence['of']) {
+  return messages.map((message) => {
+    const found = evidenceOf(message.id)
+    return found === undefined ? message : { ...message, ...rowState(found) }
+  })
+}
+
+/** The evidence strip under the reader header, or none when nothing is known. */
+function readerEvidence(classification: StoredClassification | undefined) {
+  if (classification === undefined) return undefined
+  const { state, detail, facts, note, judgedAt } = classificationView(classification)
+  return (
+    <ClassificationEvidence
+      title="Jev triage"
+      state={state}
+      detail={detail}
+      facts={facts}
+      note={note}
+      judged={
+        judgedAt === undefined
+          ? undefined
+          : { label: 'Judged', text: judgedText(judgedAt), dateTime: judgedAt }
+      }
+    />
+  )
+}
+
 type ReaderActions = ComponentProps<typeof MessageReader>['actions']
 
 /** Complete when the page may offer it; read-only says so instead. */
@@ -519,9 +584,11 @@ type ReaderProps = PaneProps &
   Readonly<{
     /** Left out when the page is read-only. */
     complete: (() => void) | undefined
+    /** What is known about the open row's triage. Left out to show none. */
+    evidence: StoredClassification | undefined
   }>
 
-function Reader({ state, title, complete, body, retry }: ReaderProps) {
+function Reader({ state, title, complete, body, retry, evidence }: ReaderProps) {
   const { shown, open } = state
   if (!open) {
     return (
@@ -539,7 +606,9 @@ function Reader({ state, title, complete, body, retry }: ReaderProps) {
       mobileBar={{ title: open.account.label, context: position, onBack: state.back }}
       header={{
         subject: open.subject,
-        status: open.status,
+        // The evidence strip carries the state when there is one, so the
+        // header never says something else beside it.
+        ...(evidence === undefined && { status: open.status }),
         sender: {
           name: open.sender,
           initials: initials(open.sender),
@@ -549,6 +618,7 @@ function Reader({ state, title, complete, body, retry }: ReaderProps) {
           dateTime: open.dateTime,
         },
       }}
+      evidence={readerEvidence(evidence)}
       actions={readerActions(complete)}
     >
       <ReaderBody body={body} retry={retry} />
@@ -568,7 +638,8 @@ function useWorkbench(props: WorkbenchPageProps) {
   useKeepFocus(root, restoreRef, state, notice.message !== undefined)
   useFollowCurrentRow(root, state.open?.id)
   const { body, retry } = useMessageBody(props.loadBody, state.open?.id)
-  return { state, searchId, root, notice, complete, body, retry } as const
+  const evidence = evidenceIn(props.classifications, state.open?.id, body)
+  return { state, searchId, root, notice, complete, body, retry, evidence } as const
 }
 
 /**
@@ -587,6 +658,12 @@ function useWorkbench(props: WorkbenchPageProps) {
  * failed states, and changes no mail. Give it a bounded parent such as a
  * `100dvh` root.
  *
+ * Passing `classifications` shows what triage stored about each row: a state
+ * badge and category on the row, and the evidence behind it under the reader
+ * header. The page reads no store and calls no classifier; the open row's
+ * body may carry a stronger reading of what the caller listed, and only that
+ * can say a judgment is current.
+ *
  * @example
  * import { WorkbenchPage } from '../components/pages/WorkbenchPage/WorkbenchPage'
  *
@@ -603,7 +680,7 @@ function useWorkbench(props: WorkbenchPageProps) {
  */
 export function WorkbenchPage(props: WorkbenchPageProps) {
   const { workflows, mailboxes, completion } = props
-  const { state, searchId, root, notice, complete, body, retry } = useWorkbench(props)
+  const { state, searchId, root, notice, complete, body, retry, evidence } = useWorkbench(props)
   const title = workflows.find((item) => item.id === state.filter.workflow)?.label ?? ''
   const canComplete = completion.mode === 'enabled'
   return (
@@ -619,7 +696,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             mailboxes={mailboxes}
           />
         }
-        queue={<Queue state={state} title={title} mailboxes={mailboxes} />}
+        queue={<Queue state={state} title={title} mailboxes={mailboxes} evidenceOf={evidence.of} />}
         reader={
           <Reader
             state={state}
@@ -627,6 +704,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             complete={canComplete ? complete : undefined}
             body={body}
             retry={retry}
+            evidence={evidence.open}
           />
         }
       />

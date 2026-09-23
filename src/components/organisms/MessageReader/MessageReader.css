@@ -72,6 +72,11 @@
   margin-bottom: 0;
 }
 
+/* Directly under the header, so evidence about the message stays beside it. */
+.message-reader__evidence {
+  margin-bottom: var(--s5);
+}
+
 .message-reader__review {
   max-width: 820px;
   margin-top: var(--s6);
@@ -84,6 +89,10 @@
 
   .message-reader__scroll {
     padding: var(--s4);
+  }
+
+  .message-reader__evidence {
+    margin-bottom: var(--s4);
   }
 
   .message-reader__review {
