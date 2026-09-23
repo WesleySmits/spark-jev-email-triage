@@ -1,10 +1,14 @@
 /**
- * Synthetic Jev responses for tests. Values are invented, not recorded from
- * the provider.
+ * Synthetic Jev responses for tests, and the classifications they parse to.
+ * Values are invented, not recorded from the provider. Anything measuring
+ * the classifier — the shadow store, the quality report — builds its answers
+ * here rather than keeping a copy of its own.
  */
 import type { z } from 'zod'
-import { categorySchema, prioritySchema } from '../domain/triage'
-import type { triageResponseSchema } from './response'
+import { categorySchema, currentTriageRubric, prioritySchema } from '../domain/triage'
+import type { JevClassification } from './classifier'
+import { jevModel } from './questions'
+import { triageResponseSchema } from './response'
 
 type ResponseBody = z.input<typeof triageResponseSchema>
 type Answers = ResponseBody['answers']
@@ -62,3 +66,27 @@ function choiceAnswer<L extends string>(labels: readonly L[], choice: L, share: 
     confidence: Math.max(0, (labels.length * share - 1) / (labels.length - 1)),
   }
 }
+
+/** The rubric and classifier build a synthetic classification names. */
+const judge = { rubric: currentTriageRubric, requestedModel: jevModel } as const
+
+/** A Jev judgment of one thread, as the classifier returns one. */
+export function jevJudgment(threadId: string, options: ResponseOptions = {}): JevClassification {
+  const body = triageResponseSchema.parse(jevResponse(options))
+  return {
+    ...judge,
+    threadId,
+    status: 'classified',
+    model: body.model,
+    usage: { inputTokens: body.usage.input_tokens, outputTokens: body.usage.output_tokens },
+    answers: body.answers,
+  }
+}
+
+/** A Jev call that gave no usable answer. It is never a classification. */
+export const jevFailure = (threadId: string): JevClassification => ({
+  ...judge,
+  threadId,
+  status: 'provider_failure',
+  failure: { code: 'timeout', detail: null, httpStatus: null },
+})

@@ -87,6 +87,147 @@ flatter the set; counting it as a mismatch would blame it for an outage.
 Agreement is reported, never asserted. The thresholds are not calibrated, so
 a disagreement is something to read rather than a failure to fix.
 
+## Reading a quality report
+
+`quality-report.ts` counts what one run of the set says about triage
+quality, and `quality-report-text.ts` renders it. `pnpm eval:jev:live` prints
+it under the per-case table, from the same answers the table shows.
+
+The report is a pure function of the observations it is handed: the same
+answers always give the same figures, in whatever order they arrive, so a run
+can be recomputed rather than believed. It calls nothing, reads no mailbox
+and looks at no clock, and its tests run offline like the rest of the set.
+Sums over floating-point confidences do depend on the order they are added
+in, so the judged rows are put in one canonical order before anything is
+summed, and every arrangement of one run gives one mean and one calibration
+error.
+
+Every figure is split by rubric and by the pinned classifier build that was
+asked, because a category, a priority and a threshold mean what a rubric
+version says they mean, and two builds are two classifiers. The versioned
+models that actually answered are named beside the build, so an alias that
+moved under a pinned name is visible rather than averaged away.
+
+What one slice holds:
+
+- **Category quality**: agreement with the expectation a person settled on,
+  over the run and per category. How often a category was expected and how
+  often it was answered are counted separately, because a classifier that
+  answers `other` for everything agrees with every `other` case while being
+  useless. Each disagreement is named by its fixture.
+- **Review rate**: the share of judged threads policy sends to a person, with
+  the share the set expects beside it. They answer different questions, so
+  the handling agreement is reported too: a run that reviews the right number
+  of the wrong threads did not do well.
+- **Calibration**: the confidence of the chosen category against how often
+  that choice agreed, in bins of a tenth, with the expected calibration error
+  they weigh out to.
+- **Provider-failure rate**: failed attempts over all attempts, by their
+  content-free code. A failure is no judgment, so it stays out of every
+  quality figure, as it does in `handling-agreement.ts`.
+- **Latency**: the wall clock around each call, which only the live run
+  measures. A report built from answers nobody timed says the figure was not
+  measured rather than printing a zero.
+- **Cost**: the provider's own token counts. The cost in money is always
+  unavailable: no price per token is recorded in this repository, and a
+  number nobody can stand behind is worse than none.
+
+## Recounting a run
+
+A live run reaches the provider once, and another run is another run, so a
+printed report is a claim nobody else can check. `pnpm eval:jev:live`
+therefore writes the run down as well: a snapshot under `.data/`, named after
+the run's own UTC timestamp, holding the answers it received. Git ignores
+`.data/`, so a live answer is never committed, and no argument or environment
+variable decides where anything is written.
+
+```sh
+pnpm eval:report .data/eval-run-2026-09-23T09-00-00.000Z.json
+```
+
+`pnpm eval:report` counts the same figures from that file and prints the same
+report. It calls no provider, reads no mailbox, opens no database and writes
+nothing, so anyone holding a snapshot can check a run's figures without a
+key, a network or the machine that ran it.
+
+What a snapshot holds, and what it does not:
+
+- The mail is named, never copied: a fixture's name and the digest of the
+  thread it was measured against. The mail itself stays in
+  `src/domain/fixtures.ts`, where a person reviewed it, so no subject,
+  address, body or attachment can travel in a snapshot. A test writes the
+  whole set and fails if any of them does.
+- The labels the run was measured against: the category, the priority and the
+  handling the case expected then, and none of the prose that argued for
+  them. A run is a comparison, and pinning only the mail pins half of it.
+  Reading a case again and correcting its labels is an ordinary outcome here
+  — two cases in the set began that way — and it leaves the thread and its
+  digest untouched, so nothing else would catch it.
+- The classifier's answers travel whole — the chosen labels, every
+  probability, the provider's own token counts — because they are what the
+  figures are counted from. They are numbers and rubric labels.
+- A failed call keeps its content-free code and nothing else. A provider's
+  own detail, HTTP status or message is dropped: the report counts failures
+  by code, and a detail is the one field that could carry provider text into
+  a file meant to be shared.
+- Latency travels as measured, or as `null` where nothing measured it.
+
+A snapshot is read back as data and never trusted. Every field is parsed, and
+a run this build cannot honestly count is refused rather than reported:
+
+- `unknown_fixture`: it names a case this build does not have.
+- `changed_fixture`: the labelled thread has changed since the run, so the
+  answers describe mail this build no longer holds. The digest is recomputed
+  from the thread rather than read from the case, so an edit is caught even
+  if the recorded digest was edited with it.
+- `changed_expectation`: the mail is the mail the run measured, but the case
+  expects other labels now. The answers are still the answers; what they
+  would be counted against is not, so the figures would be another comparison
+  printed under this run's name. Every label counts, including a priority no
+  figure reads today: an expectation is one judgment a person settled on.
+- `unsupported_rubric`: it was judged under a rubric this build no longer
+  holds. See below.
+
+A snapshot names the shape it was written to. The field is bumped whenever
+that shape changes, and an older file is refused rather than read as though
+it said what it does not: a version 1 file carried no expectation, and
+recounting one against whatever the set says today is the very drift the
+field exists to prevent.
+
+One refused entry refuses the run: a report over the rest would be another
+run's report printed under this one's name.
+
+## One rubric at a time
+
+Only a rubric this build still holds can be counted, and `reportableRubrics`
+in `quality-report.ts` says which. There is one.
+
+A run judged under an older rubric was judged under other category and
+priority meanings and other thresholds, and this build kept neither. Counting
+it would apply today's policy to yesterday's judgments and then print today's
+thresholds beside them, as though those were the ones that produced the
+figures. `triage.ts` keeps old rubric ids parseable on purpose, so such a run
+reads back fine; it is refused where it enters instead.
+
+Thresholds therefore belong to the slice that names their rubric, in the
+report and in the text, rather than to the report as a whole. A figure is
+never shown under thresholds that did not produce it.
+
+## Thresholds are not moved by a report
+
+`defaultRubric.thresholds` are not calibrated, and the set is small. A report
+is the evidence to argue from, never the argument itself: fitting a threshold
+to eleven cases fits it to those eleven.
+
+Changing one needs the report before and after the change, over the same set
+and the same classifier build, in the commit that changes it, and a rubric id
+bump, because a threshold is part of what a rubric means. `reviewed-set.ts`
+pins the rubric its labels were chosen under, so bumping the id fails the
+set's test until each case is read again under the new meanings.
+
+No threshold has been changed for this report. The figures it prints are the
+baseline a later run is compared with.
+
 ## Provenance and privacy
 
 Every case records where its mail came from.
@@ -108,4 +249,10 @@ Every case records where its mail came from.
   test output is not private.
 
 The same rule holds for the rest of the repository, from the other direction:
-mail subjects, addresses and bodies stay out of logs and public errors.
+mail subjects, addresses and bodies stay out of logs and public errors. The
+quality report is written to be printed, logged and pasted into a ticket, so
+it carries only fixture names, categories, counts and content-free provider
+codes; a test renders the whole set and fails if any subject, address or
+sender name reaches the text. A run snapshot is written to be shared for the
+same reason and holds no mail either, which a test of its own enforces over
+every case, bodies included.
