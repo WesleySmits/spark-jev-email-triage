@@ -47,10 +47,13 @@ import { judgedSubjectSchema } from './stored-classification'
 const id = z.string().trim().min(1)
 
 /**
- * What a proposal would ask a provider to do. Both are reversible reading
- * states rather than deletions; nothing here can perform either.
+ * What a proposal would ask a provider to do. `archive` is the one kind this
+ * build models, as an illustration of a proposal: it authorizes no provider
+ * to do anything, nothing here can perform it, and which action a later
+ * build may actually be permitted is not decided by this list. Kinds are
+ * added when something is allowed to ask for them, not before.
  */
-const mailboxActionKindSchema = z.enum(['archive', 'mark_read'])
+const mailboxActionKindSchema = z.enum(['archive'])
 
 export type MailboxActionKind = z.infer<typeof mailboxActionKindSchema>
 

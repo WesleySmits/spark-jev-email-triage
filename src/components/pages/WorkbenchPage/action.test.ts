@@ -7,6 +7,7 @@ import {
 } from '../../../domain/mailbox-action'
 import type { StoredClassification } from '../../../domain/stored-classification'
 import {
+  actionEffect,
   actionPreconditions,
   actionResult,
   actionStages,
@@ -215,17 +216,40 @@ describe('actionTargets', () => {
     const targets = actionTargets(held([studio]), observations(current), labelOf)
 
     expect(targets).toHaveLength(1)
-    expect(targets[0]?.label).toBe('Studio Noord · message 11')
-    expect(targets.map((target) => target.label).join(' ')).not.toContain('Atelier Linden')
+    expect(targets[0]?.label).toBe('Studio Noord')
+    expect(targets[0]?.identity).toBe(`${studio} · message 11`)
+    expect(targets.map((target) => target.identity).join(' ')).not.toContain(alias)
   })
 
   it('names an alias copy only where the proposal named it', () => {
     const targets = actionTargets(held([studio, alias]), observations(current), labelOf)
 
-    expect(targets.map((target) => target.label)).toEqual([
-      'Studio Noord · message 11',
-      'Atelier Linden · message 11',
+    expect(targets.map((target) => target.identity)).toEqual([
+      `${studio} · message 11`,
+      `${alias} · message 11`,
     ])
+  })
+
+  it('tells apart two mailboxes shown under one name, on one message id', () => {
+    // Nothing stops two mailboxes carrying the same label, and one provider
+    // message id may be listed in both. The name alone would then read the
+    // same for two different copies, so the ids are what is shown.
+    const sameLabel = () => 'Shared inbox'
+    const targets = actionTargets(held([studio, alias]), observations(current), sameLabel)
+
+    expect(targets.map((target) => target.label)).toEqual(['Shared inbox', 'Shared inbox'])
+    expect(targets.map((target) => target.identity)).toEqual([
+      `${studio} · message 11`,
+      `${alias} · message 11`,
+    ])
+    expect(new Set(targets.map((target) => target.id)).size).toBe(2)
+  })
+
+  it('names the mailbox by its id even where the workbench cannot name it', () => {
+    const unknown = () => 'Another mailbox'
+    const [target] = actionTargets(held([studio]), observations(current), unknown)
+
+    expect(target?.identity).toBe(`${studio} · message 11`)
   })
 
   it('says of each copy the version proposed against and where it stands', () => {
@@ -293,6 +317,19 @@ describe('actionPreconditions', () => {
     ])
   })
 
+  it('names each thread precondition by its mailbox id, not only its name', () => {
+    const sameLabel = () => 'Shared inbox'
+    const views = actionPreconditions(
+      held([studio, alias]),
+      standingOf(held([studio, alias]), observations(current)),
+      observations(current),
+      sameLabel,
+    )
+
+    expect(views[0]?.label).toBe(`The thread of Shared inbox (${studio}) still ends at message 11`)
+    expect(views[1]?.label).toBe(`The thread of Shared inbox (${alias}) still ends at message 11`)
+  })
+
   it('reports a thread a read proved as met and an unread one as not', () => {
     const views = actionPreconditions(
       held([studio, alias]),
@@ -303,6 +340,42 @@ describe('actionPreconditions', () => {
 
     expect(views[0]?.state.label).toBe('Met')
     expect(views[1]?.state.label).toBe('Not met')
+  })
+})
+
+describe('actionEffect', () => {
+  it('says nothing would change before anything is proposed', () => {
+    const effect = actionEffect(null, labelOf)
+
+    expect(effect.statement).toBe('Nothing is proposed, so nothing would change.')
+    expect(effect.note).toContain('Your mailbox is unchanged.')
+  })
+
+  it('names the copies it would ask for, by their ids, and nothing else', () => {
+    const effect = actionEffect(held([studio]), labelOf)
+
+    expect(effect.statement).toContain('archive the copy named above, and nothing else')
+    expect(effect.statement).toContain(`Studio Noord (${studio} · message 11)`)
+    expect(effect.statement).not.toContain(alias)
+  })
+
+  it('names both copies where both were proposed against', () => {
+    const effect = actionEffect(held([studio, alias]), labelOf)
+
+    expect(effect.statement).toContain('the copies named above')
+    expect(effect.statement).toContain(studio)
+    expect(effect.statement).toContain(alias)
+  })
+
+  it('claims nothing about what a provider would do, or about the thread', () => {
+    const { statement, note } = actionEffect(held([studio]), labelOf)
+
+    expect(note).toContain('not verified here')
+    expect(note).toContain('whether it would touch anything else in the thread')
+    expect(note).toContain('Nothing has been asked, nothing can be')
+    // It describes a request nobody has made, never something that happened.
+    expect(`${statement} ${note}`).not.toMatch(/was archived|has been archived|archived\./i)
+    expect(statement).toMatch(/^If this were ever carried out/)
   })
 })
 

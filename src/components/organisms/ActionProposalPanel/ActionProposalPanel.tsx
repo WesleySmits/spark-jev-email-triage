@@ -23,8 +23,15 @@ export type ActionStage = Readonly<{
 /** One named mailbox copy the action would be applied to. */
 export type ActionTargetView = Readonly<{
   id: string
-  /** The copy, as this workbench names it, e.g. "Studio Noord · message 11". */
+  /** How this workbench names the mailbox, for a reader, e.g. "Studio Noord". */
   label: string
+  /**
+   * The copy itself, as a provider is given it: its mailbox id and its
+   * message id. Two mailboxes may be shown under one name, and one message
+   * id may be listed in both, so this is what tells the copies apart and it
+   * is always shown.
+   */
+  identity: string
   /** The version it was proposed against, and where that copy stands now. */
   detail: string
 }>
@@ -59,6 +66,12 @@ type ActionProposalPanelProps = Readonly<{
   targetsNote: string
   /** Shown in place of the list while nothing is proposed. */
   targetsEmpty: string
+  /**
+   * What the action would change if it were ever carried out, and what about
+   * that is not known. It is a statement about the named copies only; the
+   * caller must not let it imply anything about other copies or a thread.
+   */
+  effect: Readonly<{ title: string; statement: string; note: string }>
   preconditionsTitle: string
   preconditions: readonly PreconditionView[]
   /** The buttons this stage offers, e.g. Propose and Approve. */
@@ -73,8 +86,10 @@ const subheadings = { 2: 'h3', 3: 'h4', 4: 'h5' } as const
 /**
  * One proposed mailbox action, as three stages a reader can tell apart:
  * what is proposed, what a person approved, and where execution stands. It
- * lists every mailbox copy the proposal names and every precondition by
- * name, so nothing about its scope is left implicit.
+ * lists every mailbox copy the proposal names, by the mailbox and message
+ * ids a provider would be given, what the action would change about those
+ * copies, and every precondition by name, so nothing about its scope is
+ * left implicit.
  *
  * Presentational only. The caller owns every string, every state and every
  * button; nothing here proposes, approves, reads a mailbox or runs an
@@ -94,9 +109,10 @@ const subheadings = { 2: 'h3', 3: 'h4', 4: 'h5' } as const
  *     { id: 'execution', name: 'Execution', state: { label: 'Blocked', tone: 'neutral' }, detail: 'Nothing here can change a mailbox.' },
  *   ]}
  *   targetsTitle="Mailbox copies named"
- *   targets={[{ id: 'c1', label: 'Studio Noord · message 11', detail: 'Thread t-11, latest message 11.' }]}
+ *   targets={[{ id: 'c1', label: 'Studio Noord', identity: 'studio@mail.example · message 11', detail: 'Thread t-11, latest message 11.' }]}
  *   targetsNote="No other copy of this message is included."
  *   targetsEmpty="Nothing is proposed, so no copy is named."
+ *   effect={{ title: 'What it would change', statement: 'Archive would be asked for that one copy.', note: 'Not verified, and nothing has been changed.' }}
  *   preconditionsTitle="Before anything could run"
  *   preconditions={[{ id: 'p1', label: 'A person approved it', state: { label: 'Not met', tone: 'neutral' } }]}
  *   actions={[{ id: 'approve', label: 'Approve', onClick: approve }]}
@@ -112,6 +128,7 @@ export function ActionProposalPanel({
   targets,
   targetsNote,
   targetsEmpty,
+  effect,
   preconditionsTitle,
   preconditions,
   actions,
@@ -149,12 +166,18 @@ export function ActionProposalPanel({
             {targets.map((target) => (
               <li key={target.id} className="action-proposal-panel__target">
                 <span className="action-proposal-panel__target-label">{target.label}</span>
+                <span className="action-proposal-panel__target-identity">{target.identity}</span>
                 <span className="action-proposal-panel__target-detail">{target.detail}</span>
               </li>
             ))}
           </ul>
         )}
         <p className="action-proposal-panel__note">{targetsNote}</p>
+      </div>
+      <div className="action-proposal-panel__section">
+        <Subheading className="action-proposal-panel__subheading">{effect.title}</Subheading>
+        <p className="action-proposal-panel__effect">{effect.statement}</p>
+        <p className="action-proposal-panel__note">{effect.note}</p>
       </div>
       <div className="action-proposal-panel__section">
         <Subheading className="action-proposal-panel__subheading">{preconditionsTitle}</Subheading>

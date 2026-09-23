@@ -12,6 +12,7 @@ import {
 } from '../../organisms/ActionProposalPanel/ActionProposalPanel'
 import {
   actionAnnouncement,
+  actionEffect,
   actionPreconditions,
   actionResult,
   actionStages,
@@ -179,8 +180,9 @@ export function ActionProposalAction(props: ActionProposalActionProps) {
         stages={actionStages(state.held, state.standing)}
         targetsTitle="Mailbox copies named"
         targets={actionTargets(state.held, state.observations, props.labelOf)}
-        targetsNote="Only the copies named here would be acted on. The same message in another mailbox is a separate copy, and nothing adds it for you."
+        targetsNote="Only the copies named here would be acted on, by the mailbox and message ids shown. The same message in another mailbox is a separate copy, and nothing adds it for you."
         targetsEmpty="Nothing is proposed, so no mailbox copy is named."
+        effect={actionEffect(state.held, props.labelOf)}
         preconditionsTitle="Before anything could run"
         preconditions={actionPreconditions(
           state.held,

@@ -62,12 +62,18 @@ const base: Props = {
   targets: [
     {
       id: 'c1',
-      label: 'Studio Noord · message 11',
+      label: 'Studio Noord',
+      identity: 'studio@mail.example · message 11',
       detail: 'Proposed against thread t-11, latest message 11.',
     },
   ],
   targetsNote: 'Only the copies named here would be acted on.',
   targetsEmpty: 'Nothing is proposed, so no mailbox copy is named.',
+  effect: {
+    title: 'What it would change',
+    statement: 'It would ask a mail provider to archive the copy named above, and nothing else.',
+    note: 'What a provider does when asked that is not verified here. Your mailbox is unchanged.',
+  },
   preconditionsTitle: 'Before anything could run',
   preconditions: [
     {
@@ -124,16 +130,46 @@ describe('ActionProposalPanel', () => {
         ...base,
         targets: [
           ...base.targets,
-          { id: 'c2', label: 'Atelier Linden · message 11', detail: 'Unobserved.' },
+          {
+            id: 'c2',
+            label: 'Atelier Linden',
+            identity: 'atelier@mail.example · message 11',
+            detail: 'Unobserved.',
+          },
         ],
       }),
       'action-proposal-panel__target-label',
     )
 
     expect(targets.map((target) => target.props['children'])).toEqual([
-      'Studio Noord · message 11',
-      'Atelier Linden · message 11',
+      'Studio Noord',
+      'Atelier Linden',
     ])
+  })
+
+  it('shows the ids of every copy, so two shown under one name stay apart', () => {
+    const shownAlike = [
+      { id: 'c1', label: 'Shared', identity: 'one@mail.example · message 11', detail: 'A.' },
+      { id: 'c2', label: 'Shared', identity: 'two@mail.example · message 11', detail: 'B.' },
+    ]
+    const identities = withClass(
+      rendered({ ...base, targets: shownAlike }),
+      'action-proposal-panel__target-identity',
+    )
+
+    expect(identities.map((target) => target.props['children'])).toEqual([
+      'one@mail.example · message 11',
+      'two@mail.example · message 11',
+    ])
+  })
+
+  it('says what the action would change and what about that is unknown', () => {
+    const elements = rendered(base)
+    const [statement] = withClass(elements, 'action-proposal-panel__effect')
+    const notes = withClass(elements, 'action-proposal-panel__note')
+
+    expect(statement?.props['children']).toBe(base.effect.statement)
+    expect(notes.map((note) => note.props['children'])).toContain(base.effect.note)
   })
 
   it('says so instead of listing nothing when no copy is named', () => {

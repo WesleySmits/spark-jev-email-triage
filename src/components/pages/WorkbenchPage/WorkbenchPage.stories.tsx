@@ -1719,9 +1719,15 @@ const actionResult = (root: HTMLElement) => root.querySelector('.action-proposal
 /** What the page's polite live region is announcing about the proposal. */
 const actionAnnounced = (root: HTMLElement) => root.querySelector('.workbench__action-status')
 
-/** The mailbox copies the proposal names, as the panel lists them. */
+/** The mailbox copies the proposal names, by the ids the panel shows. */
 const namedCopies = (root: HTMLElement) =>
-  [...root.querySelectorAll('.action-proposal-panel__target-label')].map((copy) => copy.textContent)
+  [...root.querySelectorAll('.action-proposal-panel__target-identity')].map(
+    (copy) => copy.textContent,
+  )
+
+/** What the panel says the action would change, and what is unknown of it. */
+const expectedEffect = (root: HTMLElement) =>
+  root.querySelector('.action-proposal-panel__section:has(.action-proposal-panel__effect)')
 
 const press = (root: HTMLElement, name: string) =>
   userEvent.click(within(root).getByRole('button', { name, hidden: false }))
@@ -1752,13 +1758,34 @@ export const ProposeMailboxAction: Story = {
     await expect(actionPanel(canvasElement)).toHaveTextContent('Nothing proposed')
     await expect(actionPanel(canvasElement)).toHaveTextContent('Blocked')
     await expect(namedCopies(canvasElement)).toEqual([])
+    await expect(expectedEffect(canvasElement)).toHaveTextContent(
+      'Nothing is proposed, so nothing would change.',
+    )
 
     await press(canvasElement, 'Propose archive')
     await expect(actionPanel(canvasElement)).toHaveTextContent('Waiting for you')
-    // Exactly the open row's copy, named. Nothing added an alias copy to it.
-    await expect(namedCopies(canvasElement)).toEqual(['Studio Noord · message m1'])
+    // Exactly the open row's copy, by the ids a provider would be given.
+    // Nothing added an alias copy to it.
+    await expect(namedCopies(canvasElement)).toEqual(['studio · message m1'])
     await expect(actionPanel(canvasElement)).toHaveTextContent(
       'The same message in another mailbox is a separate copy',
+    )
+
+    // It says what would change, about that copy alone, and what about a
+    // provider doing it is not known. It never says anything happened.
+    await expect(expectedEffect(canvasElement)).toHaveTextContent('What it would change')
+    await expect(expectedEffect(canvasElement)).toHaveTextContent(
+      'If this were ever carried out, it would ask a mail provider to archive the copy named above, and nothing else: Studio Noord (studio · message m1).',
+    )
+    await expect(expectedEffect(canvasElement)).toHaveTextContent(
+      'whether it would touch anything else in the thread',
+    )
+    await expect(expectedEffect(canvasElement)).toHaveTextContent('Nothing has been asked')
+
+    // Each precondition names its mailbox id too, so two mailboxes shown
+    // under one name could never read as one precondition.
+    await expect(actionPanel(canvasElement)).toHaveTextContent(
+      'The thread of Studio Noord (studio) still ends at message m1',
     )
 
     // Approving is its own step, and it moves only the approval stage.
@@ -1843,7 +1870,7 @@ export const ProposalLapsesOnNewerMessage: Story = {
     await expect(actionAnnounced(canvasElement)).toHaveTextContent('Out of date')
     await expect(actionAnnounced(canvasElement)).not.toHaveTextContent('Approved')
     // The copy it named is still named, and now says where it stands.
-    await expect(namedCopies(canvasElement)).toEqual(['Studio Noord · message m1'])
+    await expect(namedCopies(canvasElement)).toEqual(['studio · message m1'])
     await expect(within(canvasElement).getByRole('button', { name: 'Approve' })).toBeDisabled()
     // No thread was read again to find that out.
     await expect(args.loadBody).toHaveBeenCalledTimes(1)

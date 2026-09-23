@@ -190,12 +190,19 @@ pnpm readback:spark                      # whether Spark answers on this host
   Errors reach the browser only as a coarse reason or a fixed message.
 - The page runs in `read-only` completion mode: no Complete, E, Completed
   notice or Undo. The sync button only reads the inbox again.
-- The open message offers one mailbox action to propose, and the reader shows
-  proposal, human approval and execution as three stages that never read as
-  one another. A proposal names the open row's own mailbox copy and the thread
-  version it was proposed against, and nothing is ever added to it: a copy of
-  the same message in another mailbox is a separate copy and stays out unless
-  it is named. Approving is a distinct transition and is that person's
+- The open message offers one mailbox action to propose, `archive`, which is
+  the one kind this build models and is an illustration of a proposal rather
+  than permission for any provider mutation. The reader shows proposal, human
+  approval and execution as three stages that never read as one another. A
+  proposal names the open row's own mailbox copy and the thread version it was
+  proposed against, and nothing is ever added to it: a copy of the same
+  message in another mailbox is a separate copy and stays out unless it is
+  named. Each named copy is shown by the mailbox and message ids a provider
+  would be given, beside the name the rail uses, because two mailboxes may
+  carry one name and one message id may be listed in both. The panel also says
+  what the action would change about those copies and nothing else, and says
+  in the same breath that what a provider does when asked is not verified
+  here, the rest of the thread included. Approving is a distinct transition and is that person's
   decision alone: it is recorded on the page, no provider is told about it,
   and it lapses the moment a later message reaches a target's thread. Nothing
   is stored and nothing is executed. `src/domain/mailbox-action.ts` names

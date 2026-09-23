@@ -42,10 +42,13 @@ import type {
   PreconditionView,
 } from '../../organisms/ActionProposalPanel/ActionProposalPanel'
 
-/** The actions this workbench may propose, as they read. */
+/**
+ * The actions this workbench may propose, as they read. `archive` is the one
+ * it models, as an illustration of a proposal: proposing it asks no provider
+ * for anything and permits nothing.
+ */
 const actionKindLabels = {
   archive: 'Archive',
-  mark_read: 'Mark as read',
 } as const satisfies Record<MailboxActionKind, string>
 
 /** What a proposal about one row would name: one copy, and what explains it. */
@@ -218,10 +221,15 @@ const wordsFor = (standing: TargetStanding) =>
   standing.status === 'broken' ? breaks[standing.reason] : standings[standing.status]
 
 /**
- * Every mailbox copy the proposal names, each with the version it was
- * proposed against and where that copy stands now. Nothing is added to this
- * list: a copy of the same message in another mailbox appears only where the
- * proposal itself named it.
+ * Every mailbox copy the proposal names, each by the mailbox and message ids
+ * a provider would be given, with the version it was proposed against and
+ * where that copy stands now. Nothing is added to this list: a copy of the
+ * same message in another mailbox appears only where the proposal itself
+ * named it.
+ *
+ * The mailbox's name is shown for a reader, and never instead of its id. Two
+ * mailboxes may be shown under one name, and one message id may be listed in
+ * both, so a name alone would let two different copies read identically.
  */
 export function actionTargets(
   held: HeldProposal | null,
@@ -231,9 +239,49 @@ export function actionTargets(
   if (held === null) return []
   return held.proposal.targets.map((target) => ({
     id: mailboxCopyId(target.copy),
-    label: `${labelOf(target.copy)} · message ${target.copy.messageId}`,
+    label: labelOf(target.copy),
+    identity: `${target.copy.mailboxId} · message ${target.copy.messageId}`,
     detail: `Proposed against thread ${target.threadId}, latest message ${target.latestMessageId}. ${wordsFor(targetStanding(target, observations))}`,
   }))
+}
+
+/** What the panel says one proposal would change, and what is unknown of it. */
+export type ActionEffect = Readonly<{ title: string; statement: string; note: string }>
+
+const effectTitle = 'What it would change'
+
+/**
+ * What the action would change if it were ever carried out, about the copies
+ * it names and about nothing else.
+ *
+ * It is written so it can never be read as more than it says. It names the
+ * copies asked for, and it does not claim what a provider would do with such
+ * a request: whether one is enough, whether a provider touches the rest of a
+ * thread, and what archiving means there are all unverified here. Nothing
+ * has run, and nothing can, so this is a description of a request nobody has
+ * made rather than a report of anything that happened.
+ */
+export function actionEffect(held: HeldProposal | null, labelOf: LabelOf): ActionEffect {
+  if (held === null) {
+    return {
+      title: effectTitle,
+      statement: 'Nothing is proposed, so nothing would change.',
+      note: unchanged,
+    }
+  }
+  const kind = actionKindLabels[held.proposal.kind]
+  const named = held.proposal.targets
+    .map(
+      (target) =>
+        `${labelOf(target.copy)} (${target.copy.mailboxId} · message ${target.copy.messageId})`,
+    )
+    .join(', ')
+  const copies = held.proposal.targets.length
+  return {
+    title: effectTitle,
+    statement: `If this were ever carried out, it would ask a mail provider to ${kind.toLowerCase()} ${copies === 1 ? 'the copy' : 'the copies'} named above, and nothing else: ${named}.`,
+    note: `What a provider does when asked that is not verified here — including whether it would touch anything else in the thread, and what ${kind.toLowerCase()} means to it. Nothing has been asked, nothing can be, and ${unchanged.toLowerCase()}`,
+  }
 }
 
 const met = { label: 'Met', tone: 'done' } as const
@@ -260,9 +308,12 @@ function preconditionView(
     }
   }
   const holds = targetStanding(precondition, observations).status === 'holds'
+  const { copy } = precondition
   return {
-    id: `thread_unchanged:${mailboxCopyId(precondition.copy)}`,
-    label: `The thread of ${labelOf(precondition.copy)} still ends at message ${precondition.latestMessageId}`,
+    id: `thread_unchanged:${mailboxCopyId(copy)}`,
+    // The mailbox id, not only its name: one precondition per target, and two
+    // targets may be shown under one name.
+    label: `The thread of ${labelOf(copy)} (${copy.mailboxId}) still ends at message ${precondition.latestMessageId}`,
     state: holds ? met : unmet,
   }
 }

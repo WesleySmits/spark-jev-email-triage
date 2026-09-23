@@ -30,11 +30,11 @@
   color: var(--ink-soft);
 }
 
-/* The three stages side by side, in the order they happen. */
+/* The three stages side by side, in the order they happen. Rules divide
+ * them: the panel is already a card, and cards don't nest. */
 .action-proposal-panel__stages {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--s3);
   margin: var(--s4) 0 0;
   padding: 0;
   list-style: none;
@@ -45,12 +45,16 @@
   min-width: 0;
   display: grid;
   justify-items: start;
+  align-content: start;
   gap: var(--s2);
-  padding: var(--s3);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  background: var(--paper);
+  padding: 0 var(--s4);
+  border-left: 1px solid var(--line);
   overflow-wrap: anywhere;
+}
+
+.action-proposal-panel__stage:first-child {
+  padding-left: 0;
+  border-left: 0;
 }
 
 .action-proposal-panel__stage-name {
@@ -89,19 +93,29 @@
   gap: var(--s2);
 }
 
+/* One copy per row, divided by a rule rather than framed as its own card. */
 .action-proposal-panel__target {
   min-width: 0;
   display: grid;
   gap: 2px;
-  padding: var(--s2) var(--s3);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  background: var(--paper);
+  padding-top: var(--s2);
+  border-top: 1px solid var(--line);
   overflow-wrap: anywhere;
+}
+
+.action-proposal-panel__target:first-child {
+  padding-top: 0;
+  border-top: 0;
 }
 
 .action-proposal-panel__target-label {
   font: var(--text-control);
+}
+
+.action-proposal-panel__target-identity {
+  color: var(--ink-soft);
+  font: var(--text-meta);
+  font-variant-numeric: tabular-nums;
 }
 
 .action-proposal-panel__target-detail,
@@ -110,6 +124,11 @@
 .action-proposal-panel__result {
   color: var(--muted);
   font: var(--text-meta);
+}
+
+.action-proposal-panel__effect {
+  margin: var(--s2) 0 0;
+  color: var(--ink-soft);
 }
 
 .action-proposal-panel__note {
@@ -158,8 +177,27 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .action-proposal-panel__stage {
+    padding: var(--s3) 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .action-proposal-panel__stage:first-child {
+    padding-top: 0;
+    border-top: 0;
+  }
+
   .action-proposal-panel__actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  /* Stacked, it has the column's whole width, so it neither grows nor
+   * stretches its two lines apart. */
+  .action-proposal-panel__result {
+    flex: none;
+    align-content: start;
+    gap: 2px;
   }
 }

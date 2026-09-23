@@ -14,14 +14,16 @@ type Props = ComponentProps<typeof ActionProposalPanel>
 // the workbench stories use. Nothing here reaches a mailbox.
 const studioCopy: ActionTargetView = {
   id: 'studio:11',
-  label: 'Studio Noord · message 11',
+  label: 'Studio Noord',
+  identity: 'studio@mail.example · message 11',
   detail:
     'Proposed against thread t-11, latest message 11. A thread read for this copy still ends there.',
 }
 
 const aliasCopy: ActionTargetView = {
   id: 'atelier:11',
-  label: 'Atelier Linden · message 11',
+  label: 'Atelier Linden',
+  identity: 'atelier@mail.example · message 11',
   detail:
     'Proposed against thread t-11, latest message 11. Nothing read says where this copy stands now.',
 }
@@ -61,6 +63,13 @@ const approved: ActionStage = {
   detail: 'Approved by you, at this computer. That decision is recorded here and nowhere else.',
 }
 
+const effectOf = (copies: string, note = 'Archive') =>
+  ({
+    title: 'What it would change',
+    statement: `If this were ever carried out, it would ask a mail provider to archive the ${copies} named above, and nothing else.`,
+    note: `What a provider does when asked that is not verified here — including whether it would touch anything else in the thread, and what ${note.toLowerCase()} means to it. Nothing has been asked, nothing can be, and your mailbox is unchanged.`,
+  }) satisfies Props['effect']
+
 const adapter: PreconditionView = {
   id: 'write_adapter_connected',
   label: 'Something could carry the action out',
@@ -90,8 +99,9 @@ const meta = {
     targetsTitle: 'Mailbox copies named',
     targets: [studioCopy],
     targetsNote:
-      'Only the copies named here would be acted on. The same message in another mailbox is a separate copy, and nothing adds it for you.',
+      'Only the copies named here would be acted on, by the mailbox and message ids shown. The same message in another mailbox is a separate copy, and nothing adds it for you.',
     targetsEmpty: 'Nothing is proposed, so no mailbox copy is named.',
+    effect: effectOf('copy'),
     preconditionsTitle: 'Before anything could run',
     preconditions: [thread('Studio Noord', 'Met'), approval('Not met'), adapter],
     actions: [
@@ -150,6 +160,11 @@ export const NothingProposed: Story = {
       },
     ),
     targets: [],
+    effect: {
+      title: 'What it would change',
+      statement: 'Nothing is proposed, so nothing would change.',
+      note: 'Your mailbox is unchanged.',
+    },
     preconditions: [approval('Not met'), adapter],
     actions: [{ id: 'propose', label: 'Propose archive', variant: 'secondary', onClick: fn() }],
     result: {
@@ -236,6 +251,7 @@ export const TwoAliasCopies: Story = {
       waiting,
     ),
     targets: [studioCopy, aliasCopy],
+    effect: effectOf('copies'),
     preconditions: [
       thread('Studio Noord', 'Met'),
       thread('Atelier Linden', 'Not met'),

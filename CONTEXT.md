@@ -38,7 +38,7 @@ A requested provider mutation against explicitly named mailbox copies. A classif
 
 ## Action proposal
 
-One proposed mailbox action: the action, every target mailbox copy named explicitly, the thread version each was proposed against, and what explains it. Making one changes nothing and authorizes nothing. A copy is a target only where the proposal names it, so a copy of the same message in another mailbox is never added to one.
+One proposed mailbox action: the action, every target mailbox copy named explicitly by its mailbox and provider message id, the thread version each was proposed against, and what explains it. Making one changes nothing and authorizes nothing. A copy is a target only where the proposal names it, so a copy of the same message in another mailbox is never added to one.
 
 ## Action approval
 
