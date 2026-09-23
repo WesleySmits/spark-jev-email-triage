@@ -3,10 +3,11 @@
  *
  * Two jobs, both plain functions of plain data:
  *
- * - `evidenceFor` decides which evidence a row has. A reading lists what the
- *   store alone can say, and opening a row adds what the thread its body read
- *   returned proved. The store alone never proves currency, so only a body
- *   read can answer `current`, and only for the judgment the listing named.
+ * - `evidenceIn` and `evidenceFor` decide which evidence a row has. A reading
+ *   lists what the store alone can say, and opening a row adds what the
+ *   thread its body read returned proved. The store alone never proves
+ *   currency, so only a body read can answer `current`, and only for the
+ *   judgment the listing named, under the reading that read ran in.
  * - `classificationView` and `rowState` turn one state into the words and the
  *   tone the reader and the queue show. Every state is named in text, never
  *   by color alone, and nothing here claims more than its state holds: a
@@ -17,6 +18,7 @@
  */
 import type { MailboxCopyRef } from '../../../domain/mailbox-copy'
 import { mailboxCopyId } from '../../../domain/mailbox-copy'
+import type { BodyState } from './body'
 import type {
   ClassificationLabels,
   StoredClassification,
@@ -61,6 +63,52 @@ export function evidenceFor(
   if (listed.state !== 'unverified' || read === undefined) return listed
   if (read.state !== 'current' && read.state !== 'stale') return listed
   return namesSameJudgment(listed, read) ? read : listed
+}
+
+/**
+ * One reading of the desk as the page is shown it: what it listed about each
+ * row, and which reading that was. The two travel together, so evidence can
+ * never be shown without knowing the reading it belongs to.
+ */
+export type ListedEvidence = Readonly<{
+  /** Opaque id of the reading. A new reading, a refresh included, gets a new one. */
+  reading: string
+  /** What the reading listed about each row, by the row's id. */
+  states: Readonly<Record<string, StoredClassification>>
+}>
+
+/** What applies to each row of one reading. */
+export type Evidence = Readonly<{
+  /** What applies to the open row, including what its own body read proved. */
+  open: StoredClassification | undefined
+  /** What applies to any row, open or not. */
+  of: (id: string) => StoredClassification | undefined
+}>
+
+/**
+ * What is known about each row of one reading, and about the open row also
+ * what the body held for it proved.
+ *
+ * A proof counts only where it still is one. It must name the open row, be
+ * the body held for it, and come from a request that ran under this very
+ * reading: a
+ * later reading listed the mailbox again, the provider may have moved on
+ * since, and nothing reads a thread again to find out. So a refresh drops
+ * back to what the store alone says until the reader opens that thread anew,
+ * and the same reading rendered again keeps what it proved.
+ */
+export function evidenceIn(
+  listed: ListedEvidence | undefined,
+  openId: string | undefined,
+  body: BodyState,
+): Evidence {
+  const stored = (id: string) => listed?.states[id]
+  const proves = body.status === 'ready' && body.id === openId && body.reading === listed?.reading
+  const open =
+    openId === undefined
+      ? undefined
+      : evidenceFor(stored(openId), proves ? body.classification : undefined)
+  return { open, of: (id) => (id === openId ? open : stored(id)) }
 }
 
 /** The state as the queue and the reader name it: always words, and a tone. */

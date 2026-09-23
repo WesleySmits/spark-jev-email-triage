@@ -6,7 +6,12 @@
  * reader, the judgments come from the local shadow database read-only, and
  * nothing here calls a classifier: opening or refreshing the page never
  * classifies. A reading that lists no mail carries no judgments either.
+ *
+ * Every reading is named, so nothing an earlier one proved is taken for
+ * proof under a later one. Refreshing lists the mailbox again, and the
+ * provider may have moved on since; only reading a thread again can say.
  */
+import { randomUUID } from 'node:crypto'
 import type { ReadOptions } from '../domain/mail-reader'
 import type { ClassifiedInbox } from './live-inbox'
 import { sparkInbox } from './spark-inbox.server'
@@ -15,5 +20,8 @@ import { classificationsFor } from './stored-classifications.server'
 export async function deskReading(options?: ReadOptions): Promise<ClassifiedInbox> {
   const inbox = await sparkInbox().list(options)
   if (inbox.status !== 'ready') return inbox
-  return { ...inbox, classifications: classificationsFor(inbox.messages) }
+  // One id per reading, minted here because this is where a listing and the
+  // judgments stored for it become one reading. It lets a browser tell a
+  // proof that belongs to this reading from one an earlier reading made.
+  return { ...inbox, reading: randomUUID(), classifications: classificationsFor(inbox.messages) }
 }

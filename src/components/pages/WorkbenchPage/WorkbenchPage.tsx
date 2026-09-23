@@ -20,7 +20,14 @@ import { Sidebar, type SidebarItem } from '../../organisms/Sidebar/Sidebar'
 import { TopBar } from '../../organisms/TopBar/TopBar'
 import { WorkbenchTemplate } from '../../templates/WorkbenchTemplate/WorkbenchTemplate'
 import type { BodyState } from './body'
-import { classificationView, evidenceFor, judgedText, rowState } from './classification'
+import {
+  classificationView,
+  evidenceIn,
+  judgedText,
+  rowState,
+  type Evidence,
+  type ListedEvidence,
+} from './classification'
 import { useMessageBody } from './useMessageBody'
 import { shortcutLegend, useWorkbenchShortcuts } from './useWorkbenchShortcuts'
 import {
@@ -82,13 +89,19 @@ type WorkbenchPageProps = Readonly<{
    */
   mailboxes: readonly SidebarItem[]
   /**
-   * What triage stored about each row, by the row's id. A row with an entry
-   * shows that state instead of its own status and, once open, the evidence
-   * behind it; a row without one keeps the status it came with. Nothing here
-   * classifies: the caller passes what was stored, and only the open row's
-   * body may carry a stronger reading of it.
+   * What triage stored about the rows of one reading, and which reading that
+   * was. A row with an entry shows that state instead of its own status and,
+   * once open, the evidence behind it; a row without one keeps the status it
+   * came with. Nothing here classifies: the caller passes what was stored,
+   * and only the open row's own body may carry a stronger reading of it.
+   *
+   * Every reading needs its own `reading` id, a refresh included. A body read
+   * under an earlier reading no longer proves a judgment current, because a
+   * later reading may list mail the provider changed since and nothing here
+   * reads a thread again. Passing the same id for two readings would claim a
+   * currency this page cannot stand behind.
    */
-  classifications?: Readonly<Record<string, StoredClassification>> | undefined
+  classifications?: ListedEvidence | undefined
   /** Whether Complete is offered, and what it does. */
   completion: WorkbenchCompletion
   /** Sync status and profile. The page owns the search. */
@@ -518,30 +531,6 @@ function ReaderBody({ body, retry }: ReaderBodyProps) {
   )
 }
 
-type Evidence = Readonly<{
-  /** What applies to the open row, including what its body read proved. */
-  open: StoredClassification | undefined
-  /** What applies to any row, open or not. */
-  of: (id: string) => StoredClassification | undefined
-}>
-
-/**
- * What is known about each row. Only the open row's own body counts as
- * evidence about it, and only while that body is the one being held: a
- * response for another row, or one a later reading has outlived, is not
- * evidence about this one.
- */
-function evidenceIn(
-  classifications: WorkbenchPageProps['classifications'],
-  openId: string | undefined,
-  body: BodyState,
-): Evidence {
-  const listed = (id: string) => classifications?.[id]
-  const read = body.status === 'ready' ? body.classification : undefined
-  const open = openId === undefined ? undefined : evidenceFor(listed(openId), read)
-  return { open, of: (id) => (id === openId ? open : listed(id)) }
-}
-
 /** The rows as the queue shows them: a stored state replaces the row's own status. */
 function queueRows(messages: readonly WorkbenchMessage[], evidenceOf: Evidence['of']) {
   return messages.map((message) => {
@@ -637,7 +626,11 @@ function useWorkbench(props: WorkbenchPageProps) {
   useShortcuts(root, state, complete, searchId)
   useKeepFocus(root, restoreRef, state, notice.message !== undefined)
   useFollowCurrentRow(root, state.open?.id)
-  const { body, retry } = useMessageBody(props.loadBody, state.open?.id)
+  const { body, retry } = useMessageBody(
+    props.loadBody,
+    state.open?.id,
+    props.classifications?.reading,
+  )
   const evidence = evidenceIn(props.classifications, state.open?.id, body)
   return { state, searchId, root, notice, complete, body, retry, evidence } as const
 }
@@ -662,7 +655,9 @@ function useWorkbench(props: WorkbenchPageProps) {
  * badge and category on the row, and the evidence behind it under the reader
  * header. The page reads no store and calls no classifier; the open row's
  * body may carry a stronger reading of what the caller listed, and only that
- * can say a judgment is current.
+ * can say a judgment is current. That reading is scoped to the reading it
+ * ran under: passing a new one, as a refresh does, drops back to what the
+ * store alone says without asking for anything again.
  *
  * @example
  * import { WorkbenchPage } from '../components/pages/WorkbenchPage/WorkbenchPage'

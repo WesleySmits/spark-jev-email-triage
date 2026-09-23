@@ -784,7 +784,7 @@ const m1Current: StoredClassification = { ...m1Unverified, state: 'current' }
 /** The same judgment, once that read found the thread had moved on. */
 const m1Stale: StoredClassification = { ...m1Unverified, state: 'stale', reason: 'newer_message' }
 
-const stored: Readonly<Record<string, StoredClassification>> = {
+const storedStates: Readonly<Record<string, StoredClassification>> = {
   m1: m1Unverified,
   m2: {
     state: 'stale',
@@ -820,11 +820,14 @@ const oneWorkflow: Props['workflows'] = [{ id: 'inbox', icon: 'inbox', label: 'R
 /** Every sample message in the one workflow live mail has. */
 const listedRows = messages.map((message) => ({ ...message, workflow: 'inbox' }))
 
+/** One reading of the desk, as the route hands one over: its id and its rows. */
+const reading = (id: string, states = storedStates) => ({ reading: id, states }) as const
+
 const classified = {
   ...readOnly,
   messages: listedRows,
   workflows: oneWorkflow,
-  classifications: stored,
+  classifications: reading('reading-1'),
 } satisfies Partial<Props>
 
 /** The evidence strip under the reader header, whatever it says. */
@@ -921,11 +924,14 @@ export const ClassificationsUnreadable: Story = {
   globals: { viewport: { value: 'desktop', isRotated: false } },
   args: {
     ...classified,
-    classifications: Object.fromEntries(
-      listedRows.map((message) => [
-        message.id,
-        { state: 'unavailable', reason: 'unsupported_schema' } as const,
-      ]),
+    classifications: reading(
+      'reading-1',
+      Object.fromEntries(
+        listedRows.map((message) => [
+          message.id,
+          { state: 'unavailable', reason: 'unsupported_schema' } as const,
+        ]),
+      ),
     ),
   },
   play: async ({ canvasElement }) => {
@@ -952,5 +958,70 @@ export const StoredClassificationsMobile: Story = {
     await expect(content(canvasElement)).toHaveFocus()
     await waitFor(() => expect(evidence(canvasElement)).toHaveTextContent('Triage current'))
     await expect(content(canvasElement).firstElementChild).toHaveClass('message-reader__evidence')
+  },
+}
+
+/**
+ * Stands in for the route's loader: each Refresh reads the desk again, so
+ * the page gets a new reading of the same rows. The store has not changed,
+ * so every judgment is listed exactly as before. Nothing re-reads a body.
+ */
+function WithReadings(args: Props) {
+  const [count, setCount] = useState(1)
+  return (
+    <WorkbenchPage
+      {...args}
+      classifications={reading(`reading-${String(count)}`)}
+      topBar={{
+        ...args.topBar,
+        syncActionLabel: 'Refresh mail',
+        onSyncClick: () => {
+          setCount((current) => current + 1)
+        },
+      }}
+    />
+  )
+}
+
+/**
+ * Refresh lists the mailbox again, and the provider may have moved on since
+ * the open row's thread was read. Nothing re-reads that thread, so what the
+ * earlier read proved stops counting: the row and the reader fall back to
+ * what the store alone says, without a single extra request. Opening the
+ * thread anew proves it again under the reading that is current then.
+ */
+export const RefreshOutlivesProof: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: { ...classified, loadBody: fn(provingBodies({ m1: m1Current })) },
+  render: (args) => <WithReadings {...args} />,
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    const open = () => canvas.getByRole('button', { name: /Can delivery move/ })
+    await waitFor(() => expect(evidence(canvasElement)).toHaveTextContent('Triage current'))
+    await expect(open()).toHaveTextContent('Triage current')
+    await expect(args.loadBody).toHaveBeenCalledTimes(1)
+
+    // Refresh: the same row stays open and the same judgment is listed, but
+    // the proof belonged to the reading before it.
+    await userEvent.click(canvas.getByRole('button', { name: 'Refresh mail' }))
+    await expect(evidence(canvasElement)).toHaveTextContent('Triage from earlier')
+    await expect(evidence(canvasElement)).toHaveTextContent('not confirmed')
+    await expect(open()).toHaveTextContent('Triage from earlier')
+    // No thread was read to find that out, and the body that was read stays.
+    await expect(args.loadBody).toHaveBeenCalledTimes(1)
+    await expect(content(canvasElement)).toHaveTextContent('Hi Wesley,')
+
+    // Reading the thread anew proves it under the reading that is current now.
+    await userEvent.click(canvas.getByRole('button', { name: /Move Friday dinner\?/ }))
+    await userEvent.click(open())
+    await waitFor(() => expect(evidence(canvasElement)).toHaveTextContent('Triage current'))
+    await expect(args.loadBody).toHaveBeenCalledTimes(3)
+
+    // Rendering the same reading again keeps what it proved.
+    await userEvent.click(canvas.getByRole('searchbox'))
+    await userEvent.keyboard('delivery')
+    await expect(canvas.getByText('1 result')).toBeVisible()
+    await expect(evidence(canvasElement)).toHaveTextContent('Triage current')
+    await expect(args.loadBody).toHaveBeenCalledTimes(3)
   },
 }

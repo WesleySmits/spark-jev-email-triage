@@ -3,7 +3,8 @@ import type {
   ClassificationLabels,
   StoredClassification,
 } from '../../../domain/stored-classification'
-import { classificationView, evidenceFor, rowState } from './classification'
+import { idleBody, requestBody, settleBody, type BodyState } from './body'
+import { classificationView, evidenceFor, evidenceIn, rowState } from './classification'
 
 // Fictional judgments, shaped as the domain states them. The applicability
 // rules themselves belong to `domain/stored-classification.test.ts`; this
@@ -69,6 +70,60 @@ describe('evidenceFor', () => {
     expect(
       evidenceFor(unverified, { ...judged, state: 'provider_failure', errorCode: 'timeout' }),
     ).toBe(unverified)
+  })
+})
+
+describe('evidenceIn', () => {
+  const listed = {
+    reading: 'reading-1',
+    states: { m1: unverified, m2: { state: 'none' } },
+  } as const
+
+  /** A body of `id` that was read under `reading` and proved `proof`. */
+  const readUnder = (reading: string, id: string, proof?: StoredClassification): BodyState =>
+    settleBody(requestBody(idleBody, id, reading), 1, {
+      ok: true,
+      body: { id, text: 'Hello', ...(proof && { classification: proof }) },
+    })
+
+  it('lets the open row use what its own body read proved under this reading', () => {
+    const evidence = evidenceIn(listed, 'm1', readUnder('reading-1', 'm1', current))
+    expect(evidence.open).toBe(current)
+    expect(evidence.of('m1')).toBe(current)
+    // A row the reader never opened stays at what the store alone says.
+    expect(evidence.of('m2')).toEqual({ state: 'none' })
+  })
+
+  it('keeps that proof while the same reading is rendered again', () => {
+    const body = readUnder('reading-1', 'm1', current)
+    expect(evidenceIn({ ...listed }, 'm1', body).open).toBe(current)
+  })
+
+  it('drops a proof a later reading has outlived, without asking for anything', () => {
+    // The refresh listed the same judgment, unverified as ever: the store
+    // holds no more than it did. The thread may have moved on since the body
+    // was read, and nothing here read one again, so the proof is spent.
+    const body = readUnder('reading-1', 'm1', current)
+    const refreshed = evidenceIn({ ...listed, reading: 'reading-2' }, 'm1', body)
+    expect(refreshed.open).toBe(unverified)
+    expect(refreshed.of('m1')).toBe(unverified)
+  })
+
+  it('uses a proof again once the row is read anew under the current reading', () => {
+    const body = readUnder('reading-2', 'm1', current)
+    expect(evidenceIn({ ...listed, reading: 'reading-2' }, 'm1', body).open).toBe(current)
+  })
+
+  it('takes no proof from a body of another row, or one not there yet', () => {
+    const other = readUnder('reading-1', 'm2', current)
+    expect(evidenceIn(listed, 'm1', other).open).toBe(unverified)
+    expect(evidenceIn(listed, 'm1', requestBody(idleBody, 'm1', 'reading-1')).open).toBe(unverified)
+    expect(evidenceIn(listed, 'm1', { status: 'stale' }).open).toBe(unverified)
+  })
+
+  it('has nothing to show without a reading or an open row', () => {
+    expect(evidenceIn(undefined, 'm1', idleBody).open).toBeUndefined()
+    expect(evidenceIn(listed, undefined, idleBody).open).toBeUndefined()
   })
 })
 

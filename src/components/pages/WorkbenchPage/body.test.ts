@@ -5,14 +5,19 @@ const text = (id: string, value: string) => ({ ok: true, body: { id, text: value
 
 describe('requestBody', () => {
   it('starts loading with a request newer than the last one', () => {
-    const first = requestBody(idleBody, 'a')
-    expect(first).toEqual({ status: 'loading', id: 'a', request: 1 })
-    expect(requestBody(first, 'b')).toEqual({ status: 'loading', id: 'b', request: 2 })
+    const first = requestBody(idleBody, 'a', 'reading-1')
+    expect(first).toEqual({ status: 'loading', id: 'a', request: 1, reading: 'reading-1' })
+    expect(requestBody(first, 'b', 'reading-2')).toEqual({
+      status: 'loading',
+      id: 'b',
+      request: 2,
+      reading: 'reading-2',
+    })
   })
 })
 
 describe('settleBody', () => {
-  const loading = requestBody(idleBody, 'a')
+  const loading = requestBody(idleBody, 'a', 'reading-1')
 
   it('shows the text of the current request', () => {
     expect(settleBody(loading, 1, text('a', 'Hello'))).toEqual({
@@ -20,14 +25,22 @@ describe('settleBody', () => {
       id: 'a',
       request: 1,
       text: 'Hello',
+      reading: 'reading-1',
     })
   })
 
-  it('keeps what the read proved about the row, when it proved anything', () => {
+  it('keeps what the read proved, and the reading its request ran under', () => {
     const classification = { state: 'none' } as const
     expect(
       settleBody(loading, 1, { ok: true, body: { id: 'a', text: 'Hello', classification } }),
-    ).toEqual({ status: 'ready', id: 'a', request: 1, text: 'Hello', classification })
+    ).toEqual({
+      status: 'ready',
+      id: 'a',
+      request: 1,
+      text: 'Hello',
+      reading: 'reading-1',
+      classification,
+    })
     expect(settleBody(loading, 1, text('a', 'Hello'))).not.toHaveProperty('classification')
   })
 
@@ -51,7 +64,7 @@ describe('settleBody', () => {
   })
 
   it('ignores a stale response to an older request', () => {
-    const newer = requestBody(loading, 'b')
+    const newer = requestBody(loading, 'b', 'reading-1')
     expect(settleBody(newer, 1, text('a', 'Late'))).toBe(newer)
     expect(settleBody(newer, 1, { ok: false })).toBe(newer)
   })
@@ -63,7 +76,7 @@ describe('settleBody', () => {
 })
 
 describe('bodyFor', () => {
-  const ready: BodyState = settleBody(requestBody(idleBody, 'a'), 1, text('a', 'Hello'))
+  const ready: BodyState = settleBody(requestBody(idleBody, 'a', 'r'), 1, text('a', 'Hello'))
 
   it('is idle without an open message', () => {
     expect(bodyFor(ready, undefined)).toEqual({ status: 'idle' })

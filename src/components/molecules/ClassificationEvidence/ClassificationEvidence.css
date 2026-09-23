@@ -27,9 +27,9 @@
   text-transform: uppercase;
 }
 
+/* Inherits the strip's --text-ui: the one line a reader must actually read. */
 .classification-evidence__detail {
   margin: var(--s2) 0 0;
-  font-size: 13px;
 }
 
 .classification-evidence__note {
@@ -56,10 +56,9 @@
 }
 
 .classification-evidence__value {
-  margin: 2px 0 0;
+  margin: var(--s1) 0 0;
   color: var(--ink);
-  font-size: 13px;
-  font-weight: 700;
+  font: var(--text-control);
 }
 
 .classification-evidence__fact-note {
