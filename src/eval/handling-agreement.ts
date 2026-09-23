@@ -1,8 +1,8 @@
 /**
- * Whether policy handled a thread the way the candidate set expects.
+ * Whether policy handled a thread the way the reviewed set expects.
  *
  * The two vocabularies differ on purpose, and a report that prints them side
- * by side asks its reader to guess how they line up. A candidate expectation
+ * by side asks its reader to guess how they line up. A reviewed expectation
  * says what should happen to the mail: `needs_person`, or `may_auto_label`.
  * A policy outcome says what became of the labels: `needs_review`, or
  * `auto_accepted`, which means the classifier accepted its own labels and
@@ -10,14 +10,14 @@
  * down here instead of being left to a reader of a table.
  *
  * Only the set knows the expectation and only policy knows the outcome, so
- * this belongs in neither: `candidate-set.ts` stays free of the code it
+ * this belongs in neither: `reviewed-set.ts` stays free of the code it
  * measures, and policy stays unaware of being measured. Nothing here changes
  * a judgment; it only compares two that were made already.
  */
 import type { TriageOutcome } from '../jev/policy'
-import type { CandidateExpectation } from './candidate-set'
+import type { ReviewedExpectation } from './reviewed-set'
 
-type Handling = CandidateExpectation['handling']
+type Handling = ReviewedExpectation['handling']
 type Judged = Extract<TriageOutcome, { status: 'classified' }>
 
 /** The review each handling predicts. */
@@ -35,7 +35,7 @@ const predictedReview = {
  * in neither figure.
  */
 export const handlingAgrees = (
-  expectation: CandidateExpectation,
+  expectation: ReviewedExpectation,
   outcome: TriageOutcome,
 ): boolean | null =>
   outcome.status === 'classified' ? outcome.review === predictedReview[expectation.handling] : null

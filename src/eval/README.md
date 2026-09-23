@@ -1,45 +1,46 @@
-# Candidate evaluation set
+# Reviewed evaluation set
 
-`candidate-set.ts` holds the mail this repository measures triage against,
-and the outcome it proposes for each thread. It is data and judgment only: it
-calls nothing, so every test that uses it runs in CI without a provider, a
+`reviewed-set.ts` holds the mail this repository measures triage against, and
+the outcome a person expects for each thread. It is data and judgment only:
+it calls nothing, so every test that uses it runs in CI without a provider, a
 network or a secret.
 
-## Confirmation status
+## Who stands behind a label
 
-**No person has read these labels yet.** They were written by Claude Opus 5,
-running in T3 Code, from the mail and the rubric alone. Ticket 006 asks for
-expected outcomes a person authored, so the set does not meet that bar and
-the ticket stays open until one does.
+Every case was proposed by Claude Opus 5, running in T3 Code, from the mail
+and the rubric alone, and then read by Wesley Smits. He kept nine proposals
+and corrected two.
 
-Every case carries its own `curation`:
+Each case carries its own `curation`:
 
-- `state` is `proposed` until a person reads the case and says the labels
-  hold, and `confirmed` after.
-- `by` names who wrote the labels, and `writtenOn` the day they were written.
-  Neither is a review date, and there is no review date until there is a
-  review.
-- `confirmedBy` and `confirmedOn` name the person who confirmed and the day
-  they did. They stay `null` while a case is `proposed`, and the set's test
-  fails if a case claims a confirmation without naming both.
+- `state` is `proposed` until a person reads the case, `confirmed` after.
+- `proposedBy` names who wrote the labels first and `proposedOn` the day.
+  Neither is a review date.
+- `confirmedBy` and `confirmedOn` name the person who read the case and the
+  day they did. They stay `null` while a case is `proposed`, and the set's
+  test fails if a case claims a confirmation without naming both.
+- `changedOnReview` says whether that person changed the proposal or kept it.
+  A case cannot be marked changed without having been read.
 
-Confirming a case means reading its thread and its rubric, then keeping or
+Reviewing a case means reading its thread and its rubric, then keeping or
 correcting the category, priority and handling, and saying so in the commit.
-Correcting a proposal is the expected outcome, not a defect in it.
+Correcting a proposal is an ordinary outcome, not a defect in it.
 
 ## What an expectation is
 
-An expectation is the outcome proposed after reading the thread against
-`defaultRubric` in `src/domain/rubric.ts`: a category, a priority, whether
-the thread should go in front of a person, and the argument for all three.
+An expectation is the outcome a reader settled on after reading the thread
+against `defaultRubric` in `src/domain/rubric.ts`: a category, a priority,
+whether the thread should go in front of a person, and the argument for all
+three.
 
 - Expectations are written from the mail. They are never copied from a
   classifier answer, recomputed from `src/jev/policy.ts`, or adjusted to make
   a run agree. A yardstick built out of what it measures measures nothing,
-  and `candidate-set.test.ts` fails if the module reaches for the classifier,
+  and `reviewed-set.test.ts` fails if the module reaches for the classifier,
   the TypeSafe SDK or the environment.
-- The argument matters as much as the labels. Whoever confirms a case should
-  be able to disagree with the sentence rather than guess at it.
+- The argument matters as much as the labels, and may claim only what the
+  mail says. Whoever reads a case next should be able to disagree with the
+  sentence rather than guess at it.
 - Disagreement between the set and a classifier is a finding, not a defect in
   the set.
 
@@ -83,9 +84,8 @@ see it, so such a row has no `handlingAgrees` at all and counts towards
 neither the category nor the handling figure. Counting it as agreement would
 flatter the set; counting it as a mismatch would blame it for an outage.
 
-Agreement is reported, never asserted. These expectations are a proposal, the
-thresholds are not calibrated, and a disagreement is something to read rather
-than a failure to fix.
+Agreement is reported, never asserted. The thresholds are not calibrated, so
+a disagreement is something to read rather than a failure to fix.
 
 ## Provenance and privacy
 

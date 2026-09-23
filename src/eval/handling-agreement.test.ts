@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TriageOutcome } from '../jev/policy'
-import type { CandidateExpectation } from './candidate-set'
+import type { ReviewedExpectation } from './reviewed-set'
 import { handlingAgrees } from './handling-agreement'
 
 type Judged = Extract<TriageOutcome, { status: 'classified' }>
@@ -30,7 +30,7 @@ const providerFailure: TriageOutcome = {
   reasons: ['provider_failure'],
 }
 
-const expecting = (handling: CandidateExpectation['handling']): CandidateExpectation => ({
+const expecting = (handling: ReviewedExpectation['handling']): ReviewedExpectation => ({
   category: 'personal',
   priority: 'high',
   handling,

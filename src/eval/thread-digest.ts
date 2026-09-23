@@ -1,5 +1,5 @@
 /**
- * A deterministic version of one parsed thread, used to pin a candidate
+ * A deterministic version of one parsed thread, used to pin a reviewed
  * expectation to the exact mail it was written against.
  *
  * A subject line and a latest message id are too little to pin on.

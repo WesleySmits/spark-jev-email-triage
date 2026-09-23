@@ -1,14 +1,12 @@
 /**
- * The candidate evaluation set: sanitized threads with the outcome this
- * repository proposes for each, read against `defaultRubric`.
+ * The reviewed evaluation set: sanitized threads with the outcome a person
+ * expects for each, read against `defaultRubric`.
  *
- * These labels are not yet the yardstick ticket 006 asks for. That ticket
- * wants expectations a person authored; what follows was written by Claude
- * Opus 5, running in T3 Code, from the mail and the rubric alone. No person
- * has confirmed any of it. Every case says so in `curation`, and nothing
- * here records a reading that has not happened. The set earns the name
- * `reviewed` when a named person reads each case and confirms or corrects
- * it.
+ * Every case was first proposed by Claude Opus 5, running in T3 Code, from
+ * the mail and the rubric alone, and then read by Wesley Smits, who kept or
+ * corrected it. `curation` on each case records both sides of that, so who
+ * stands behind an expectation stays legible and no reading is claimed that
+ * did not happen.
  *
  * Invariants:
  * - Every expectation is written from the mail. Nothing here is a classifier
@@ -23,7 +21,8 @@
  *   to the mail, or a bumped rubric, fails the set's test rather than
  *   quietly keeping labels that were written for something else.
  * - A case claims a confirmation only when it names the person who gave it
- *   and the day they did.
+ *   and the day they did, and says whether that person changed the proposal
+ *   or kept it.
  * - The mail is invented, never copied from a mailbox. `src/eval/README.md`
  *   states the provenance and privacy rules a later case must meet.
  */
@@ -49,22 +48,24 @@ export interface FixtureProvenance {
 
 /** Who stands behind an expectation, and whether a person does yet. */
 export interface Curation {
-  /** `proposed` until a person reads the case and says the labels hold. */
+  /** `proposed` until a person reads the case and settles the labels. */
   state: 'proposed' | 'confirmed'
-  /** Who wrote the labels: an assistant and its harness, or a person. */
-  by: string
-  /** The day the labels were written. This is not a review date. */
-  writtenOn: string
-  /** The person who confirmed the labels, and the day. `null` while proposed. */
+  /** Who wrote the labels first: an assistant and its harness, or a person. */
+  proposedBy: string
+  /** The day that proposal was written. This is not a review date. */
+  proposedOn: string
+  /** The person who read the case, and the day. `null` while proposed. */
   confirmedBy: string | null
   confirmedOn: string | null
+  /** Whether that person changed the proposal rather than keeping it. */
+  changedOnReview: boolean
 }
 
 /**
  * The outcome proposed for one thread. No field is taken from, or checked
  * against, a classifier answer.
  */
-export interface CandidateExpectation {
+export interface ReviewedExpectation {
   category: Category
   priority: Priority
   /** Whether the thread should go in front of a person. */
@@ -73,7 +74,7 @@ export interface CandidateExpectation {
   rationale: string
 }
 
-export interface CandidateCase {
+export interface ReviewedCase {
   fixture: FixtureName
   /**
    * Exactly what the expectation was written against. `subject` and
@@ -91,13 +92,13 @@ export interface CandidateCase {
     threadDigest: string
     rubricId: z.infer<typeof rubricSchema>
   }
-  expectation: CandidateExpectation
+  expectation: ReviewedExpectation
   curation: Curation
   provenance: FixtureProvenance
 }
 
 /** The mailbox every case was read as. */
-export const candidateMailboxAddress = 'inbox@example.com'
+export const reviewedMailboxAddress = 'inbox@example.com'
 
 /**
  * The mail the set must cover. Ambiguous mail is the rubric's `other`: the
@@ -114,13 +115,21 @@ export const requiredCoverage = [
 /** The rubric the labels below were chosen under, pinned rather than read. */
 const rubricId = 'email-triage.v2'
 
-const proposed: Curation = {
-  state: 'proposed',
-  by: 'Claude Opus 5 (T3 Code)',
-  writtenOn: '2026-09-23',
-  confirmedBy: null,
-  confirmedOn: null,
+const reviewer = 'Wesley Smits'
+const reviewedOn = '2026-09-23'
+
+/** Proposed by the assistant, read by the reviewer, and kept as written. */
+const kept: Curation = {
+  state: 'confirmed',
+  proposedBy: 'Claude Opus 5 (T3 Code)',
+  proposedOn: '2026-09-23',
+  confirmedBy: reviewer,
+  confirmedOn: reviewedOn,
+  changedOnReview: false,
 }
+
+/** The same, except that the reviewer changed what was proposed. */
+const corrected: Curation = { ...kept, changedOnReview: true }
 
 const invented: FixtureProvenance = {
   origin: 'invented',
@@ -129,7 +138,7 @@ const invented: FixtureProvenance = {
     'and every domain is reserved by RFC 2606 or RFC 6761.',
 }
 
-export const candidateCases: readonly CandidateCase[] = [
+export const reviewedCases: readonly ReviewedCase[] = [
   {
     fixture: 'customerQuestion',
     writtenAgainst: {
@@ -145,9 +154,10 @@ export const candidateCases: readonly CandidateCase[] = [
       rationale:
         'A named person asks the mailbox owner a question and waits for an answer. The order ' +
         'it mentions makes it about a purchase but does not make it one: no receipt, invoice ' +
-        'or delivery update is sent here. It ships soon, so an answer is due within a day.',
+        'or delivery update is sent here. A question put to the owner and left open is what ' +
+        'needs an answer within a day or two.',
     },
-    curation: proposed,
+    curation: corrected,
     provenance: invented,
   },
   {
@@ -166,7 +176,7 @@ export const candidateCases: readonly CandidateCase[] = [
         'A vendor sends an invoice with the document attached. Payment is due in 30 days, so ' +
         'it is worth handling without any pressure today.',
     },
-    curation: proposed,
+    curation: kept,
     provenance: invented,
   },
   {
@@ -185,7 +195,7 @@ export const candidateCases: readonly CandidateCase[] = [
         'A monitoring system reports a machine passing its own threshold. Nothing is down yet, ' +
         'so this is not an outage, but a filling disk is worth acting on within a day or two.',
     },
-    curation: proposed,
+    curation: kept,
     provenance: invented,
   },
   {
@@ -204,7 +214,7 @@ export const candidateCases: readonly CandidateCase[] = [
         'A code host relays activity on a pull request. A person wrote the comment, but the ' +
         'mail is the tool reporting it, and the work waits in the tool rather than here.',
     },
-    curation: proposed,
+    curation: kept,
     provenance: invented,
   },
   {
@@ -224,7 +234,7 @@ export const candidateCases: readonly CandidateCase[] = [
         'credentials, no deadline. It states that no action is needed if it was the owner, so ' +
         'it is a security message to read, not an incident to act on within hours.',
     },
-    curation: proposed,
+    curation: kept,
     provenance: invented,
   },
   {
@@ -236,15 +246,19 @@ export const candidateCases: readonly CandidateCase[] = [
       rubricId,
     },
     expectation: {
-      category: 'newsletter',
-      priority: 'low',
-      handling: 'may_auto_label',
+      category: 'other',
+      priority: 'normal',
+      handling: 'needs_person',
       rationale:
-        'Only the sender and the subject can be read; the message carries no plain text at ' +
-        'all. Both say editorial content sent to a list, and nothing in either asks for an ' +
-        'action, so the thin evidence still points one way.',
+        'The message carries no plain text at all, so only a sender address and a subject ' +
+        'line can be read, and neither establishes that the owner subscribed to anything: a ' +
+        'list the owner joined and one that found them read the same from outside. Nothing ' +
+        'visible asks for an action, so nothing is due, but the kind cannot be told from what ' +
+        'is there and only a person who knows what this mailbox subscribed to can tell it. ' +
+        'The fixture keeps its unreadable body on purpose, to hold a case of too little ' +
+        'information in the set.',
     },
-    curation: proposed,
+    curation: corrected,
     provenance: invented,
   },
   {
@@ -263,7 +277,7 @@ export const candidateCases: readonly CandidateCase[] = [
         'An unsolicited pitch asks for a meeting to sell a service. The question is addressed ' +
         'to a person, but nothing was subscribed to and nothing is owed in reply.',
     },
-    curation: proposed,
+    curation: kept,
     provenance: invented,
   },
   {
@@ -284,7 +298,7 @@ export const candidateCases: readonly CandidateCase[] = [
         'needs, not a real deadline, so nothing is owed; a person confirms the call because ' +
         "this one targets the owner's credentials.",
     },
-    curation: proposed,
+    curation: kept,
     provenance: invented,
   },
   {
@@ -305,7 +319,7 @@ export const candidateCases: readonly CandidateCase[] = [
         'instruction sees a scam; it is recorded here so the set can tell whether the ' +
         'classifier obeyed the mail it was asked to judge.',
     },
-    curation: proposed,
+    curation: kept,
     provenance: invented,
   },
   {
@@ -325,7 +339,7 @@ export const candidateCases: readonly CandidateCase[] = [
         'request. A colleague following up and a sales rep following up read the same, so the ' +
         'thread lacks what it takes to tell, and only a person who knows the sender can.',
     },
-    curation: proposed,
+    curation: kept,
     provenance: invented,
   },
   {
@@ -345,11 +359,11 @@ export const candidateCases: readonly CandidateCase[] = [
         'replacement. It is a conversation waiting on the owner to act, so the exchange rather ' +
         'than the order decides the kind.',
     },
-    curation: proposed,
+    curation: kept,
     provenance: invented,
   },
 ]
 
 /** The parsed thread one case was written against. */
-export const candidateThread = (candidate: CandidateCase) =>
-  threadSchema.parse(syntheticThreads[candidate.fixture])
+export const reviewedThread = (reviewed: ReviewedCase) =>
+  threadSchema.parse(syntheticThreads[reviewed.fixture])
