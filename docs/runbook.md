@@ -109,8 +109,8 @@ applied ruleset back rather than assuming this document applied cleanly.
 ```sh
 gh api repos/WesleySmits/spark-jev-email-triage/rulesets
 gh api repos/WesleySmits/spark-jev-email-triage/rulesets/<id>
-gh api repos/WesleySmits/spark-jev-email-triage/rules/branch/main
-gh api repos/WesleySmits/spark-jev-email-triage/rules/branch/feature/human-triage-review
+gh api repos/WesleySmits/spark-jev-email-triage/rules/branches/main
+gh api repos/WesleySmits/spark-jev-email-triage/rules/branches/feature/human-triage-review
 ```
 
 The last two answer with the rules that apply to a branch, whether they come
