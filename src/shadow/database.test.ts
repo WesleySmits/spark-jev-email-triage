@@ -40,7 +40,14 @@ describe('migrations', () => {
     const db = openDatabase(':memory:')
 
     expect(userVersion(db)).toBe(schemaVersion)
-    expect(tableNames(db)).toEqual(['judgment_messages', 'judgments', 'reviews', 'runs', 'threads'])
+    expect(tableNames(db)).toEqual([
+      'judgment_messages',
+      'judgments',
+      'review_requests',
+      'reviews',
+      'runs',
+      'threads',
+    ])
     expect(checkDatabase(db)).toEqual([])
   })
 

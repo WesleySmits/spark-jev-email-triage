@@ -16,12 +16,12 @@
  * is ever read or changed by it, no Spark command runs and no classifier is
  * called, here or anywhere else in this module. Reviewing is not completing.
  */
-import type { DeskReviewOutcome, DeskReviewRequest } from './desk-review'
+import type { DeskReviewOutcome, DeskReviewReadback, DeskReviewRequest } from './desk-review'
 import type { BodyLoader } from './inbox'
 import { liveBodyLoader, liveWorkflows, type ClassifiedInbox } from './live-inbox'
 import { getLiveBody, getLiveInbox } from './live-inbox.functions'
 import type { ConnectionReason } from './reconnect'
-import { saveReview } from './review.functions'
+import { checkReview, saveReview } from './review.functions'
 import type { SparkReadiness } from './spark-readiness'
 import { getSparkReadiness } from './spark-readiness.functions'
 
@@ -89,11 +89,13 @@ export const ReviewDesk = {
    *
    * It decides labels and nothing else. No mailbox is read or changed, no
    * Spark command runs and no classifier is asked, so a saved review is
-   * never a completed message. It never rejects, so the page always has
-   * something to say: an app server that didn't answer reads as `failed`,
-   * like a store that could not be written, and neither is reported as a
-   * review that was recorded.
+   * never a completed message. It never rejects: when the transport drops
+   * the answer, the outcome is unknown because the server may have committed.
    */
   review: (request: DeskReviewRequest): Promise<DeskReviewOutcome> =>
-    saveReview({ data: request }).catch(() => ({ status: 'failed' }) as const),
+    saveReview({ data: request }).catch(() => ({ status: 'unknown' }) as const),
+
+  /** Reads the local store only; a failed check remains unavailable. */
+  check: (request: DeskReviewRequest): Promise<DeskReviewReadback> =>
+    checkReview({ data: request }).catch(() => ({ status: 'unavailable' }) as const),
 } as const

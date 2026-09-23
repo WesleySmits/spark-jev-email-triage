@@ -6,9 +6,13 @@
  */
 import { createServerFn } from '@tanstack/react-start'
 import { getRequestIP, setResponseHeaders } from '@tanstack/react-start/server'
-import { deskReviewRequestSchema, type DeskReviewOutcome } from './desk-review'
+import {
+  deskReviewRequestSchema,
+  type DeskReviewOutcome,
+  type DeskReviewReadback,
+} from './desk-review'
 import { isLoopback } from './live-inbox.server'
-import { storeReview } from './reviews.server'
+import { reviewStatus, storeReview } from './reviews.server'
 
 /**
  * Records one review of one stored classification. POST only, and only from
@@ -20,4 +24,12 @@ export const saveReview = createServerFn({ method: 'POST' })
   .handler(({ data }): DeskReviewOutcome => {
     setResponseHeaders(new Headers({ 'Cache-Control': 'no-store' }))
     return isLoopback(getRequestIP()) ? storeReview(data) : { status: 'failed' }
+  })
+
+/** Checks one Save id and its original payload in the local store. */
+export const checkReview = createServerFn({ method: 'POST' })
+  .validator(deskReviewRequestSchema)
+  .handler(({ data }): DeskReviewReadback => {
+    setResponseHeaders(new Headers({ 'Cache-Control': 'no-store' }))
+    return isLoopback(getRequestIP()) ? reviewStatus(data) : { status: 'unavailable' }
   })

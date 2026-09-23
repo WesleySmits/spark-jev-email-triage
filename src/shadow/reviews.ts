@@ -16,6 +16,7 @@
  * Nothing here reads a mailbox. Reviewing runs no Spark command and asks no
  * classifier: it is a decision about rows this database already holds.
  */
+import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod'
 import { mailboxCopyId, type MailboxCopyRef } from '../domain/mailbox-copy'
@@ -23,16 +24,116 @@ import {
   admitReview,
   humanReviewSchema,
   utcInstant,
+  type EffectiveOutcome,
   type HumanReview,
   type ReviewRefusal,
 } from '../domain/review'
 import { projectClassification, type CurrentJudge } from '../domain/stored-classification'
+import { categorySchema, prioritySchema } from '../domain/triage'
 import { readByCopy } from './by-copy'
 import { transaction } from './database'
 import { readJudgments } from './judgments'
 
 export type RecordedReview =
   Readonly<{ status: 'recorded' }> | Readonly<{ status: 'refused'; reason: ReviewRefusal }>
+
+type ReviewRequest = Readonly<
+  Pick<HumanReview, 'classification' | 'verdict'> & { requestId: string }
+>
+type SavedReview = Extract<EffectiveOutcome, { decidedBy: 'reviewer' }>
+export type ReviewRequestResult =
+  | Readonly<{ status: 'absent' }>
+  | Readonly<{ status: 'recorded'; review: SavedReview }>
+  | Readonly<{ status: 'refused'; reason: ReviewRefusal }>
+
+/** Stable content for comparing a retry, excluding server-chosen reviewer and time. */
+const requestPayload = (request: ReviewRequest) =>
+  JSON.stringify({ classification: request.classification, verdict: request.verdict })
+
+const requestRowSchema = z.object({
+  payload: z.string(),
+  status: z.enum(['recorded', 'refused']),
+  refusal_reason: z.string().nullable(),
+  decision: z.string().nullable(),
+  category: z.string().nullable(),
+  priority: z.string().nullable(),
+  reviewer: z.string().nullable(),
+  reviewed_at: z.string().nullable(),
+  model_category: z.string().nullable(),
+  model_priority: z.string().nullable(),
+})
+
+/** The original result of a Save, including the review as it was first recorded. */
+export function readReviewRequest(db: DatabaseSync, request: ReviewRequest): ReviewRequestResult {
+  const raw = db
+    .prepare(
+      `SELECT r.payload, r.status, r.refusal_reason, v.decision, v.category, v.priority,
+              v.reviewer, v.reviewed_at, j.category AS model_category,
+              j.priority AS model_priority
+       FROM review_requests r
+       LEFT JOIN reviews v ON v.id = r.review_id
+       LEFT JOIN judgments j ON j.id = v.judgment_id
+       WHERE r.request_id = :requestId`,
+    )
+    .get({ requestId: request.requestId })
+  if (raw === undefined) return { status: 'absent' }
+  const row = requestRowSchema.parse(raw)
+  if (row.payload !== requestPayload(request)) {
+    return { status: 'refused', reason: 'request_conflict' }
+  }
+  if (row.status === 'refused') {
+    return { status: 'refused', reason: reviewRefusalSchema.parse(row.refusal_reason) }
+  }
+  const decision = z.enum(['confirmed', 'corrected']).parse(row.decision)
+  const labels =
+    decision === 'corrected'
+      ? {
+          category: categorySchema.parse(row.category),
+          priority: prioritySchema.parse(row.priority),
+        }
+      : {
+          category: categorySchema.parse(row.model_category),
+          priority: prioritySchema.parse(row.model_priority),
+        }
+  return {
+    status: 'recorded',
+    review: {
+      decidedBy: 'reviewer',
+      decision,
+      labels,
+      reviewer: z.string().min(1).parse(row.reviewer),
+      reviewedAt: z.iso.datetime().parse(row.reviewed_at),
+    },
+  }
+}
+
+const reviewRefusalSchema = z.enum([
+  'stale_subject',
+  'unclassified',
+  'other_copy',
+  'unreadable',
+  'request_conflict',
+])
+
+/** Persist a refusal or a recorded review in the same write transaction. */
+function remember(
+  db: DatabaseSync,
+  request: ReviewRequest,
+  result: RecordedReview,
+  reviewId: number | null,
+) {
+  db.prepare(
+    `INSERT INTO review_requests
+       (request_id, payload, status, refusal_reason, review_id)
+     VALUES (:requestId, :payload, :status, :reason, :reviewId)`,
+  ).run({
+    requestId: request.requestId,
+    payload: requestPayload(request),
+    status: result.status,
+    reason: result.status === 'refused' ? result.reason : null,
+    reviewId,
+  })
+}
 
 /**
  * Names the one classified judgment the review is about, by the subject it
@@ -67,13 +168,24 @@ export function recordReview(
   db: DatabaseSync,
   review: HumanReview,
   judge: CurrentJudge,
+  requestId: string = randomUUID(),
 ): RecordedReview {
   const subject = review.classification
   const { copy } = subject
+  const request = { requestId, classification: subject, verdict: review.verdict }
   return transaction(db, () => {
+    const previous = readReviewRequest(db, request)
+    if (previous.status !== 'absent') {
+      return previous.status === 'recorded'
+        ? { status: 'recorded' }
+        : { status: 'refused', reason: previous.reason }
+    }
     const stored = readJudgments(db, [copy]).get(mailboxCopyId(copy)) ?? []
     const admission = admitReview(review, projectClassification(stored, judge))
-    if (admission.status === 'refused') return admission
+    if (admission.status === 'refused') {
+      remember(db, request, admission, null)
+      return admission
+    }
     const written = db.prepare(insert).run({
       mailboxId: copy.mailboxId,
       messageId: copy.messageId,
@@ -90,9 +202,17 @@ export function recordReview(
     // The admitted classification came from a classified judgment with this
     // exact subject, so the select above finds it. Storing nothing is still
     // reported rather than passed off as a recorded review.
-    return Number(written.changes) === 1
-      ? ({ status: 'recorded' } as const)
-      : ({ status: 'refused', reason: 'unclassified' } as const)
+    const result: RecordedReview =
+      Number(written.changes) === 1
+        ? { status: 'recorded' }
+        : { status: 'refused', reason: 'unclassified' }
+    remember(
+      db,
+      request,
+      result,
+      result.status === 'recorded' ? Number(written.lastInsertRowid) : null,
+    )
+    return result
   })
 }
 
