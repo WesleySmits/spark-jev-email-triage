@@ -63,8 +63,12 @@ const classificationLabelsSchema = z.strictObject({
 
 export type ClassificationLabels = z.infer<typeof classificationLabelsSchema>
 
-/** The exact version a stored judgment names. */
-const judgedSubjectSchema = z.strictObject({
+/**
+ * The exact version a stored judgment names. The store keys a judgment by
+ * it, so a judged subject names exactly one classification; a human review
+ * refers to a classification by naming it. See `domain/review.ts`.
+ */
+export const judgedSubjectSchema = z.strictObject({
   /** The mailbox copy that was read and judged. */
   copy: mailboxCopyRefSchema,
   /** Provider-local: it means nothing outside `copy.mailboxId`. */
@@ -77,7 +81,7 @@ const judgedSubjectSchema = z.strictObject({
   classifierVersion: version,
 })
 
-type JudgedSubject = z.infer<typeof judgedSubjectSchema>
+export type JudgedSubject = Readonly<z.infer<typeof judgedSubjectSchema>>
 
 const verdictSchema = z.discriminatedUnion('status', [
   z.strictObject({ status: z.literal('classified'), labels: classificationLabelsSchema }),

@@ -29,9 +29,29 @@ pnpm dev
 | `pnpm build`          | Production build                                     |
 | `pnpm check`          | Format check, lint, typecheck, tests, Fallow, builds |
 
-`pnpm eval:jev:live` runs the live Jev evaluation over synthetic fixtures. It
-calls the TypeSafe API, needs `TYPESAFE_API_KEY`, reports itself blocked
-without it, and is never part of `pnpm test` or CI.
+`pnpm eval:jev:live` runs the live Jev evaluation over the reviewed
+evaluation set. It calls the TypeSafe API, needs `TYPESAFE_API_KEY`, reports
+itself blocked without it, and is never part of `pnpm test` or CI. It reports
+what each case expects beside what policy did, and then the quality report
+counted from the same answers: category quality, the review rate policy
+produces beside the one the set expects, calibration and the
+provider-failure rate, split by rubric and classifier build. A provider
+failure is no judgment and counts in no quality figure. Latency is the wall
+clock around each call, which only this run measures; the cost in money is
+always unavailable, because no price per token is recorded here.
+
+The run also writes itself down, under `.data/` which Git ignores, so the
+figures can be checked without calling the provider again:
+
+```sh
+pnpm eval:report .data/eval-run-2026-09-23T09-00-00.000Z.json
+```
+
+`pnpm eval:report` counts the same report from that snapshot offline: no
+provider, no mailbox, no database and no writes. The snapshot holds the
+answers the run received, names its mail by fixture rather than copying any
+of it, and pins the labels the run was measured against, so a case read again
+since is refused rather than quietly counted another way.
 
 ## Shadow triage
 
@@ -70,10 +90,25 @@ stories (`.storybook/stories.test.ts`). It starts no Storybook server. A
 story's `viewport` global sets the window size; other stories get 1280×1024.
 The first local run needs `pnpm exec playwright install --only-shell chromium`.
 
+## Releasing
+
+`docs/runbook.md` is the release runbook: the required check and the branch
+protection to apply for it, how a deployment names the commit it was built
+from, health, the live Spark readback, rollback, and what may be logged. It
+reports the build, the merge, the deployment and the live result separately,
+because none of them is evidence for another.
+
+```sh
+curl -fsS http://localhost:3000/health   # which commit is running
+pnpm readback:spark                      # whether Spark answers on this host
+```
+
 ## Dokploy deployment
 
 - `Dockerfile.app` builds the TanStack Start application with Nitro and runs
-  the generated Node server on port 3000.
+  the generated Node server on port 3000. Pass the commit as
+  `--build-arg APP_COMMIT_SHA=$(git rev-parse HEAD)`, or set `APP_COMMIT_SHA`
+  in Dokploy, so `GET /health` can say what is deployed.
 - `Dockerfile.storybook` builds the independent static Storybook site and
   serves it with Nginx on port 80.
 - The Dockerfiles contain no application secrets. Configure any runtime
@@ -208,6 +243,56 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
   low-confidence category to review and reports an uncertain priority
   without forcing review. Suspicion only raises review priority. Nothing
   authorizes a mailbox action, and only the shadow command calls it.
+- `src/eval/reviewed-set.ts` is the reviewed evaluation set: the invented,
+  sanitized threads triage is measured against, each with the category,
+  priority, handling and the argument for them that a person settled on
+  against the rubric. It covers ambiguous, suspicious, personal, purchase and
+  notification mail among the rest. An assistant proposed every case and a
+  named person then read all of them, keeping most and correcting two; each
+  case's `curation` says who proposed it, who read it, when, and whether that
+  reading changed it. Expectations are never taken from a classifier answer
+  or from policy, and the set calls nothing, so its tests run in CI with no
+  provider, network or secret; only `pnpm eval:jev:live` reaches Jev. Each
+  case names the thread it was written against by subject, latest message and
+  a digest of the whole parsed thread, along with the rubric id, so any edit
+  to that mail — a body, a sender, an attachment or an earlier message — or a
+  bumped rubric fails the test until the labels are read again, and each
+  records its provenance. `src/eval/README.md` holds the review record and the
+  provenance and privacy rules, including what sanitizing a real message
+  would require.
+- `src/eval/quality-report.ts` counts what one run of that set says about
+  triage quality — category quality, the review rate beside the set's own,
+  calibration and the provider-failure rate — split by rubric and by the
+  pinned classifier build, and `quality-report-text.ts` renders it. It is a
+  pure function of the answers it is handed, and the judged rows are put in
+  one canonical order before anything is summed, so the same run always gives
+  the same figures. A figure with no source data says which one it is missing
+  and why, rather than reading as a zero: latency is reported only where a run
+  timed the calls, and the cost in money never, because no price per token is
+  recorded here. The report names fixtures, categories, counts and
+  content-free provider codes and no mail at all, so it may be printed, logged
+  and pasted as it is. It is evidence for a threshold, never an argument on
+  its own: `src/eval/README.md` says what changing one takes, and nothing here
+  changes one.
+- Only a rubric this build still holds can be counted, and every threshold
+  belongs to the slice that names its rubric rather than to the report as a
+  whole. A run judged under an older rubric was judged under other meanings
+  and other thresholds, which this build did not keep, so it is refused where
+  it enters instead of being counted under today's.
+- `src/eval/run-snapshot.ts` writes one run down and reads it back, and
+  `pnpm eval:report` (`src/eval/command.ts`) counts the report from it
+  offline, with no provider, mailbox, database or write of its own. A
+  snapshot names its mail by fixture and by a digest of the thread it was
+  measured against, never copying any of it, pins the labels that run was
+  measured against without the prose that argued for them, keeps the
+  classifier's answers and token counts whole, and keeps a failed call as its
+  content-free code alone. It is parsed, never trusted: a case this build
+  lacks, a labelled thread that has changed since, a case whose expected
+  labels were corrected since, a file written to an older shape and a rubric
+  no longer held are each refused, so a run is never recounted against a
+  yardstick it was not measured with. The live run writes its snapshot under `.data/`, which Git
+  ignores, named after the run's own timestamp, so no live answer is
+  committed and no argument decides where anything is written.
 - `src/domain/rubric.ts` holds the opinionated default rubric for any Spark
   inbox, personal or work: the categories `personal`, `notification`,
   `security`, `purchase`, `newsletter`, `promotion`, `suspicious`, and
@@ -221,7 +306,26 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
   pull requests and `main`.
 - On pull requests, CI also runs commitlint and the Fallow changed-code audit.
 - CI fails on `git diff --check` errors or uncommitted generated files.
-- Branch protection is not configured yet, so CI results are not enforced on merge.
+- CI ends in one job, `required-checks`, which waits for every other job and
+  fails unless each succeeded. It is the single check a branch can require,
+  and `src/release/ci-workflow.test.ts` reads the workflow and fails when a
+  job is not covered by it.
+- Branch protection is still not applied: neither `main` nor
+  `feature/human-triage-review` is protected and no ruleset exists, so CI
+  results are not enforced on merge. `docs/runbook.md` holds the settings to
+  apply and how to read them back; enforcement may be claimed only from that
+  read-back.
+- `GET /health` answers with the commit the running build was made from, and
+  nothing else: it reads one environment variable, `APP_COMMIT_SHA`, calls no
+  provider, opens no database and holds no mail. A build that cannot name its
+  commit answers `503`, because a deployment nobody can name cannot be rolled
+  back to a known commit. It is not a Spark check.
+- `pnpm readback:spark` is the live Spark check, deliberately apart from
+  health: one read-only `spark accounts` call through the app's own probe,
+  one line of output, and no address, subject, count or body. It speaks for
+  the host it ran on and says so, so a deployment's connectivity is only what
+  that deployment's own runtime answered; where the probe cannot run there,
+  `docs/runbook.md` has it reported as blocked rather than as ready.
 - The shadow-triage database stores:
   - mailbox, thread, and message ids
   - the scrubbed, truncated subject and latest sender that Jev saw

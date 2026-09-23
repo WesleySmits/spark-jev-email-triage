@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -8,6 +8,7 @@ import {
   checkDatabase,
   migrate,
   openDatabase,
+  openForWriting,
   openReadOnly,
   schemaVersion,
   ShadowDatabaseError,
@@ -39,13 +40,7 @@ describe('migrations', () => {
     const db = openDatabase(':memory:')
 
     expect(userVersion(db)).toBe(schemaVersion)
-    expect(tableNames(db)).toEqual([
-      'corrections',
-      'judgment_messages',
-      'judgments',
-      'runs',
-      'threads',
-    ])
+    expect(tableNames(db)).toEqual(['judgment_messages', 'judgments', 'reviews', 'runs', 'threads'])
     expect(checkDatabase(db)).toEqual([])
   })
 
@@ -122,6 +117,47 @@ describe('openReadOnly', () => {
     expect(() => {
       db.exec("DELETE FROM runs WHERE mailbox_id = 'x'")
     }).toThrow(/readonly/)
+  })
+})
+
+describe('openForWriting', () => {
+  it('writes to an existing database on the schema this build holds', () => {
+    const path = disposablePath()
+    openDatabase(path).close()
+    const db = openForWriting(path)
+
+    db.exec(
+      "INSERT INTO runs (mailbox_id, rubric, model, status, started_at) VALUES ('m', 'r', 'v', 'running', 'now')",
+    )
+
+    expect(userVersion(db)).toBe(schemaVersion)
+  })
+
+  it('refuses an outdated database instead of migrating it, and leaves it alone', () => {
+    const path = disposablePath()
+    new DatabaseSync(path).close()
+
+    expect(() => openForWriting(path)).toThrow(
+      expect.objectContaining({ code: 'outdated_schema', version: 0 }),
+    )
+    // Refusing closed the handle it opened and changed nothing it holds.
+    expect(userVersion(new DatabaseSync(path, { readOnly: true }))).toBe(0)
+  })
+
+  it('refuses a database from a newer version', () => {
+    const path = disposablePath()
+    const db = openDatabase(path)
+    db.exec(`PRAGMA user_version = ${String(schemaVersion + 1)}`)
+    db.close()
+
+    expect(() => openForWriting(path)).toThrow(expect.objectContaining({ code: 'newer_schema' }))
+  })
+
+  it('refuses a file that is not a database at all', () => {
+    const path = disposablePath()
+    writeFileSync(path, 'not a database')
+
+    expect(() => openForWriting(path)).toThrow()
   })
 })
 

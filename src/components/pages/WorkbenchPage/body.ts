@@ -1,3 +1,4 @@
+import type { RowReview } from '../../../app/desk-review'
 import type { MessageBody } from '../../../app/inbox'
 import type { StoredClassification } from '../../../domain/stored-classification'
 
@@ -15,7 +16,8 @@ import type { StoredClassification } from '../../../domain/stored-classification
  * - `idle`: no message is open.
  * - `loading`: request `request` for message `id` is on its way.
  * - `ready`: the text arrived, with whatever the thread that read returned
- *   proved about the row's stored judgment, under the reading it ran in.
+ *   proved about the row's stored judgment, what a person decided about that
+ *   judgment, and the reading it ran in.
  * - `error`: the message has no body (`missing`), or the provider failed.
  * - `stale`: what is held belongs to another message than the open one.
  *   It is never shown; the page asks for the open message instead.
@@ -35,6 +37,11 @@ export type BodyState =
        * stored for the row. Absent when the read carried none, as fixtures do.
        */
       classification?: StoredClassification | undefined
+      /**
+       * What a person decided about that judgment, where anyone has. It
+       * comes with the classification it decides and never without one.
+       */
+      review?: RowReview | undefined
     }>
   | Readonly<{
       status: 'error'
@@ -81,6 +88,14 @@ export function settleBody(state: BodyState, request: number, outcome: BodyOutco
     return { status: 'error', id, request, reason: 'provider' }
   }
   if (outcome.body === null) return { status: 'error', id, request, reason: 'missing' }
-  const { text, classification } = outcome.body
-  return { status: 'ready', id, request, text, reading, ...(classification && { classification }) }
+  const { text, classification, review } = outcome.body
+  return {
+    status: 'ready',
+    id,
+    request,
+    text,
+    reading,
+    ...(classification && { classification }),
+    ...(review && { review }),
+  }
 }

@@ -1,20 +1,27 @@
 /**
  * The review desk: the root route's one interface for reading live mail
- * deeply. The server boundary, Spark and the mail reader stay behind this
- * module, so the route itself imports no server, provider or classifier code.
+ * deeply, and for recording what a person made of one reading of it. The
+ * server boundary, Spark and the mail reader stay behind this module, so the
+ * route itself imports no server, provider or classifier code.
  *
- * Strictly read-only, and nothing here starts a read on its own:
+ * Nothing here starts a read on its own:
  * - `open` reads the desk once, for the route's loader.
  * - `focus` reads one opened row's body, lazily, over what an `open` listed,
  *   and with it what that read proves about the row's stored judgment.
  * - `probe` only asks whether Spark answers; it learns nothing about mail.
+ * - `review` records one person's reading of one stored classification.
  *
- * No mailbox is changed, and no classifier is called.
+ * Only `review` writes, and what it writes is a review: it is appended
+ * beside the judgment it reviews, which stays as a run stored it. No mailbox
+ * is ever read or changed by it, no Spark command runs and no classifier is
+ * called, here or anywhere else in this module. Reviewing is not completing.
  */
+import type { DeskReviewOutcome, DeskReviewRequest } from './desk-review'
 import type { BodyLoader } from './inbox'
 import { liveBodyLoader, liveWorkflows, type ClassifiedInbox } from './live-inbox'
 import { getLiveBody, getLiveInbox } from './live-inbox.functions'
 import type { ConnectionReason } from './reconnect'
+import { saveReview } from './review.functions'
 import type { SparkReadiness } from './spark-readiness'
 import { getSparkReadiness } from './spark-readiness.functions'
 
@@ -72,4 +79,21 @@ export const ReviewDesk = {
    * no mailbox, address, count or message.
    */
   probe: (signal: AbortSignal): Promise<SparkReadiness> => getSparkReadiness({ signal }),
+
+  /**
+   * Records one person's confirmation or correction of one stored
+   * classification, naming the exact version they were shown: the mailbox
+   * copy, its thread, that thread's latest message then, the rubric and the
+   * pinned classifier build. A review of a version the store has moved past
+   * is refused rather than applied to the one that replaced it.
+   *
+   * It decides labels and nothing else. No mailbox is read or changed, no
+   * Spark command runs and no classifier is asked, so a saved review is
+   * never a completed message. It never rejects, so the page always has
+   * something to say: an app server that didn't answer reads as `failed`,
+   * like a store that could not be written, and neither is reported as a
+   * review that was recorded.
+   */
+  review: (request: DeskReviewRequest): Promise<DeskReviewOutcome> =>
+    saveReview({ data: request }).catch(() => ({ status: 'failed' }) as const),
 } as const

@@ -132,11 +132,16 @@ function Page({ inbox, root, onReady }: PageProps) {
     <div ref={root} className="app-root">
       <WorkbenchPage
         messages={inbox.messages}
-        classifications={{ reading: inbox.reading, states: inbox.classifications }}
+        classifications={{
+          reading: inbox.reading,
+          states: inbox.classifications,
+          reviews: inbox.reviews,
+        }}
         loadBody={ReviewDesk.focus(inbox)}
         workflows={ReviewDesk.workflows}
         mailboxes={inbox.mailboxes}
         completion={{ mode: 'read-only' }}
+        review={{ mode: 'enabled', onSaveReview: ReviewDesk.review }}
         topBar={{
           syncStatus: 'connected',
           syncLabel,
@@ -149,9 +154,14 @@ function Page({ inbox, root, onReady }: PageProps) {
   )
 }
 
-// Recent Spark mail, strictly read-only, beside what shadow triage last
-// stored about it. Rows arrive without bodies; one body loads when its
-// message opens, and that read is the only thing that can say a stored
+// Recent Spark mail beside what shadow triage last stored about it. The
+// mail itself is read-only: nothing here completes, archives or moves a
+// message. The one thing a person may record is a review of one stored
+// classification, which is kept beside that classification and changes no
+// mail. A review that was saved is read back with the rows it belongs to, so
+// it still decides what they show after a refresh, while what the classifier
+// proposed stays beside it. Rows arrive without bodies; one body loads when
+// its message opens, and that read is the only thing that can say a stored
 // judgment still describes the row. Refresh lists the mailbox again under a
 // new reading, so what an earlier read proved stops counting as proof
 // without anything being read again. Neither refreshing nor opening a row

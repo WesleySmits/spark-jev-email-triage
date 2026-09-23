@@ -4,3 +4,16 @@
   height: 100%;
   min-height: 0;
 }
+
+/* What the page announces about one review. It is a live region, so it
+ * stays in the document while it is empty and reads as meta text once it
+ * says something; screen readers announce it either way. */
+.workbench__review-status {
+  margin: var(--s2) 0 0;
+  font: var(--text-meta);
+  color: var(--muted);
+}
+
+.workbench__review-status:empty {
+  margin: 0;
+}
