@@ -6,37 +6,15 @@
 import type { DatabaseSync } from 'node:sqlite'
 import { currentTriageRubric } from '../domain/triage'
 import type { JevClassification } from '../jev/classifier'
-import { jevResponse, type ResponseOptions } from '../jev/fixtures'
+import { jevFailure, jevJudgment } from '../jev/fixtures'
 import { resolveClassification } from '../jev/policy'
 import { jevModel } from '../jev/questions'
-import { triageResponseSchema } from '../jev/response'
 import { beginRun, recordJudgment, type JudgedThread } from './store'
 
-/** The rubric and classifier build a stored judgment names by default. */
-const judge = { rubric: currentTriageRubric, requestedModel: jevModel } as const
+/** The judgments a run stores are the classifier's own; see `jev/fixtures`. */
+export { jevFailure, jevJudgment }
 
 export const defaultJudgedAt = '2026-09-20T09:00:00.000Z'
-
-/** A confident Jev judgment of one thread, as the classifier returns one. */
-export function jevJudgment(threadId: string, options: ResponseOptions = {}): JevClassification {
-  const body = triageResponseSchema.parse(jevResponse(options))
-  return {
-    ...judge,
-    threadId,
-    status: 'classified',
-    model: body.model,
-    usage: { inputTokens: body.usage.input_tokens, outputTokens: body.usage.output_tokens },
-    answers: body.answers,
-  }
-}
-
-/** A Jev call that gave no usable answer. It is never a classification. */
-export const jevFailure = (threadId: string): JevClassification => ({
-  ...judge,
-  threadId,
-  status: 'provider_failure',
-  failure: { code: 'timeout', detail: null, httpStatus: null },
-})
 
 export interface StoredEntry {
   mailboxId: string

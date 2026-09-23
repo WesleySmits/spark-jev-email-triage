@@ -4,6 +4,12 @@
  * thread should come back as is written in `src/eval/reviewed-set.ts`, never
  * by this run. Agreement is reported, not asserted: the thresholds are not
  * calibrated yet.
+ *
+ * The run prints one row per case and then the quality report that
+ * `src/eval/quality-report.ts` counts from the same answers: category
+ * quality, the review rate, calibration and the provider-failure rate, split
+ * by rubric and classifier build. This run times each call, so the report's
+ * latency is measured here; nothing else in the repository measures it.
  */
 import { describe, expect, it } from 'vitest'
 import {
@@ -13,6 +19,8 @@ import {
   type ReviewedCase,
 } from '../eval/reviewed-set'
 import { handlingAgrees } from '../eval/handling-agreement'
+import { summarizeQuality, type QualityObservation } from '../eval/quality-report'
+import { formatQualityReport } from '../eval/quality-report-text'
 import { createJevClassifier, type JevClassification } from './classifier'
 import { apiKeyVariable, readJevConfig } from './config'
 import { resolveClassification } from './policy'
@@ -59,23 +67,28 @@ describe('Jev on the reviewed evaluation set (live)', () => {
   it.skipIf(blocked)(title, async () => {
     if (config.status !== 'configured') return
     const classify = createJevClassifier(createSdkTransport({ apiKey: config.apiKey }))
-    const rows = []
+    const observations: QualityObservation[] = []
     // Serial, to stay well inside rate limits.
     for (const reviewed of reviewedCases) {
       const request = {
         thread: reviewedThread(reviewed),
         mailboxAddress: reviewedMailboxAddress,
       }
-      rows.push(report(reviewed, await classify(request)))
+      // The wall clock around the call, which is the only latency anything
+      // here measures. It includes this process and the network, not just
+      // the provider's own time.
+      const startedAt = performance.now()
+      const classification = await classify(request)
+      const latencyMs = Math.round(performance.now() - startedAt)
+      observations.push({ reviewed, classification, latencyMs })
     }
-    // A provider failure is no judgment, so it is outside both figures.
-    const judged = rows.filter((row) => row.handlingAgrees !== null)
-    const onCategory = judged.filter((row) => row.category === row.expected).length
-    const onHandling = judged.filter((row) => row.handlingAgrees === true).length
-    console.table(rows)
-    console.info(`Category agreement: ${String(onCategory)}/${String(judged.length)}`)
-    console.info(`Handling agreement: ${String(onHandling)}/${String(judged.length)}`)
+    console.table(
+      observations.map(({ reviewed, classification }) => report(reviewed, classification)),
+    )
+    console.info(formatQualityReport(summarizeQuality(observations)))
 
-    expect(rows.map((row) => row.status)).not.toContain('provider_failure')
+    expect(observations.map(({ classification }) => classification.status)).not.toContain(
+      'provider_failure',
+    )
   })
 })

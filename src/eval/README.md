@@ -87,6 +87,62 @@ flatter the set; counting it as a mismatch would blame it for an outage.
 Agreement is reported, never asserted. The thresholds are not calibrated, so
 a disagreement is something to read rather than a failure to fix.
 
+## Reading a quality report
+
+`quality-report.ts` counts what one run of the set says about triage
+quality, and `quality-report-text.ts` renders it. `pnpm eval:jev:live` prints
+it under the per-case table, from the same answers the table shows.
+
+The report is a pure function of the observations it is handed: the same
+answers always give the same figures, in whatever order they arrive, so a run
+can be recomputed rather than believed. It calls nothing, reads no mailbox
+and looks at no clock, and its tests run offline like the rest of the set.
+
+Every figure is split by rubric and by the pinned classifier build that was
+asked, because a category, a priority and a threshold mean what a rubric
+version says they mean, and two builds are two classifiers. The versioned
+models that actually answered are named beside the build, so an alias that
+moved under a pinned name is visible rather than averaged away.
+
+What one slice holds:
+
+- **Category quality**: agreement with the expectation a person settled on,
+  over the run and per category. How often a category was expected and how
+  often it was answered are counted separately, because a classifier that
+  answers `other` for everything agrees with every `other` case while being
+  useless. Each disagreement is named by its fixture.
+- **Review rate**: the share of judged threads policy sends to a person, with
+  the share the set expects beside it. They answer different questions, so
+  the handling agreement is reported too: a run that reviews the right number
+  of the wrong threads did not do well.
+- **Calibration**: the confidence of the chosen category against how often
+  that choice agreed, in bins of a tenth, with the expected calibration error
+  they weigh out to.
+- **Provider-failure rate**: failed attempts over all attempts, by their
+  content-free code. A failure is no judgment, so it stays out of every
+  quality figure, as it does in `handling-agreement.ts`.
+- **Latency**: the wall clock around each call, which only the live run
+  measures. A report built from answers nobody timed says the figure was not
+  measured rather than printing a zero.
+- **Cost**: the provider's own token counts. The cost in money is always
+  unavailable: no price per token is recorded in this repository, and a
+  number nobody can stand behind is worse than none.
+
+## Thresholds are not moved by a report
+
+`defaultRubric.thresholds` are not calibrated, and the set is small. A report
+is the evidence to argue from, never the argument itself: fitting a threshold
+to eleven cases fits it to those eleven.
+
+Changing one needs the report before and after the change, over the same set
+and the same classifier build, in the commit that changes it, and a rubric id
+bump, because a threshold is part of what a rubric means. `reviewed-set.ts`
+pins the rubric its labels were chosen under, so bumping the id fails the
+set's test until each case is read again under the new meanings.
+
+No threshold has been changed for this report. The figures it prints are the
+baseline a later run is compared with.
+
 ## Provenance and privacy
 
 Every case records where its mail came from.
@@ -108,4 +164,8 @@ Every case records where its mail came from.
   test output is not private.
 
 The same rule holds for the rest of the repository, from the other direction:
-mail subjects, addresses and bodies stay out of logs and public errors.
+mail subjects, addresses and bodies stay out of logs and public errors. The
+quality report is written to be printed, logged and pasted into a ticket, so
+it carries only fixture names, categories, counts and content-free provider
+codes; a test renders the whole set and fails if any subject, address or
+sender name reaches the text.

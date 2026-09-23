@@ -32,9 +32,13 @@ pnpm dev
 `pnpm eval:jev:live` runs the live Jev evaluation over the reviewed
 evaluation set. It calls the TypeSafe API, needs `TYPESAFE_API_KEY`, reports
 itself blocked without it, and is never part of `pnpm test` or CI. It reports
-what each case expects beside what policy did, and how often the two agree on
-category and on handling; a provider failure is no judgment and counts in
-neither figure.
+what each case expects beside what policy did, and then the quality report
+counted from the same answers: category quality, the review rate policy
+produces beside the one the set expects, calibration and the
+provider-failure rate, split by rubric and classifier build. A provider
+failure is no judgment and counts in no quality figure. Latency is the wall
+clock around each call, which only this run measures; the cost in money is
+always unavailable, because no price per token is recorded here.
 
 ## Shadow triage
 
@@ -228,6 +232,19 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
   records its provenance. `src/eval/README.md` holds the review record and the
   provenance and privacy rules, including what sanitizing a real message
   would require.
+- `src/eval/quality-report.ts` counts what one run of that set says about
+  triage quality — category quality, the review rate beside the set's own,
+  calibration and the provider-failure rate — split by rubric and by the
+  pinned classifier build, and `quality-report-text.ts` renders it. It is a
+  pure function of the answers it is handed, so the same run always gives the
+  same figures and can be recomputed instead of believed. A figure with no
+  source data says which one it is missing and why, rather than reading as a
+  zero: latency is reported only where a run timed the calls, and the cost in
+  money never, because no price per token is recorded here. The report names
+  fixtures, categories, counts and content-free provider codes and no mail at
+  all, so it may be printed, logged and pasted as it is. It is evidence for a
+  threshold, never an argument on its own: `src/eval/README.md` says what
+  changing one takes, and nothing here changes one.
 - `src/domain/rubric.ts` holds the opinionated default rubric for any Spark
   inbox, personal or work: the categories `personal`, `notification`,
   `security`, `purchase`, `newsletter`, `promotion`, `suspicious`, and
