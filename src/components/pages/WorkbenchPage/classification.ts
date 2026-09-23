@@ -136,7 +136,8 @@ const states = {
   unavailable: { label: 'Triage unreadable', tone: 'neutral' },
 } as const satisfies Record<StoredClassification['state'], ClassificationState>
 
-const categories = {
+/** How each rubric category reads. Shared with the review radiogroup. */
+export const categoryLabels = {
   personal: 'Personal',
   notification: 'Notification',
   security: 'Security',
@@ -202,7 +203,7 @@ function reviewFact({ review, reviewPriority }: ClassificationLabels): Classific
 
 function factsOf(labels: ClassificationLabels): readonly ClassificationFact[] {
   return [
-    { term: 'Category', value: categories[labels.category] },
+    { term: 'Category', value: categoryLabels[labels.category] },
     {
       term: 'Priority',
       value: priorities[labels.priority],
@@ -245,7 +246,8 @@ export function classificationView(classification: StoredClassification): Classi
 export function rowState(classification: StoredClassification) {
   return {
     status: states[classification.state],
-    category: 'labels' in classification ? categories[classification.labels.category] : undefined,
+    category:
+      'labels' in classification ? categoryLabels[classification.labels.category] : undefined,
   } as const
 }
 

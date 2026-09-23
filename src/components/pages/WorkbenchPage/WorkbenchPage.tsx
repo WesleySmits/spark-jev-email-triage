@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type ComponentProps,
+  type ReactNode,
   type RefObject,
 } from 'react'
 import type { BodyLoader } from '../../../app/inbox'
@@ -28,6 +29,8 @@ import {
   type Evidence,
   type ListedEvidence,
 } from './classification'
+import { ReviewAction, type SaveReview } from './ReviewAction'
+import { reviewableIn } from './review'
 import { useMessageBody } from './useMessageBody'
 import { shortcutLegend, useWorkbenchShortcuts } from './useWorkbenchShortcuts'
 import {
@@ -72,6 +75,24 @@ type WorkbenchCompletion =
       note?: string | undefined
     }>
 
+/**
+ * Whether the open message's classification may be reviewed. `off` shows no
+ * review panel at all, which is what a page that has nowhere to record one
+ * does.
+ */
+type WorkbenchReview =
+  | Readonly<{ mode: 'off' }>
+  | Readonly<{
+      /**
+       * Records one review of the classification the reader is showing. It is
+       * given the exact version that was shown, and reports what became of it
+       * rather than rejecting. It must change no mail: a review decides
+       * labels, and the page says so in every state.
+       */
+      mode: 'enabled'
+      onSaveReview: SaveReview
+    }>
+
 type WorkbenchPageProps = Readonly<{
   /** Every message the page can show, in display order, without bodies. The caller loads them. */
   messages: readonly WorkbenchMessage[]
@@ -104,6 +125,16 @@ type WorkbenchPageProps = Readonly<{
   classifications?: ListedEvidence | undefined
   /** Whether Complete is offered, and what it does. */
   completion: WorkbenchCompletion
+  /**
+   * Whether the open message's classification may be confirmed or corrected,
+   * and where such a review goes. Left out, or `off`: no review is offered.
+   *
+   * A review is only offered for a classification that still describes the
+   * row, so an outdated one, a failed attempt, an untriaged row and a store
+   * that could not be read all show none. Reviewing is not completing: it
+   * records labels, runs no provider command and changes no mail.
+   */
+  review?: WorkbenchReview | undefined
   /** Sync status and profile. The page owns the search. */
   topBar: Omit<
     ComponentProps<typeof TopBar>,
@@ -559,6 +590,23 @@ function readerEvidence(classification: StoredClassification | undefined) {
   )
 }
 
+/**
+ * The review panel under the body, or none. It is offered only where there
+ * is somewhere to record a review and something that still describes the row
+ * to review; `reviewableIn` decides the second. The open row's id keys it, so
+ * a choice made on one message never carries to the next.
+ */
+function readerReview(
+  review: WorkbenchReview | undefined,
+  evidence: StoredClassification | undefined,
+  openId: string | undefined,
+) {
+  if (review?.mode !== 'enabled' || openId === undefined) return undefined
+  const reviewable = reviewableIn(evidence)
+  if (reviewable === undefined) return undefined
+  return <ReviewAction key={openId} reviewable={reviewable} onSave={review.onSaveReview} />
+}
+
 type ReaderActions = ComponentProps<typeof MessageReader>['actions']
 
 /** Complete when the page may offer it; read-only says so instead. */
@@ -575,9 +623,11 @@ type ReaderProps = PaneProps &
     complete: (() => void) | undefined
     /** What is known about the open row's triage. Left out to show none. */
     evidence: StoredClassification | undefined
+    /** The review panel for the open row, or none when it offers no review. */
+    review: ReactNode
   }>
 
-function Reader({ state, title, complete, body, retry, evidence }: ReaderProps) {
+function Reader({ state, title, complete, body, retry, evidence, review }: ReaderProps) {
   const { shown, open } = state
   if (!open) {
     return (
@@ -608,6 +658,7 @@ function Reader({ state, title, complete, body, retry, evidence }: ReaderProps) 
         },
       }}
       evidence={readerEvidence(evidence)}
+      review={review}
       actions={readerActions(complete)}
     >
       <ReaderBody body={body} retry={retry} />
@@ -700,6 +751,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             body={body}
             retry={retry}
             evidence={evidence.open}
+            review={readerReview(props.review, evidence.open, state.open?.id)}
           />
         }
       />

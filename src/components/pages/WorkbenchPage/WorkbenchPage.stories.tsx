@@ -6,6 +6,7 @@ import ReaderStories from '../../organisms/MessageReader/MessageReader.stories'
 import SidebarStories from '../../organisms/Sidebar/Sidebar.stories'
 import TopBarStories from '../../organisms/TopBar/TopBar.stories'
 import { fixtureBodyLoader, type BodyLoader, type InboxFixture } from '../../../app/inbox'
+import type { DeskReviewOutcome } from '../../../app/desk-review'
 import type { StoredClassification } from '../../../domain/stored-classification'
 import type { WorkbenchMessage } from './workbench'
 import { WorkbenchPage } from './WorkbenchPage'
@@ -152,6 +153,12 @@ function WithData({ loadAfter, completeAfter, failComplete, ...args }: Props & T
       completion={sampleCompletion(args, change, { completeAfter, failComplete })}
     />
   )
+}
+
+/** The spy behind one review, for stories that may review. */
+function reviewOf(args: Props) {
+  if (args.review?.mode !== 'enabled') throw new Error('This story offers no review')
+  return args.review
 }
 
 /** The spies behind Complete and Undo, for stories that may complete. */
@@ -1023,5 +1030,301 @@ export const RefreshOutlivesProof: Story = {
     await expect(canvas.getByText('1 result')).toBeVisible()
     await expect(evidence(canvasElement)).toHaveTextContent('Triage current')
     await expect(args.loadBody).toHaveBeenCalledTimes(3)
+  },
+}
+
+// Stands in for the desk's review seam. It records nothing anywhere: a story
+// only says what the store would have answered, after `delay` milliseconds.
+type ReviewAnswer = Readonly<{ outcome: DeskReviewOutcome; delay?: number | undefined }>
+
+const answering =
+  ({ outcome, delay = 0 }: ReviewAnswer) =>
+  (): Promise<DeskReviewOutcome> =>
+    new Promise((resolve) =>
+      setTimeout(() => {
+        resolve(outcome)
+      }, delay),
+    )
+
+const recorded: DeskReviewOutcome = { status: 'recorded' }
+
+// The same judgment of m1, but one the model was unsure of, so its panel
+// opens itself. `m1Unverified` keeps the auto-accepted labels, for the story
+// that shows what a row the model accepted offers instead.
+const unsureLabels = { ...judgedLabels, confidence: 0.58, review: 'needs_review' } as const
+const m1Unsure: StoredClassification = { ...m1Unverified, labels: unsureLabels }
+const m1UnsureCurrent: StoredClassification = { ...m1Unsure, state: 'current' }
+
+const unsureStates: Readonly<Record<string, StoredClassification>> = {
+  ...storedStates,
+  m1: m1Unsure,
+}
+
+/** A story whose open row may be reviewed, answering as `answer` says. */
+const reviewing = (
+  answer: ReviewAnswer,
+  states: Readonly<Record<string, StoredClassification>> = unsureStates,
+) =>
+  ({
+    ...classified,
+    classifications: reading('reading-1', states),
+    loadBody: fn(
+      provingBodies(states === unsureStates ? { m1: m1UnsureCurrent } : { m1: m1Current }),
+    ),
+    review: { mode: 'enabled', onSaveReview: fn(answering(answer)) },
+  }) satisfies Partial<Props>
+
+/** The review panel in the reader, or nothing when none is offered. */
+const panel = (root: HTMLElement) => root.querySelector('.workbench__reader .review-panel')
+
+/** The result copy beside the save button. */
+const result = (root: HTMLElement) => root.querySelector('.review-panel__result')
+
+/** What the page's polite live region is announcing about the review. */
+const announced = (root: HTMLElement) => root.querySelector('.workbench__review-status')
+
+const save = (root: HTMLElement) =>
+  within(root).getByRole('button', { name: 'Save review', hidden: false })
+
+/** Picks the category option named `name` in the review radiogroup. */
+const pick = (root: HTMLElement, name: string | RegExp) =>
+  userEvent.click(within(root).getByRole('radio', { name }))
+
+/** Waits for the result copy to say `text`. */
+const resultShows = (root: HTMLElement, text: string | RegExp) =>
+  waitFor(() => expect(result(root)).toHaveTextContent(text), { timeout: 3000 })
+
+/** The row whose stored judgment still describes it, so it may be reviewed. */
+const reviewableRow = /Can delivery move/
+
+/** Waits for the open row's body to prove its judgment names this version. */
+const reviewReady = (root: HTMLElement) =>
+  waitFor(() => expect(evidence(root)).toHaveTextContent('Triage current'), { timeout: 3000 })
+
+/** Once the review is offered: chooses `category` and presses Save review. */
+async function saveChosen(root: HTMLElement, category: string) {
+  await reviewReady(root)
+  await pick(root, category)
+  await userEvent.click(save(root))
+}
+
+/**
+ * Confirming one classification. The judgment the open row's body proved
+ * current may be reviewed: choosing the category the model chose confirms
+ * it. Nothing is saved until Save review is pressed, and what it saves is a
+ * review — the copy says the mailbox is unchanged, and never that the
+ * message was completed.
+ */
+export const ReviewConfirm: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewing({ outcome: recorded }),
+  play: async ({ args, canvasElement }) => {
+    await reviewReady(canvasElement)
+    await expect(panel(canvasElement)).toHaveTextContent('Original AI suggestion')
+
+    // Nothing chosen yet: saving is not offered and the copy says so.
+    await expect(result(canvasElement)).toHaveTextContent('Choose a category first')
+    await expect(save(canvasElement)).toBeDisabled()
+
+    await pick(canvasElement, 'Personal')
+    await expect(result(canvasElement)).toHaveTextContent('Not saved yet')
+    await expect(save(canvasElement)).toBeEnabled()
+
+    await userEvent.click(save(canvasElement))
+    await resultShows(canvasElement, 'Review saved')
+    await expect(result(canvasElement)).toHaveTextContent('You confirmed Personal')
+    await expect(result(canvasElement)).toHaveTextContent('Your mailbox is unchanged')
+    await expect(announced(canvasElement)).toHaveTextContent('Not completed yet')
+    await expect(announced(canvasElement)).not.toHaveTextContent(/^Completed/)
+
+    // It named the version the reading showed, and asked for no mailbox action.
+    const saveReview = reviewOf(args).onSaveReview
+    await expect(saveReview).toHaveBeenCalledTimes(1)
+    await expect(saveReview).toHaveBeenCalledWith({
+      classification: subjectOf('m1'),
+      verdict: { decision: 'confirmed' },
+    })
+    await expect(
+      within(canvasElement).queryByRole('button', { name: 'Complete' }),
+    ).not.toBeInTheDocument()
+  },
+}
+
+/**
+ * Correcting one classification. Choosing another category corrects it and
+ * keeps the judged priority; the model's own suggestion stays visible beside
+ * the result, so what it proposed and what a person made of it both read.
+ */
+export const ReviewCorrect: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewing({ outcome: recorded }),
+  play: async ({ args, canvasElement }) => {
+    await saveChosen(canvasElement, 'Suspicious')
+
+    await resultShows(canvasElement, 'Review saved')
+    await expect(result(canvasElement)).toHaveTextContent('Category set to Suspicious')
+    await expect(result(canvasElement)).toHaveTextContent('The original stays Personal')
+    await expect(panel(canvasElement)).toHaveTextContent('Original AI suggestion')
+    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith({
+      classification: subjectOf('m1'),
+      // The panel asks about the category, so the judged priority stays.
+      verdict: { decision: 'corrected', labels: { category: 'suspicious', priority: 'high' } },
+    })
+  },
+}
+
+/**
+ * The store takes a second. While the save is on its way the panel says it
+ * is saving and Save review is not offered again; the result arrives after.
+ */
+export const ReviewPending: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewing({ outcome: recorded, delay: 1000 }),
+  play: async ({ args, canvasElement }) => {
+    await saveChosen(canvasElement, 'Personal')
+
+    await expect(result(canvasElement)).toHaveTextContent('Saving review')
+    await expect(save(canvasElement)).toBeDisabled()
+    // Nothing is announced while the answer is still on its way.
+    await expect(announced(canvasElement)).toHaveTextContent('')
+
+    await resultShows(canvasElement, 'Review saved')
+    await expect(save(canvasElement)).toBeEnabled()
+    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledTimes(1)
+  },
+}
+
+/**
+ * A run observed a newer message between the page listing the row and the
+ * save arriving, so the store refuses the review as no longer current. The
+ * page says nothing was saved and what to do next, and names no message.
+ */
+export const ReviewStale: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewing({ outcome: { status: 'refused', reason: 'stale_subject' } }),
+  play: async ({ canvasElement }) => {
+    await saveChosen(canvasElement, 'Personal')
+
+    await resultShows(canvasElement, 'Not saved')
+    await expect(result(canvasElement)).toHaveTextContent('no longer the current one')
+    await expect(result(canvasElement)).not.toHaveTextContent('Review saved')
+    await expect(announced(canvasElement)).toHaveTextContent('Not saved')
+    await expect(result(canvasElement)).not.toHaveTextContent('@')
+  },
+}
+
+/**
+ * The store could not be written at all. Nothing was recorded, the page says
+ * so without guessing why, and the same review can be tried again.
+ */
+export const ReviewNotStored: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewing({ outcome: { status: 'failed' } }),
+  play: async ({ args, canvasElement }) => {
+    await saveChosen(canvasElement, 'Personal')
+
+    await resultShows(canvasElement, 'Not saved')
+    await expect(result(canvasElement)).toHaveTextContent('could not be stored')
+    await expect(save(canvasElement)).toBeEnabled()
+
+    await userEvent.click(save(canvasElement))
+    await waitFor(() => expect(reviewOf(args).onSaveReview).toHaveBeenCalledTimes(2))
+  },
+}
+
+/**
+ * Only a classification that still describes its row may be reviewed. An
+ * outdated judgment, a failed attempt and a row nothing triaged all show the
+ * evidence they have and no review panel at all, so nobody is asked to
+ * decide on a version that has moved on.
+ */
+export const ReviewOfferedOnlyWhereCurrent: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewing({ outcome: recorded }, storedStates),
+  play: async ({ canvasElement }) => {
+    const rows = within(canvasElement)
+    await waitFor(() => expect(panel(canvasElement)).toBeInTheDocument())
+
+    // The model accepted its own labels here, so the panel waits folded up
+    // and still offers the review, named as what it is.
+    await expect(panel(canvasElement)).toHaveTextContent('Review this triage')
+    await expect(rows.queryByRole('radio', { name: 'Personal' })).not.toBeInTheDocument()
+    await userEvent.click(rows.getByRole('button', { name: /^Review this triage/ }))
+    await expect(rows.getByRole('radio', { name: 'Personal' })).toBeVisible()
+
+    for (const name of [/Correction on invoice/, /Move Friday dinner\?/, /Newsletter: work/]) {
+      await userEvent.click(rows.getByRole('button', { name }))
+      await expect(panel(canvasElement)).not.toBeInTheDocument()
+    }
+    // Back on the row whose judgment holds, the review is offered again.
+    await userEvent.click(rows.getByRole('button', { name: reviewableRow }))
+    await waitFor(() => expect(panel(canvasElement)).toBeInTheDocument())
+  },
+}
+
+/**
+ * The review is reachable and operable from the keyboard alone: Tab into the
+ * panel, arrow keys move within the radiogroup as a radiogroup does, Space
+ * chooses and Enter saves. The workbench keys stay out of the way: J and K
+ * type nowhere here and never move the list while focus is in the panel.
+ */
+export const ReviewKeyboard: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewing({ outcome: recorded }),
+  play: async ({ args, canvasElement }) => {
+    const rows = within(canvasElement)
+    await reviewReady(canvasElement)
+
+    // Into the group, choose with Space, then move within it with the arrows.
+    const first = rows.getByRole('radio', { name: 'Personal' })
+    first.focus()
+    await userEvent.keyboard(' ')
+    await expect(first).toBeChecked()
+    await expect(save(canvasElement)).toBeEnabled()
+    await userEvent.keyboard('{ArrowDown}')
+    await expect(rows.getByRole('radio', { name: 'Notification' })).toBeChecked()
+    await expect(rows.getByRole('radio', { name: 'Notification' })).toHaveFocus()
+
+    // K and J belong to the queue, not to a control the user is typing in.
+    await expect(subject(canvasElement)).toHaveTextContent('Can delivery move a week earlier?')
+    await userEvent.keyboard('kj')
+    await expect(subject(canvasElement)).toHaveTextContent('Can delivery move a week earlier?')
+
+    // Tab to Save review and press it without a pointer.
+    await userEvent.tab()
+    await expect(save(canvasElement)).toHaveFocus()
+    await userEvent.keyboard('{Enter}')
+    await resultShows(canvasElement, 'Review saved')
+    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith({
+      classification: subjectOf('m1'),
+      verdict: { decision: 'corrected', labels: { category: 'notification', priority: 'high' } },
+    })
+  },
+}
+
+/**
+ * The review at 320px: the panel stacks under the body in the reader's one
+ * scroll, its options take a single column and Save review fills the width.
+ * Nothing scrolls sideways, and the whole flow works on a phone.
+ */
+export const ReviewMobile: Story = {
+  globals: { viewport: { value: 'mobile1', isRotated: false } },
+  args: reviewing({ outcome: recorded }),
+  play: async ({ canvasElement }) => {
+    const rows = within(canvasElement)
+    await userEvent.click(rows.getByRole('button', { name: reviewableRow }))
+    await waitFor(() => expect(panel(canvasElement)).toBeInTheDocument())
+
+    // The panel sits under the body, inside the region the reader scrolls.
+    await expect(content(canvasElement)).toContainElement(panel(canvasElement) as HTMLElement)
+    await expect(content(canvasElement).lastElementChild).toHaveClass('message-reader__review')
+    await expect(content(canvasElement).scrollWidth).toBeLessThanOrEqual(
+      content(canvasElement).clientWidth + 1,
+    )
+
+    await pick(canvasElement, 'Personal')
+    await userEvent.click(save(canvasElement))
+    await resultShows(canvasElement, 'Review saved')
+    await expect(result(canvasElement)).toHaveTextContent('Your mailbox is unchanged')
   },
 }
