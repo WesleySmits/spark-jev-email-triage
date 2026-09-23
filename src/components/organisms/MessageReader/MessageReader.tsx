@@ -25,6 +25,13 @@ type MessageReaderProps = Readonly<{
   evidence?: ReactNode
   /** Shown under the body in the same scroll, e.g. a ReviewPanel the caller controls. */
   review?: ReactNode
+  /**
+   * Shown under the review in the same scroll, e.g. an ActionProposalPanel.
+   * It is kept apart from `review` because deciding a message's labels and
+   * proposing something be done to the mailbox are different things, and a
+   * reader must be able to tell which one they are looking at.
+   */
+  proposal?: ReactNode
   /** The footer actions and note. See ReaderActionBar. Leave it out to show no footer. */
   actions?: Omit<ComponentProps<typeof ReaderActionBar>, 'className'> | undefined
   className?: string | undefined
@@ -32,8 +39,9 @@ type MessageReaderProps = Readonly<{
 
 /**
  * The message reader: on mobile a contextual bar, then the header, one
- * scrollable region with an optional evidence strip, the body and an
- * optional review, and the action footer, from the source's `.reader`.
+ * scrollable region with an optional evidence strip, the body, an optional
+ * review and an optional mailbox-action proposal, and the action footer,
+ * from the source's `.reader`.
  *
  * Presentational only. The caller owns the message, every string, the review
  * panel's state, every action and any announcement; the reader fetches
@@ -64,6 +72,7 @@ export function MessageReader({
   contentLabel = 'Message content',
   evidence,
   review,
+  proposal,
   actions,
   className,
 }: MessageReaderProps) {
@@ -78,6 +87,7 @@ export function MessageReader({
         {evidence && <div className="message-reader__evidence">{evidence}</div>}
         <div className="message-reader__body">{children}</div>
         {review && <div className="message-reader__review">{review}</div>}
+        {proposal && <div className="message-reader__proposal">{proposal}</div>}
       </div>
       {actions && <ReaderActionBar {...actions} />}
     </article>

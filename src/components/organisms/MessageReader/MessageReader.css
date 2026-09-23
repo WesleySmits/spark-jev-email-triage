@@ -77,7 +77,8 @@
   margin-bottom: var(--s5);
 }
 
-.message-reader__review {
+.message-reader__review,
+.message-reader__proposal {
   max-width: 820px;
   margin-top: var(--s6);
 }
@@ -95,7 +96,8 @@
     margin-bottom: var(--s4);
   }
 
-  .message-reader__review {
+  .message-reader__review,
+  .message-reader__proposal {
     margin-top: var(--s5);
   }
 }

@@ -190,6 +190,19 @@ pnpm readback:spark                      # whether Spark answers on this host
   Errors reach the browser only as a coarse reason or a fixed message.
 - The page runs in `read-only` completion mode: no Complete, E, Completed
   notice or Undo. The sync button only reads the inbox again.
+- The open message offers one mailbox action to propose, and the reader shows
+  proposal, human approval and execution as three stages that never read as
+  one another. A proposal names the open row's own mailbox copy and the thread
+  version it was proposed against, and nothing is ever added to it: a copy of
+  the same message in another mailbox is a separate copy and stays out unless
+  it is named. Approving is a distinct transition and is that person's
+  decision alone: it is recorded on the page, no provider is told about it,
+  and it lapses the moment a later message reaches a target's thread. Nothing
+  is stored and nothing is executed. `src/domain/mailbox-action.ts` names
+  every precondition, `write_adapter_connected` among them, and that one can
+  never be met: no Spark write adapter exists, execution has no ready state
+  to represent, and every state the panel shows says the mailbox is unchanged.
+  Nothing in it names a subject, an address or a body.
 - Spark wiring lives in `*.server.ts` files, which TanStack Start keeps out
   of the client build; ESLint also keeps components and stories from
   importing `*.server`, `*.functions`, `src/spark` and Node built-ins, and
@@ -204,8 +217,8 @@ pnpm readback:spark                      # whether Spark answers on this host
   the model accepted its own labels or sent them to a person, and when it
   was judged. `auto_accepted` reads as the model accepting its labels, never
   as a review by a person; no probability is shown, so nothing suggests the
-  model's confidence is calibrated. The page offers no way to save a review
-  or change a mailbox. Spark's list shows at most 30 characters of a sender
+  model's confidence is calibrated. The page changes no mailbox. Spark's
+  list shows at most 30 characters of a sender
   and 50 of a subject and has no uncut or structured form. A cut sender keeps its whole name when the address
   was cut, otherwise the visible start; a cut subject keeps its visible
   start. Both end in `…`, and nothing is guessed. Only a blank value

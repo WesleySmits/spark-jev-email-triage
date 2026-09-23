@@ -1,0 +1,165 @@
+/* ActionProposalPanel organism: one proposed mailbox action, as three stages
+ * a reader can tell apart. Quieter than the amber review panel, which is the
+ * one thing on this screen a person is asked to decide about the mail
+ * itself. Token values live in src/styles/tokens.css; rules for their use in
+ * src/styles/README.md. */
+.action-proposal-panel {
+  box-sizing: border-box;
+  container-type: inline-size;
+  min-width: 0;
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-frame);
+  color: var(--ink);
+  background: var(--surface);
+  font: var(--text-ui);
+}
+
+/* The panel's own name and each stage's, in the workbench's overline. */
+.action-proposal-panel__title,
+.action-proposal-panel__stage-name {
+  margin: 0;
+  color: var(--muted);
+  font: var(--text-overline);
+  letter-spacing: var(--tracking-overline);
+  text-transform: uppercase;
+}
+
+.action-proposal-panel__summary {
+  margin: var(--s2) 0 0;
+  color: var(--ink-soft);
+}
+
+/* The three stages side by side, in the order they happen. */
+.action-proposal-panel__stages {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s3);
+  margin: var(--s4) 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: stage;
+}
+
+.action-proposal-panel__stage {
+  min-width: 0;
+  display: grid;
+  justify-items: start;
+  gap: var(--s2);
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+  overflow-wrap: anywhere;
+}
+
+.action-proposal-panel__stage-name {
+  counter-increment: stage;
+}
+
+/* The order is part of the meaning, so it is visible and not only implied. */
+.action-proposal-panel__stage-name::before {
+  content: counter(stage) '. ';
+}
+
+.action-proposal-panel__stage-detail {
+  margin: 0;
+  color: var(--ink-soft);
+  font: var(--text-meta);
+}
+
+.action-proposal-panel__section {
+  margin-top: var(--s4);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--line);
+}
+
+.action-proposal-panel__subheading {
+  margin: 0;
+  font: inherit;
+  font-weight: 750;
+}
+
+.action-proposal-panel__targets,
+.action-proposal-panel__preconditions {
+  margin: var(--s2) 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--s2);
+}
+
+.action-proposal-panel__target {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+  overflow-wrap: anywhere;
+}
+
+.action-proposal-panel__target-label {
+  font: var(--text-control);
+}
+
+.action-proposal-panel__target-detail,
+.action-proposal-panel__note,
+.action-proposal-panel__empty,
+.action-proposal-panel__result {
+  color: var(--muted);
+  font: var(--text-meta);
+}
+
+.action-proposal-panel__note {
+  margin: var(--s2) 0 0;
+}
+
+.action-proposal-panel__empty {
+  margin: var(--s2) 0 0;
+}
+
+.action-proposal-panel__precondition {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  min-width: 0;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.action-proposal-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+  margin-top: var(--s4);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--line);
+}
+
+.action-proposal-panel__result {
+  flex: 1 1 220px;
+  min-width: 0;
+  display: grid;
+  margin: 0;
+}
+
+.action-proposal-panel__result strong {
+  color: var(--ink-soft);
+}
+
+/* Keyed to the panel's own width, so it also stacks in a narrow reader. */
+@container (width < 560px) {
+  .action-proposal-panel__stages {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .action-proposal-panel__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
