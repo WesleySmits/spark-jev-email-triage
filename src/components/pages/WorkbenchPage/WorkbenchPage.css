@@ -5,15 +5,18 @@
   min-height: 0;
 }
 
-/* What the page announces about one review. It is a live region, so it
- * stays in the document while it is empty and reads as meta text once it
- * says something; screen readers announce it either way. */
-.workbench__review-status {
+/* What the page announces about one review, and about one proposed mailbox
+ * action. Each is a live region, so it stays in the document while it is
+ * empty and reads as meta text once it says something; screen readers
+ * announce it either way. */
+.workbench__review-status,
+.workbench__action-status {
   margin: var(--s2) 0 0;
   font: var(--text-meta);
   color: var(--muted);
 }
 
-.workbench__review-status:empty {
+.workbench__review-status:empty,
+.workbench__action-status:empty {
   margin: 0;
 }

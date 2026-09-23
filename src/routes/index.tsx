@@ -152,6 +152,7 @@ function Page({ inbox, root, onReady }: PageProps) {
             return result
           },
         }}
+        proposals={{ mode: 'enabled', approver: 'you, at this computer' }}
         topBar={{
           syncStatus: 'connected',
           syncLabel,
@@ -170,13 +171,18 @@ function Page({ inbox, root, onReady }: PageProps) {
 // classification, which is kept beside that classification and changes no
 // mail. A review that was saved is read back with the rows it belongs to, so
 // it still decides what they show after a refresh, while what the classifier
-// proposed stays beside it. Rows arrive without bodies; one body loads when
-// its message opens, and that read is the only thing that can say a stored
-// judgment still describes the row. Refresh lists the mailbox again under a
-// new reading, so what an earlier read proved stops counting as proof
-// without anything being read again. Neither refreshing nor opening a row
-// calls a classifier. While Spark is away the workbench waits in place and
-// reads the inbox once it answers.
+// proposed stays beside it. The open message also offers one mailbox action
+// to propose against its own mailbox copy, and then to approve. Both are
+// held and shown by this page alone: nothing is stored, no copy of the same
+// message in another mailbox is ever added to a proposal, and nothing
+// carries one out, because no Spark write adapter exists here. The panel
+// says execution is blocked at every stage. Rows arrive without bodies; one
+// body loads when its message opens, and that read is the only thing that
+// can say a stored judgment still describes the row. Refresh lists the
+// mailbox again under a new reading, so what an earlier read proved stops
+// counting as proof without anything being read again. Neither refreshing
+// nor opening a row calls a classifier. While Spark is away the workbench
+// waits in place and reads the inbox once it answers.
 function Home() {
   const inbox = Route.useLoaderData()
   const router = useRouter()

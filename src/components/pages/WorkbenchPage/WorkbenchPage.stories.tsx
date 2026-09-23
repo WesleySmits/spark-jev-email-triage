@@ -2111,3 +2111,171 @@ export const GroundsOnANarrowScreen: Story = {
     await expect(canvasElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth)
   },
 }
+
+/** The mailbox action panel in the reader, or nothing when none is offered. */
+const actionPanel = (root: HTMLElement) =>
+  root.querySelector('.workbench__reader .action-proposal-panel')
+
+/** The result copy beside the panel's buttons. */
+const actionResult = (root: HTMLElement) => root.querySelector('.action-proposal-panel__result')
+
+/** What the page's polite live region is announcing about the proposal. */
+const actionAnnounced = (root: HTMLElement) => root.querySelector('.workbench__action-status')
+
+/** The mailbox copies the proposal names, by the ids the panel shows. */
+const namedCopies = (root: HTMLElement) =>
+  [...root.querySelectorAll('.action-proposal-panel__target-identity')].map(
+    (copy) => copy.textContent,
+  )
+
+/** What the panel says the action would change, and what is unknown of it. */
+const expectedEffect = (root: HTMLElement) =>
+  root.querySelector('.action-proposal-panel__section:has(.action-proposal-panel__effect)')
+
+const press = (root: HTMLElement, name: string) =>
+  userEvent.click(within(root).getByRole('button', { name, hidden: false }))
+
+/** A story whose open row may be proposed against, listing `states`. */
+const proposing = (states: Readonly<Record<string, StoredClassification>> = storedStates) =>
+  ({
+    ...classified,
+    classifications: reading('reading-1', states),
+    loadBody: fn(provingBodies({ m1: m1Current })),
+    proposals: { mode: 'enabled', approver: 'you, at this computer' },
+  }) satisfies Partial<Props>
+
+/**
+ * Proposing one mailbox action, and then approving it. The three stages read
+ * apart at every moment: what is proposed, what a person approved, and that
+ * execution is blocked. The proposal names the open row's own mailbox copy
+ * and no other, and no state ever says a message was archived: nothing here
+ * can write to a mailbox at all.
+ */
+export const ProposeMailboxAction: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: proposing(),
+  play: async ({ canvasElement, args }) => {
+    await waitFor(() => expect(evidence(canvasElement)).toHaveTextContent('Triage current'))
+
+    // Before anything is proposed, the stages still say where this can go.
+    await expect(actionPanel(canvasElement)).toHaveTextContent('Nothing proposed')
+    await expect(actionPanel(canvasElement)).toHaveTextContent('Blocked')
+    await expect(namedCopies(canvasElement)).toEqual([])
+    await expect(expectedEffect(canvasElement)).toHaveTextContent(
+      'Nothing is proposed, so nothing would change.',
+    )
+
+    await press(canvasElement, 'Propose archive')
+    await expect(actionPanel(canvasElement)).toHaveTextContent('Waiting for you')
+    // Exactly the open row's copy, by the ids a provider would be given.
+    // Nothing added an alias copy to it.
+    await expect(namedCopies(canvasElement)).toEqual(['studio · message m1'])
+    await expect(actionPanel(canvasElement)).toHaveTextContent(
+      'The same message in another mailbox is a separate copy',
+    )
+
+    // It says what would change, about that copy alone, and what about a
+    // provider doing it is not known. It never says anything happened.
+    await expect(expectedEffect(canvasElement)).toHaveTextContent('What it would change')
+    await expect(expectedEffect(canvasElement)).toHaveTextContent(
+      'If this were ever carried out, it would ask a mail provider to archive the copy named above, and nothing else: Studio Noord (studio · message m1).',
+    )
+    await expect(expectedEffect(canvasElement)).toHaveTextContent(
+      'whether it would touch anything else in the thread',
+    )
+    await expect(expectedEffect(canvasElement)).toHaveTextContent('Nothing has been asked')
+
+    // Each precondition names its mailbox id too, so two mailboxes shown
+    // under one name could never read as one precondition.
+    await expect(actionPanel(canvasElement)).toHaveTextContent(
+      'The thread of Studio Noord (studio) still ends at message m1',
+    )
+
+    // Approving is its own step, and it moves only the approval stage.
+    await press(canvasElement, 'Approve')
+    await expect(actionPanel(canvasElement)).toHaveTextContent('Approved by you, at this computer')
+    await expect(actionResult(canvasElement)).toHaveTextContent('Approved, not carried out')
+    await expect(actionPanel(canvasElement)).toHaveTextContent('Not connected')
+    await expect(actionAnnounced(canvasElement)).toHaveTextContent('Your mailbox is unchanged')
+    await expect(actionPanel(canvasElement)).not.toHaveTextContent(/archived|completed/i)
+
+    // Nothing was asked of the provider: only the one body the reader opened.
+    await expect(args.loadBody).toHaveBeenCalledTimes(1)
+    await expect(
+      within(canvasElement).queryByRole('button', { name: 'Complete' }),
+    ).not.toBeInTheDocument()
+  },
+}
+
+/**
+ * The same page, listing a judgment the store contradicts: a later message
+ * reached the thread. Nothing may be proposed against a version that has
+ * moved on, so proposing is offered and refused in words rather than being
+ * silently absent.
+ */
+export const NothingToProposeAgainst: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: proposing({ ...storedStates, m1: m1Stale }),
+  play: async ({ canvasElement }) => {
+    await waitFor(() => expect(actionPanel(canvasElement)).toHaveTextContent('Nothing proposed'))
+
+    await expect(
+      within(canvasElement).getByRole('button', { name: 'Propose archive' }),
+    ).toBeDisabled()
+    await expect(actionPanel(canvasElement)).toHaveTextContent('Blocked')
+  },
+}
+
+/**
+ * A proposal is made against one version of a thread, and a refresh lists a
+ * judgment the store now contradicts: a later message reached that thread.
+ * The proposal goes out of date and the approval that was given lapses with
+ * it, rather than following the row onto a version nobody approved.
+ */
+function WithMovingThread(args: Props) {
+  const [moved, setMoved] = useState(false)
+  return (
+    <WorkbenchPage
+      {...args}
+      classifications={reading(
+        moved ? 'reading-2' : 'reading-1',
+        moved ? { ...storedStates, m1: m1Stale } : storedStates,
+      )}
+      topBar={{
+        ...args.topBar,
+        syncActionLabel: 'Refresh mail',
+        onSyncClick: () => {
+          setMoved(true)
+        },
+      }}
+    />
+  )
+}
+
+export const ProposalLapsesOnNewerMessage: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: proposing(),
+  render: (args) => <WithMovingThread {...args} />,
+  play: async ({ canvasElement, args }) => {
+    await waitFor(() => expect(evidence(canvasElement)).toHaveTextContent('Triage current'))
+    await press(canvasElement, 'Propose archive')
+    await press(canvasElement, 'Approve')
+    await expect(actionResult(canvasElement)).toHaveTextContent('Approved, not carried out')
+
+    // A refresh lists a judgment the store contradicts: the thread moved on.
+    await press(canvasElement, 'Refresh mail')
+    await expect(actionPanel(canvasElement)).toHaveTextContent('Out of date')
+    await expect(actionPanel(canvasElement)).toHaveTextContent('No longer holds')
+    await expect(actionResult(canvasElement)).toHaveTextContent(
+      'A later message has reached this thread since',
+    )
+    // The live region never keeps saying something the panel contradicts.
+    await expect(actionAnnounced(canvasElement)).toHaveTextContent('Out of date')
+    await expect(actionAnnounced(canvasElement)).not.toHaveTextContent('Approved')
+    // The copy it named is still named, and now says where it stands.
+    await expect(namedCopies(canvasElement)).toEqual(['studio · message m1'])
+    await expect(within(canvasElement).getByRole('button', { name: 'Approve' })).toBeDisabled()
+    // No thread was read again to find that out.
+    await expect(args.loadBody).toHaveBeenCalledTimes(1)
+  },
+}
