@@ -2,15 +2,33 @@ import { describe, expect, it } from 'vitest'
 import { syntheticMailValues } from '../domain/fixtures'
 import { jevFailure, jevJudgment } from '../jev/fixtures'
 import { summarizeQuality, type QualityObservation } from './quality-report'
-import { reviewedCases } from './reviewed-set'
+import { reviewedCases, type ReviewedCase, type ReviewedExpectation } from './reviewed-set'
 import { captureRunSnapshot, replayRunSnapshot, runSnapshotSchema } from './run-snapshot'
 
 const capturedAt = '2026-09-23T09:00:00.000Z'
 
-const reviewedFor = (fixture: string) => {
-  const found = reviewedCases.find((reviewed) => reviewed.fixture === fixture)
+const caseOf = (cases: readonly ReviewedCase[], fixture: string) => {
+  const found = cases.find((reviewed) => reviewed.fixture === fixture)
   if (found === undefined) throw new Error(`No reviewed case for ${fixture}`)
   return found
+}
+
+const reviewedFor = (fixture: string) => caseOf(reviewedCases, fixture)
+
+/**
+ * The set as it would read after a person re-read one case and settled on
+ * other labels. Only the labels move: the thread, its digest and every
+ * message id stay exactly as the run measured them.
+ */
+function correcting(fixture: string, corrected: Partial<ReviewedExpectation>): ReviewedCase[] {
+  const cases = reviewedCases.map((reviewed) =>
+    reviewed.fixture === fixture
+      ? { ...reviewed, expectation: { ...reviewed.expectation, ...corrected } }
+      : reviewed,
+  )
+
+  expect(caseOf(cases, fixture).writtenAgainst).toEqual(reviewedFor(fixture).writtenAgainst)
+  return cases
 }
 
 /** Every case answered, one of them not at all, and every call timed but one. */
@@ -49,14 +67,30 @@ describe('a run snapshot', () => {
 
   it('keeps every answer, the tokens it cost and the time it took', () => {
     const [first] = roundTrip(run()).entries
+    const measured = reviewedFor('customerQuestion')
 
     expect(first).toMatchObject({
-      fixture: reviewedCases[0]?.fixture,
+      fixture: measured.fixture,
+      threadDigest: measured.writtenAgainst.threadDigest,
       rubric: 'email-triage.v2',
       requestedModel: 'jev-1.13.0',
       latencyMs: 700,
       result: { status: 'classified', model: 'jev-1.13.0', usage: { inputTokens: 812 } },
     })
+  })
+
+  // The labels a figure is counted against, and not the prose that argued
+  // for them: a snapshot carries no writing about mail.
+  it('keeps the labels the run was measured against, and none of their argument', () => {
+    const [first] = roundTrip(run()).entries
+    const { expectation } = reviewedFor('customerQuestion')
+
+    expect(first?.expectation).toEqual({
+      category: expectation.category,
+      priority: expectation.priority,
+      handling: expectation.handling,
+    })
+    expect(first?.expectation).not.toHaveProperty('rationale')
   })
 
   // A failure is kept as a failure, by its code alone.
@@ -107,6 +141,45 @@ describe('replayRunSnapshot', () => {
     expect(replay).toMatchObject({ status: 'refused', reason: 'changed_fixture' })
   })
 
+  // Reading a case again and correcting its labels is an ordinary outcome
+  // here, and it leaves the thread, the digest and every message id alone.
+  // The answers would then be counted against labels nobody had written when
+  // the run happened.
+  it.each([
+    { field: 'category', corrected: { category: 'other' } },
+    { field: 'priority', corrected: { priority: 'low' } },
+    { field: 'handling', corrected: { handling: 'needs_person' } },
+  ] as const)('refuses a run whose expected $field was corrected since', ({ corrected }) => {
+    const snapshot = roundTrip(run())
+    const cases = correcting('invoice', corrected)
+
+    expect(replayRunSnapshot(snapshot, cases)).toEqual({
+      status: 'refused',
+      reason: 'changed_expectation',
+      fixture: 'invoice',
+      rubric: 'email-triage.v2',
+    })
+  })
+
+  // What the refusal above is for: the same answers, counted against
+  // corrected labels, are a different report.
+  it('would otherwise have counted another report from the very same answers', () => {
+    const observations = run()
+    const corrected = correcting('invoice', { category: 'other' })
+    const against = observations.map((observation) => ({
+      ...observation,
+      reviewed: caseOf(corrected, observation.reviewed.fixture),
+    }))
+
+    expect(summarizeQuality(against)).not.toEqual(summarizeQuality(observations))
+  })
+
+  it('replays a run whose expectation is still the one it was measured against', () => {
+    const snapshot = roundTrip(run())
+
+    expect(replayRunSnapshot(snapshot, correcting('invoice', {})).status).toBe('replayed')
+  })
+
   // Old rubric ids stay parseable on purpose, so a run naming one reads back
   // fine. Counting it would apply today's policy and today's thresholds to
   // judgments made under other meanings.
@@ -151,10 +224,25 @@ describe('replayRunSnapshot', () => {
 })
 
 describe('runSnapshotSchema', () => {
-  it('refuses a file written to another shape', () => {
+  // A version 1 file carried no expectation, so recounting one would count
+  // its answers against whatever the set says today.
+  it('refuses a file written to an older shape, rather than recounting it', () => {
     const snapshot = roundTrip(run())
 
-    expect(runSnapshotSchema.safeParse({ ...snapshot, version: 2 }).success).toBe(false)
+    expect(runSnapshotSchema.safeParse({ ...snapshot, version: 1 }).success).toBe(false)
+    expect(runSnapshotSchema.safeParse({ ...snapshot, version: 3 }).success).toBe(false)
+  })
+
+  it('refuses an entry that does not say what it was measured against', () => {
+    const snapshot = roundTrip(run())
+    const [first] = snapshot.entries
+    if (first === undefined) throw new Error('Expected an entry')
+    const { expectation, ...withoutExpectation } = first
+
+    expect(expectation.category).toBeDefined()
+    expect(
+      runSnapshotSchema.safeParse({ ...snapshot, entries: [withoutExpectation] }).success,
+    ).toBe(false)
   })
 
   it('refuses a failure code this build does not know', () => {

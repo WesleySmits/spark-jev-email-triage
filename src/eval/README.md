@@ -157,6 +157,12 @@ What a snapshot holds, and what it does not:
   `src/domain/fixtures.ts`, where a person reviewed it, so no subject,
   address, body or attachment can travel in a snapshot. A test writes the
   whole set and fails if any of them does.
+- The labels the run was measured against: the category, the priority and the
+  handling the case expected then, and none of the prose that argued for
+  them. A run is a comparison, and pinning only the mail pins half of it.
+  Reading a case again and correcting its labels is an ordinary outcome here
+  — two cases in the set began that way — and it leaves the thread and its
+  digest untouched, so nothing else would catch it.
 - The classifier's answers travel whole — the chosen labels, every
   probability, the provider's own token counts — because they are what the
   figures are counted from. They are numbers and rubric labels.
@@ -174,8 +180,19 @@ a run this build cannot honestly count is refused rather than reported:
   answers describe mail this build no longer holds. The digest is recomputed
   from the thread rather than read from the case, so an edit is caught even
   if the recorded digest was edited with it.
+- `changed_expectation`: the mail is the mail the run measured, but the case
+  expects other labels now. The answers are still the answers; what they
+  would be counted against is not, so the figures would be another comparison
+  printed under this run's name. Every label counts, including a priority no
+  figure reads today: an expectation is one judgment a person settled on.
 - `unsupported_rubric`: it was judged under a rubric this build no longer
   holds. See below.
+
+A snapshot names the shape it was written to. The field is bumped whenever
+that shape changes, and an older file is refused rather than read as though
+it said what it does not: a version 1 file carried no expectation, and
+recounting one against whatever the set says today is the very drift the
+field exists to prevent.
 
 One refused entry refuses the run: a report over the rest would be another
 run's report printed under this one's name.

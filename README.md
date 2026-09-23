@@ -49,8 +49,9 @@ pnpm eval:report .data/eval-run-2026-09-23T09-00-00.000Z.json
 
 `pnpm eval:report` counts the same report from that snapshot offline: no
 provider, no mailbox, no database and no writes. The snapshot holds the
-answers the run received and names its mail by fixture rather than copying
-any of it.
+answers the run received, names its mail by fixture rather than copying any
+of it, and pins the labels the run was measured against, so a case read again
+since is refused rather than quietly counted another way.
 
 ## Shadow triage
 
@@ -267,11 +268,14 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
   `pnpm eval:report` (`src/eval/command.ts`) counts the report from it
   offline, with no provider, mailbox, database or write of its own. A
   snapshot names its mail by fixture and by a digest of the thread it was
-  measured against, never copying any of it, keeps the classifier's answers
-  and token counts whole, and keeps a failed call as its content-free code
-  alone. It is parsed, never trusted: a case this build lacks, a labelled
-  thread that has changed since, and a rubric no longer held are each
-  refused. The live run writes its snapshot under `.data/`, which Git
+  measured against, never copying any of it, pins the labels that run was
+  measured against without the prose that argued for them, keeps the
+  classifier's answers and token counts whole, and keeps a failed call as its
+  content-free code alone. It is parsed, never trusted: a case this build
+  lacks, a labelled thread that has changed since, a case whose expected
+  labels were corrected since, a file written to an older shape and a rubric
+  no longer held are each refused, so a run is never recounted against a
+  yardstick it was not measured with. The live run writes its snapshot under `.data/`, which Git
   ignores, named after the run's own timestamp, so no live answer is
   committed and no argument decides where anything is written.
 - `src/domain/rubric.ts` holds the opinionated default rubric for any Spark
