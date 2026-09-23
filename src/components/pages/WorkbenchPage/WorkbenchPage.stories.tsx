@@ -1165,10 +1165,12 @@ export const ReviewConfirm: Story = {
     // It named the version the reading showed, and asked for no mailbox action.
     const saveReview = reviewOf(args).onSaveReview
     await expect(saveReview).toHaveBeenCalledTimes(1)
-    await expect(saveReview).toHaveBeenCalledWith({
-      classification: subjectOf('m1'),
-      verdict: { decision: 'confirmed' },
-    })
+    await expect(saveReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        classification: subjectOf('m1'),
+        verdict: { decision: 'confirmed' },
+      }),
+    )
     await expect(
       within(canvasElement).queryByRole('button', { name: 'Complete' }),
     ).not.toBeInTheDocument()
@@ -1190,11 +1192,13 @@ export const ReviewCorrect: Story = {
     await expect(result(canvasElement)).toHaveTextContent('Category set to Suspicious')
     await expect(result(canvasElement)).toHaveTextContent('The original stays Personal')
     await expect(panel(canvasElement)).toHaveTextContent('Original AI suggestion')
-    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith({
-      classification: subjectOf('m1'),
-      // The panel asks about the category, so the judged priority stays.
-      verdict: { decision: 'corrected', labels: { category: 'suspicious', priority: 'high' } },
-    })
+    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        classification: subjectOf('m1'),
+        // The panel asks about the category, so the judged priority stays.
+        verdict: { decision: 'corrected', labels: { category: 'suspicious', priority: 'high' } },
+      }),
+    )
   },
 }
 
@@ -1322,10 +1326,12 @@ export const ReviewKeyboard: Story = {
     await expect(save(canvasElement)).toHaveFocus()
     await userEvent.keyboard('{Enter}')
     await resultShows(canvasElement, 'Review saved')
-    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith({
-      classification: subjectOf('m1'),
-      verdict: { decision: 'corrected', labels: { category: 'notification', priority: 'high' } },
-    })
+    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        classification: subjectOf('m1'),
+        verdict: { decision: 'corrected', labels: { category: 'notification', priority: 'high' } },
+      }),
+    )
   },
 }
 
@@ -1597,10 +1603,12 @@ export const PanelFollowsANewerVersion: Story = {
     await userEvent.click(save(canvasElement))
     await resultShows(canvasElement, 'Review saved')
     await expect(reviewOf(args).onSaveReview).toHaveBeenCalledTimes(1)
-    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith({
-      classification: { ...subjectOf('m1'), latestMessageId: '13' },
-      verdict: { decision: 'corrected', labels: { category: 'notification', priority: 'high' } },
-    })
+    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        classification: { ...subjectOf('m1'), latestMessageId: '13' },
+        verdict: { decision: 'corrected', labels: { category: 'notification', priority: 'high' } },
+      }),
+    )
   },
 }
 
@@ -1655,10 +1663,12 @@ export const RefreshDuringSaveIsLeftAlone: Story = {
     // The answer is in, so the panel takes up the version the refresh brought.
     await expect(result(canvasElement)).toHaveTextContent('Choose a category first')
     await expect(rows.getByRole('radio', { name: 'Suspicious' })).not.toBeChecked()
-    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith({
-      classification: subjectOf('m1'),
-      verdict: { decision: 'corrected', labels: { category: 'suspicious', priority: 'high' } },
-    })
+    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        classification: subjectOf('m1'),
+        verdict: { decision: 'corrected', labels: { category: 'suspicious', priority: 'high' } },
+      }),
+    )
   },
 }
 

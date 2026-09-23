@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import type {
   DeskReviewOutcome,
   DeskReviewReadback,
@@ -117,15 +117,13 @@ function useReview(
   const signature = reviewSignature(reviewable, saved)
   const [held, setHeld] = useState(() => startFrom(signature, saved))
   const shown =
-    held.signature === signature || held.state.status === 'saving'
+    held.signature === signature ||
+    held.state.status === 'saving' ||
+    held.state.status === 'unknown'
       ? held
       : startFrom(signature, saved, held.announcement)
   if (shown !== held) setHeld(shown)
   const latest = useRef(0)
-  const activeSignature = useRef(signature)
-  useLayoutEffect(() => {
-    activeSignature.current = signature
-  }, [signature])
   const settle = (state: ReviewState, original: string) => {
     setHeld((current) => ({
       ...current,
@@ -145,8 +143,7 @@ function useReview(
       announcement: '',
     }))
   }
-  const active = (attempt: number) =>
-    attempt === latest.current && activeSignature.current === signature
+  const active = (attempt: number) => attempt === latest.current
   const complete = (
     outcome: DeskReviewOutcome,
     pending: NonNullable<Held['pending']>,
