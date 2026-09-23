@@ -25,6 +25,7 @@
     "eval:jev:live": "vitest run --config vitest.live.config.ts --reporter=verbose",
     "eval:report": "tsx src/eval/cli.ts",
     "shadow": "tsx src/shadow/cli.ts",
+    "readback:spark": "tsx src/release/cli.ts",
     "test-storybook": "vitest run --config vitest.storybook.config.ts"
   },
   "dependencies": {

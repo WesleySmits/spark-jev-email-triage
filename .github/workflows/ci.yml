@@ -66,3 +66,21 @@ jobs:
         run: |
           git status --porcelain
           test -z "$(git status --porcelain)"
+
+  # The one check a branch requires before a merge. Adding a job here means
+  # adding it to `needs`, which `src/release/ci-workflow.test.ts` enforces,
+  # so a new job cannot quietly stop being required.
+  required-checks:
+    if: always()
+    needs: [quality]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI job to have succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for result in $RESULTS; do
+            test "$result" = success
+          done

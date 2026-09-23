@@ -90,10 +90,25 @@ stories (`.storybook/stories.test.ts`). It starts no Storybook server. A
 story's `viewport` global sets the window size; other stories get 1280×1024.
 The first local run needs `pnpm exec playwright install --only-shell chromium`.
 
+## Releasing
+
+`docs/runbook.md` is the release runbook: the required check and the branch
+protection to apply for it, how a deployment names the commit it was built
+from, health, the live Spark readback, rollback, and what may be logged. It
+reports the build, the merge, the deployment and the live result separately,
+because none of them is evidence for another.
+
+```sh
+curl -fsS http://localhost:3000/health   # which commit is running
+pnpm readback:spark                      # whether Spark answers on this host
+```
+
 ## Dokploy deployment
 
 - `Dockerfile.app` builds the TanStack Start application with Nitro and runs
-  the generated Node server on port 3000.
+  the generated Node server on port 3000. Pass the commit as
+  `--build-arg APP_COMMIT_SHA=$(git rev-parse HEAD)`, or set `APP_COMMIT_SHA`
+  in Dokploy, so `GET /health` can say what is deployed.
 - `Dockerfile.storybook` builds the independent static Storybook site and
   serves it with Nginx on port 80.
 - The Dockerfiles contain no application secrets. Configure any runtime
@@ -291,7 +306,26 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
   pull requests and `main`.
 - On pull requests, CI also runs commitlint and the Fallow changed-code audit.
 - CI fails on `git diff --check` errors or uncommitted generated files.
-- Branch protection is not configured yet, so CI results are not enforced on merge.
+- CI ends in one job, `required-checks`, which waits for every other job and
+  fails unless each succeeded. It is the single check a branch can require,
+  and `src/release/ci-workflow.test.ts` reads the workflow and fails when a
+  job is not covered by it.
+- Branch protection is still not applied: neither `main` nor
+  `feature/human-triage-review` is protected and no ruleset exists, so CI
+  results are not enforced on merge. `docs/runbook.md` holds the settings to
+  apply and how to read them back; enforcement may be claimed only from that
+  read-back.
+- `GET /health` answers with the commit the running build was made from, and
+  nothing else: it reads one environment variable, `APP_COMMIT_SHA`, calls no
+  provider, opens no database and holds no mail. A build that cannot name its
+  commit answers `503`, because a deployment nobody can name cannot be rolled
+  back to a known commit. It is not a Spark check.
+- `pnpm readback:spark` is the live Spark check, deliberately apart from
+  health: one read-only `spark accounts` call through the app's own probe,
+  one line of output, and no address, subject, count or body. It speaks for
+  the host it ran on and says so, so a deployment's connectivity is only what
+  that deployment's own runtime answered; where the probe cannot run there,
+  `docs/runbook.md` has it reported as blocked rather than as ready.
 - The shadow-triage database stores:
   - mailbox, thread, and message ids
   - the scrubbed, truncated subject and latest sender that Jev saw
