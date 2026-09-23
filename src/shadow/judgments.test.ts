@@ -57,6 +57,17 @@ describe('readJudgments', () => {
     expect(readJudgments(db, [copy(two, '11')]).size).toBe(0)
   })
 
+  it('matches no copy at all when a covered message names another mailbox than its judgment', () => {
+    const db = openDatabase(':memory:')
+    storeJudgments(db, [{ mailboxId: one, messageIds: ['11'], classification: jevJudgment('11') }])
+    // Schema-valid, since a covered message carries its own mailbox id: the
+    // judgment stays the first mailbox's while its coverage claims the second.
+    db.prepare('UPDATE judgment_messages SET mailbox_id = :mailboxId').run({ mailboxId: two })
+
+    expect(judgmentsOf(db, copy(two, '11'))).toEqual([])
+    expect(judgmentsOf(db, copy(one, '11'))).toEqual([])
+  })
+
   it('reads every message a judgment covered, not only the one its thread starts at', () => {
     const db = openDatabase(':memory:')
     storeJudgments(db, [

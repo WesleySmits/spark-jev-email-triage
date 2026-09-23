@@ -128,14 +128,28 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
   from the local shadow database, opened read-only. Loading or refreshing
   the page classifies nothing: no classifier is constructed and no Jev call
   is made. A stored judgment applies to the one mailbox copy it covered, so
-  two alias copies of one delivery never share one, and only while it names
-  the current version: the latest message the store has observed in its
-  thread, the current rubric, and the pinned classifier build. Anything else
-  reads as `stale` and keeps its labels, a failed Jev attempt reads as
-  `provider_failure` and never as a classification, and a row nothing
-  applies to reads as `none`. A database that is missing, holds an
-  unsupported schema, or cannot be read gives every row `none`: all listed
-  mail still shows.
+  two alias copies of one delivery never share one, and a covered message
+  that names another mailbox than its own judgment matches no row at all.
+- What the store alone can prove is bounded, and the states say so. Listing
+  reads no thread, so a judgment the store does not contradict reads as
+  `unverified`: what was judged, not what holds now. A message delivered
+  after the last shadow run leaves the store untouched, so silence is no
+  evidence of currency. A judgment the store does contradict — it observed a
+  later message in that thread, or it names another rubric or classifier
+  build — reads as `stale` and keeps its labels. A failed Jev attempt reads
+  as `provider_failure`, never as a classification, and a row nothing
+  applies to reads as `none`.
+- Only opening a row can make a judgment `current`. The lazy body read of
+  that one row already reads its thread, and that thread is what decides:
+  the judgment must name the same mailbox copy, thread and latest message,
+  under the current rubric and classifier build. So `current` costs no
+  provider call beyond the body the reader asked for, and no thread is ever
+  read to list or refresh. A judgment the store already contradicts is never
+  promoted back by a later read.
+- Judgments that cannot be read are reported as unavailable, not as absent.
+  A database that was never written says `none`; one that is there but holds
+  an unsupported schema or cannot be read says `unavailable`. Either way all
+  listed mail still shows, and a body is never held up for its judgment.
 - When Spark is missing, fails, or prints output that doesn't parse, the
   page says so and shows no mail; it never falls back to sample data.
   Errors reach the browser only as a coarse reason or a fixed message.

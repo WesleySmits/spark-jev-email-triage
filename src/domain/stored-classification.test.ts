@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   projectClassification,
   storedJudgmentSchema,
+  verifyClassification,
   type ClassificationLabels,
   type CurrentJudge,
+  type ObservedThread,
   type StoredJudgment,
 } from './stored-classification'
 import { currentTriageRubric } from './triage'
@@ -28,7 +30,7 @@ type Overrides = Readonly<{
   verdict?: StoredJudgment['verdict']
 }>
 
-/** A stored judgment of the copy above, current unless an override says otherwise. */
+/** A stored judgment of the copy above, uncontradicted unless told otherwise. */
 function judgment({ subject, ...overrides }: Overrides = {}): StoredJudgment {
   return storedJudgmentSchema.parse({
     subject: { copy, threadId: '11', latestMessageId: '11', ...judge, ...subject },
@@ -41,12 +43,20 @@ function judgment({ subject, ...overrides }: Overrides = {}): StoredJudgment {
 
 const failure = { status: 'provider_failure', errorCode: 'timeout' } as const
 
+/** What the provider returns for that copy now, matching the judgment unless told otherwise. */
+const observed = (overrides: Partial<ObservedThread> = {}): ObservedThread => ({
+  copy,
+  threadId: '11',
+  latestMessageId: '11',
+  ...overrides,
+})
+
 describe('projectClassification', () => {
-  it('reads a judgment of the current version as current, naming the version it judged', () => {
+  it('reads an uncontradicted judgment as unverified, never as current', () => {
     const stored = judgment()
 
     expect(projectClassification([stored], judge)).toEqual({
-      state: 'current',
+      state: 'unverified',
       subject: {
         copy,
         threadId: '11',
@@ -120,7 +130,7 @@ describe('projectClassification', () => {
     expect(projectClassification([stored], judge)).toEqual({ state: 'none' })
   })
 
-  it('takes the newest classification when several name the current version', () => {
+  it('takes the newest classification the store does not contradict', () => {
     const older = judgment({ subject: { threadId: '10' } })
     const newer = judgment({
       judgedAt: '2026-09-21T09:00:00.000Z',
@@ -128,7 +138,7 @@ describe('projectClassification', () => {
     })
 
     expect(projectClassification([older, newer], judge)).toMatchObject({
-      state: 'current',
+      state: 'unverified',
       labels: { category: 'purchase' },
     })
   })
@@ -147,5 +157,50 @@ describe('projectClassification', () => {
 
   it('reads a row with nothing stored as none, which is not a failure', () => {
     expect(projectClassification([], judge)).toEqual({ state: 'none' })
+  })
+})
+
+describe('verifyClassification', () => {
+  const unverified = () => projectClassification([judgment()], judge)
+
+  it('makes a judgment current when a thread just read names the version it judged', () => {
+    expect(verifyClassification(unverified(), observed())).toMatchObject({
+      state: 'current',
+      subject: { copy, threadId: '11', latestMessageId: '11' },
+      labels,
+    })
+  })
+
+  it('reads a judgment as stale when the thread now ends in a later message', () => {
+    expect(verifyClassification(unverified(), observed({ latestMessageId: '13' }))).toMatchObject({
+      state: 'stale',
+      reason: 'newer_message',
+      labels,
+    })
+  })
+
+  it('reads a judgment as stale when the copy now reads as another thread', () => {
+    expect(verifyClassification(unverified(), observed({ threadId: '09' }))).toMatchObject({
+      state: 'stale',
+      reason: 'other_snapshot',
+    })
+  })
+
+  it('proves nothing about a copy from a thread read for another mailbox', () => {
+    const elsewhere = observed({ copy: { mailboxId: 'two@mail.example', messageId: '11' } })
+
+    expect(verifyClassification(unverified(), elsewhere)).toMatchObject({ state: 'unverified' })
+  })
+
+  it('never promotes what the store already contradicts, or an absence', () => {
+    const stale = projectClassification([judgment({ threadLatestMessageId: '13' })], judge)
+    const failed = projectClassification([judgment({ verdict: failure })], judge)
+
+    expect(verifyClassification(stale, observed())).toBe(stale)
+    expect(verifyClassification(failed, observed())).toBe(failed)
+    expect(verifyClassification({ state: 'none' }, observed())).toEqual({ state: 'none' })
+    expect(
+      verifyClassification({ state: 'unavailable', reason: 'unreadable' }, observed()),
+    ).toEqual({ state: 'unavailable', reason: 'unreadable' })
   })
 })

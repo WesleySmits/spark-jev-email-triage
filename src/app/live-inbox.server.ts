@@ -3,16 +3,23 @@
  * readable mailboxes, lists a few recent messages in each, one call at a
  * time, and reads one message's body on request. Nothing here writes, and
  * provider errors never reach the browser as more than a coarse reason.
+ *
+ * Listing reads no thread. Only opening one row does, and that one read can
+ * also say what the thread now is: its ids go to the injected `verify`, so
+ * this module keeps no knowledge of what is stored about a row, and asks the
+ * provider for nothing extra.
  */
 import type { z } from 'zod'
-import type { emailListingSchema } from '../domain/email'
+import type { emailListingSchema, threadSchema } from '../domain/email'
 import type { MailReader, ReadOptions } from '../domain/mail-reader'
 import { mailboxCopyId, type MailboxCopyRef } from '../domain/mailbox-copy'
+import type { ObservedThread, StoredClassification } from '../domain/stored-classification'
 import { SparkError } from '../spark/errors'
 import { inboxSummarySchema, messageBodySchema, type InboxSummary, type MessageBody } from './inbox'
 import type { BodyRequest, LiveInbox } from './live-inbox'
 
 type Listing = z.infer<typeof emailListingSchema>
+type Thread = z.infer<typeof threadSchema>
 type Marker = InboxSummary['account']['marker']
 
 /** Mailboxes listed at most, in the order the provider gives them. */
@@ -30,6 +37,12 @@ export interface LiveInboxOptions {
   /** IANA zone the times are shown in, e.g. `Europe/Amsterdam`. */
   timeZone: string
   now?: (() => Date) | undefined
+  /**
+   * What the thread a body read just returned proves about the judgment
+   * stored for that copy. Left out, a body carries no classification. It
+   * must read no provider; a body is never held up for it.
+   */
+  verify?: ((observed: ObservedThread) => StoredClassification) | undefined
 }
 
 /** Why a read failed, without anything the provider said. */
@@ -55,7 +68,12 @@ export class BodyUnavailableError extends Error {
   }
 }
 
-export function createLiveInbox({ reader, timeZone, now = () => new Date() }: LiveInboxOptions) {
+export function createLiveInbox({
+  reader,
+  timeZone,
+  now = () => new Date(),
+  verify,
+}: LiveInboxOptions) {
   const format = timeFormats(timeZone)
   /** The mailbox copies the last list offered, by copy id. Bodies are read only for these. */
   let offered = new Set<string>()
@@ -97,7 +115,9 @@ export function createLiveInbox({ reader, timeZone, now = () => new Date() }: Li
    * The plain-text body of one listed mailbox copy, named by its copy id,
    * `null` when it has none. It is read through the mailbox it was listed
    * in. A copy the last list didn't offer is listed again first, e.g. after
-   * a restart; if it still isn't there, the read fails.
+   * a restart; if it still isn't there, the read fails. The one thread this
+   * read returns is also what `verify` judges the stored classification
+   * against, so opening a row costs no extra provider call.
    */
   const body = async ({ mailbox, id }: BodyRequest, options?: ReadOptions) => {
     try {
@@ -105,17 +125,45 @@ export function createLiveInbox({ reader, timeZone, now = () => new Date() }: Li
       const copyId = mailboxCopyId(ref)
       if (!offered.has(copyId)) await list(options)
       if (!offered.has(copyId)) throw new BodyUnavailableError()
-      const thread = await reader.readThread(ref, options)
-      const text = thread.messages.find((message) => message.id === id)?.bodyText ?? null
-      return text === null
-        ? null
-        : messageBodySchema.parse({ id: copyId, text } satisfies MessageBody)
+      return bodyOf(await reader.readThread(ref, options), ref, verify)
     } catch {
       throw new BodyUnavailableError()
     }
   }
 
   return { list, body } as const
+}
+
+/**
+ * What one read thread holds for the copy it was read for: that message's
+ * text, `null` when it has none, and what the thread proves about the
+ * judgment stored for the row.
+ */
+function bodyOf(thread: Thread, ref: MailboxCopyRef, verify: LiveInboxOptions['verify']) {
+  const text = thread.messages.find((message) => message.id === ref.messageId)?.bodyText ?? null
+  if (text === null) return null
+  const classification = evidence(verify, {
+    copy: ref,
+    threadId: thread.id,
+    latestMessageId: thread.messages.at(-1)?.id ?? thread.id,
+  })
+  return messageBodySchema.parse({
+    id: mailboxCopyId(ref),
+    text,
+    ...(classification && { classification }),
+  } satisfies MessageBody)
+}
+
+/**
+ * What `verify` makes of one read thread. Evidence about a row is
+ * supplemental: a lookup that fails leaves the body it belongs to alone.
+ */
+function evidence(verify: LiveInboxOptions['verify'], observed: ObservedThread) {
+  try {
+    return verify?.(observed)
+  } catch {
+    return undefined
+  }
 }
 
 const markerAt = (index: number): Marker => markers[index % markers.length] ?? 'studio'

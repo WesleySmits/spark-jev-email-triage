@@ -1,28 +1,34 @@
 /**
- * What shadow triage stored about the rows one reading listed.
+ * What shadow triage stored about the rows a reading listed, and what one
+ * freshly read thread proves about the judgment stored for its row.
  *
  * Read-only in every sense: the shadow-triage database is opened read-only,
- * no mailbox is read, and no classifier is asked. Loading or refreshing the
- * page therefore never classifies anything; it reads back what a `pnpm
- * shadow --apply` run judged earlier, and nothing else.
+ * no mailbox is read here, and no classifier is asked. Loading or refreshing
+ * the page classifies nothing; it reads back what a `pnpm shadow --apply`
+ * run judged earlier, and nothing else. `verifiedClassificationFor` adds no
+ * provider call of its own: it is given the thread that the lazy body read
+ * of one opened row already returned.
  *
- * Absence never blocks a reading. A database that is not there yet, holds a
- * schema this build does not support, or cannot be read at all gives every
- * row `none`: the same state as a row nothing was stored for. The page still
- * lists all of its mail, and no error reaches it.
+ * Absence and unavailability stay apart. A database that was never written
+ * says `none`, because nothing was stored. A database that is there but
+ * cannot be read — an unsupported schema, a corrupt or unreadable file, a
+ * failing query — says `unavailable`, because what it holds is unknown.
+ * Neither ever hides mail: the page lists everything it listed either way.
  */
 import { existsSync } from 'node:fs'
 import type { DatabaseSync } from 'node:sqlite'
 import { mailboxCopyId, type MailboxCopyRef } from '../domain/mailbox-copy'
 import {
   projectClassification,
+  verifyClassification,
   type CurrentJudge,
+  type ObservedThread,
   type StoredClassification,
 } from '../domain/stored-classification'
 import { currentTriageRubric } from '../domain/triage'
 import { jevModel } from '../jev/questions'
 import { readDatabasePath } from '../shadow/config'
-import { openReadOnly } from '../shadow/database'
+import { openReadOnly, ShadowDatabaseError } from '../shadow/database'
 import { readJudgments } from '../shadow/judgments'
 import type { InboxSummary } from './inbox'
 import type { ListedClassifications } from './live-inbox'
@@ -34,30 +40,75 @@ const currentJudge: CurrentJudge = {
 }
 
 const none: StoredClassification = { state: 'none' }
+const unreadable: StoredClassification = { state: 'unavailable', reason: 'unreadable' }
+
+type Env = Readonly<Record<string, string | undefined>>
+
+type Storage =
+  | Readonly<{ status: 'open'; db: DatabaseSync }>
+  /** Nothing was ever stored here, so every row is genuinely unclassified. */
+  | Readonly<{ status: 'absent' }>
+  | Readonly<{ status: 'unavailable'; classification: StoredClassification }>
+
+/** Opens the stored judgments read-only, or says why they cannot be read. */
+function openStorage(env: Env): Storage {
+  const path = readDatabasePath(env)
+  if (!existsSync(path)) return { status: 'absent' }
+  try {
+    return { status: 'open', db: openReadOnly(path) }
+  } catch (error) {
+    // A schema this build does not support is still a database; anything
+    // else, such as a corrupt file, is one that cannot be read at all.
+    const reason = error instanceof ShadowDatabaseError ? 'unsupported_schema' : 'unreadable'
+    return { status: 'unavailable', classification: { state: 'unavailable', reason } }
+  }
+}
+
+/** What a closed database says about every row: nothing stored, or nothing readable. */
+const closedState = (storage: Extract<Storage, { status: 'absent' | 'unavailable' }>) =>
+  storage.status === 'absent' ? none : storage.classification
+
+const sameForAll = (messages: readonly InboxSummary[], state: StoredClassification) =>
+  Object.fromEntries(messages.map((message) => [message.id, state]))
 
 /**
- * The stored judgment of every listed row, by the row's id. A row nothing
- * applies to is present with `none`, so a reader never has to read absence.
+ * What is stored about every listed row, by the row's id. Every listed row
+ * is present: one nothing applies to reads as `none`, and none of them can
+ * read as `current`, because listing mail reads no thread.
  */
 export function classificationsFor(
   messages: readonly InboxSummary[],
-  env: Readonly<Record<string, string | undefined>> = process.env,
+  env: Env = process.env,
 ): ListedClassifications {
-  const unclassified: ListedClassifications = Object.fromEntries(
-    messages.map((message) => [message.id, none]),
-  )
-  const path = readDatabasePath(env)
-  if (!existsSync(path)) return unclassified
-  let db: DatabaseSync | undefined
+  const storage = openStorage(env)
+  if (storage.status !== 'open') return sameForAll(messages, closedState(storage))
   try {
-    db = openReadOnly(path)
-    return { ...unclassified, ...stored(db, messages) }
+    return { ...sameForAll(messages, none), ...stored(storage.db, messages) }
   } catch {
-    // A database that cannot be read is an absent one. Mail is not evidence
-    // of a judgment, so nothing is dropped and nothing is guessed.
-    return unclassified
+    return sameForAll(messages, unreadable)
   } finally {
-    db?.close()
+    storage.db.close()
+  }
+}
+
+/**
+ * What the judgment stored for one copy says, against the thread the
+ * provider has just returned for it. This is the only place a stored
+ * judgment can become `current`, and it reads no provider itself.
+ */
+export function verifiedClassificationFor(
+  observed: ObservedThread,
+  env: Env = process.env,
+): StoredClassification {
+  const storage = openStorage(env)
+  if (storage.status !== 'open') return closedState(storage)
+  try {
+    const judgments = readJudgments(storage.db, [observed.copy]).get(mailboxCopyId(observed.copy))
+    return verifyClassification(projectClassification(judgments ?? [], currentJudge), observed)
+  } catch {
+    return unreadable
+  } finally {
+    storage.db.close()
   }
 }
 

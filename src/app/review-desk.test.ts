@@ -25,6 +25,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mailboxCopyId } from '../domain/mailbox-copy'
 import { currentTriageRubric } from '../domain/triage'
@@ -229,13 +230,16 @@ describe('ReviewDesk.focus', () => {
   it('reads the opened row through its own mailbox, naming the copy it belongs to', async () => {
     const focus = ReviewDesk.focus(await ReviewDesk.open())
 
+    // No run has stored anything here, so each body says so and shows.
     await expect(focus(copy(two, '11'), { signal })).resolves.toEqual({
       id: copy(two, '11'),
       text: 'Body of 11',
+      classification: { state: 'none' },
     })
     await expect(focus(copy(one, '12'), { signal })).resolves.toEqual({
       id: copy(one, '12'),
       text: 'Body of 12',
+      classification: { state: 'none' },
     })
     expect(threadIds()).toEqual(['11', '12'])
   })
@@ -295,8 +299,9 @@ describe('ReviewDesk.open, stored classifications', () => {
 
     const view = await ReviewDesk.open()
 
+    // Listing reads no thread, so nothing here can prove the judgment holds.
     expect(classificationOf(view, copy(one, '11'))).toMatchObject({
-      state: 'current',
+      state: 'unverified',
       subject: {
         copy: { mailboxId: one, messageId: '11' },
         latestMessageId: '11',
@@ -367,13 +372,27 @@ describe('ReviewDesk.open, stored classifications', () => {
     ])
   })
 
-  it('still lists all mail when the stored judgments cannot be read at all', async () => {
+  it('reports judgments it cannot read as unavailable, not as absent, and lists all mail', async () => {
     writeFileSync(databasePath, 'not a database')
 
     const view = await ReviewDesk.open()
 
     expect(listed(view)).toEqual([copy(one, '11'), copy(two, '11'), copy(one, '12')])
-    expect(classificationOf(view, copy(one, '11'))).toEqual({ state: 'none' })
+    expect(classificationOf(view, copy(one, '11'))).toEqual({
+      state: 'unavailable',
+      reason: 'unreadable',
+    })
+  })
+
+  it('reports a database this build cannot migrate as unavailable', async () => {
+    // A file at the path with no schema yet: a run would migrate it, a
+    // reading may not, so what it holds stays unknown.
+    new DatabaseSync(databasePath).close()
+
+    expect(classificationOf(await ReviewDesk.open(), copy(one, '11'))).toEqual({
+      state: 'unavailable',
+      reason: 'unsupported_schema',
+    })
   })
 
   it('classifies nothing when the page loads or refreshes', async () => {
@@ -395,5 +414,55 @@ describe('ReviewDesk.open, stored classifications', () => {
       'emails',
       'thread',
     ])
+  })
+})
+
+describe('ReviewDesk.focus, verifying a stored classification', () => {
+  it('reads a judgment as current only once a thread proves it names this version', async () => {
+    shadowRun([{ mailboxId: one, messageIds: ['11'], classification: jevJudgment('11') }])
+    const view = await ReviewDesk.open()
+
+    expect(classificationOf(view, copy(one, '11'))).toMatchObject({ state: 'unverified' })
+    await expect(ReviewDesk.focus(view)(copy(one, '11'), { signal })).resolves.toMatchObject({
+      text: 'Body of 11',
+      classification: {
+        state: 'current',
+        subject: { copy: { mailboxId: one, messageId: '11' }, latestMessageId: '11' },
+        labels: { category: 'personal' },
+      },
+    })
+  })
+
+  it('reads it as stale when the thread now ends in a message stored later than it', async () => {
+    shadowRun([{ mailboxId: one, messageIds: ['11'], classification: jevJudgment('11') }])
+    const view = await ReviewDesk.open()
+    // The mailbox moved on after the run: the thread now holds a reply that
+    // nothing has stored, which only reading that thread can show.
+    spark.run.mockImplementation((command) =>
+      command.name === 'thread'
+        ? Promise.resolve(
+            threadText('Shared subject', [
+              { id: '11', from: sender, date: '2026-09-22 09:15', body: 'Body of 11' },
+              { id: '13', from: sender, date: '2026-09-22 10:00', body: 'A reply' },
+            ]),
+          )
+        : answerSpark(aliased)(command),
+    )
+
+    await expect(ReviewDesk.focus(view)(copy(one, '11'), { signal })).resolves.toMatchObject({
+      text: 'Body of 11',
+      classification: { state: 'stale', reason: 'newer_message', labels: { category: 'personal' } },
+    })
+  })
+
+  it('still reads the body when the stored judgments cannot be read', async () => {
+    const view = await ReviewDesk.open()
+    writeFileSync(databasePath, 'not a database')
+
+    await expect(ReviewDesk.focus(view)(copy(one, '11'), { signal })).resolves.toEqual({
+      id: copy(one, '11'),
+      text: 'Body of 11',
+      classification: { state: 'unavailable', reason: 'unreadable' },
+    })
   })
 })

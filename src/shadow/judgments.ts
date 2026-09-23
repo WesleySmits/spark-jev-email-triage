@@ -4,8 +4,12 @@
  *
  * A judgment is found through the messages it covered, and each of those
  * names the mailbox it was read in, so a copy in another mailbox never picks
- * up this one's judgment. Each row is read together with the latest message
- * the store has since observed in that judgment's thread, which is what says
+ * up this one's judgment. The query requires that mailbox to be the
+ * judgment's own as well: the schema allows a covered message to name
+ * another mailbox than the judgment that covers it, and such a row must
+ * match no copy at all rather than lend one mailbox's judgment to another.
+ * Each row is read together with the latest message the store has observed
+ * in that judgment's thread so far, which is what the store can say about
  * whether the judgment still describes the current version.
  *
  * Every row is checked against the domain schema. One this build cannot
@@ -27,6 +31,7 @@ const query = `
   JOIN judgments j ON j.id = m.judgment_id
   JOIN threads t ON t.mailbox_id = j.mailbox_id AND t.thread_id = j.thread_id
   WHERE m.mailbox_id = :mailboxId AND m.message_id = :messageId
+    AND j.mailbox_id = m.mailbox_id
   ORDER BY j.judged_at DESC, j.id DESC`
 
 const rowsSchema = z.array(

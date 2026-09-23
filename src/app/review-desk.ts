@@ -5,7 +5,8 @@
  *
  * Strictly read-only, and nothing here starts a read on its own:
  * - `open` reads the desk once, for the route's loader.
- * - `focus` reads one opened row's body, lazily, over what an `open` listed.
+ * - `focus` reads one opened row's body, lazily, over what an `open` listed,
+ *   and with it what that read proves about the row's stored judgment.
  * - `probe` only asks whether Spark answers; it learns nothing about mail.
  *
  * No mailbox is changed, and no classifier is called.
@@ -40,9 +41,12 @@ export const ReviewDesk = {
    * messages in each, newest first and without bodies, and the judgment
    * shadow triage last stored about each of those rows. Reading judges
    * nothing: no classifier is called, here or on opening again, which is all
-   * Refresh does. It never rejects, so the page always has something to
-   * show: an app server that didn't answer is `unreachable`, like any other
-   * absence, and a row with no stored judgment is simply unclassified.
+   * Refresh does. No thread is read either, so a stored judgment is at most
+   * `unverified` here; only focusing a row can prove it current. It never
+   * rejects, so the page always has something to show: an app server that
+   * didn't answer is `unreachable`, like any other absence, a row with no
+   * stored judgment is unclassified, and judgments that cannot be read are
+   * reported as unavailable rather than as absent.
    */
   open: (): Promise<DeskView> =>
     getLiveInbox().catch(() => ({ status: 'unavailable', reason: 'unreachable' }) as const),
@@ -54,6 +58,11 @@ export const ReviewDesk = {
    * this reading didn't list resolves to `null` without asking; the server
    * decides again anyway, and only offers what it last listed. A provider
    * failure rejects, so the reader can offer a retry.
+   *
+   * The thread this read returns is the only evidence that can make a stored
+   * judgment `current`, so the body carries what it proved about the row.
+   * That costs no extra provider call, and a judgment that cannot be read
+   * never holds up the body.
    */
   focus: (view: DeskView): BodyLoader =>
     liveBodyLoader(rowsOf(view), (data, signal) => getLiveBody({ data, signal })),
