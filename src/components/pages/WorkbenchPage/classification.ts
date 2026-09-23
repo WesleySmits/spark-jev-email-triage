@@ -50,17 +50,21 @@ const sameCopy = (a: MailboxCopyRef, b: MailboxCopyRef) => mailboxCopyId(a) === 
  * What one row's evidence is: what the reading listed, and for the row whose
  * body was read, what that read proved about it.
  *
- * A body read answers only an `unverified` listing, and only when it names
- * the very judgment that listing named. So a judgment the store already
- * contradicts is never promoted back, and a verification that belonged to an
- * earlier reading is dropped once a refresh lists something else.
+ * A body read answers a listing; it is never a listing of its own. Only an
+ * `unverified` listing can be answered, and only by a read that names the
+ * very judgment that listing named. So a judgment the store already
+ * contradicts is never promoted back, a verification that belonged to an
+ * earlier reading is dropped once a refresh lists something else, and a row
+ * the reading listed nothing about shows nothing, whatever a body carried:
+ * what the page shows is always something a reading listed.
  */
 export function evidenceFor(
   listed: StoredClassification | undefined,
   read: StoredClassification | undefined,
 ): StoredClassification | undefined {
-  if (listed === undefined) return read
-  if (listed.state !== 'unverified' || read === undefined) return listed
+  // Nothing listed, or nothing listed that a read may answer: what the
+  // reading said stands, and with no reading there is nothing to show.
+  if (listed?.state !== 'unverified' || read === undefined) return listed
   if (read.state !== 'current' && read.state !== 'stale') return listed
   return namesSameJudgment(listed, read) ? read : listed
 }
@@ -89,13 +93,18 @@ export type Evidence = Readonly<{
  * What is known about each row of one reading, and about the open row also
  * what the body held for it proved.
  *
- * A proof counts only where it still is one. It must name the open row, be
- * the body held for it, and come from a request that ran under this very
- * reading: a
- * later reading listed the mailbox again, the provider may have moved on
- * since, and nothing reads a thread again to find out. So a refresh drops
- * back to what the store alone says until the reader opens that thread anew,
- * and the same reading rendered again keeps what it proved.
+ * A proof counts only where it still is one. There must be a reading to
+ * answer, it must name the open row, be the body held for it, and come from
+ * a request that ran under this very reading: a later reading listed the
+ * mailbox again, the provider may have moved on since, and nothing reads a
+ * thread again to find out. So a refresh drops back to what the store alone
+ * says until the reader opens that thread anew, and the same reading
+ * rendered again keeps what it proved.
+ *
+ * A proof answers a listing and never stands in for one. With no reading, or
+ * none that listed the open row, there is nothing to show: a body may still
+ * carry what its thread proved, but nothing here would say what it proved it
+ * about.
  */
 export function evidenceIn(
   listed: ListedEvidence | undefined,
@@ -103,7 +112,11 @@ export function evidenceIn(
   body: BodyState,
 ): Evidence {
   const stored = (id: string) => listed?.states[id]
-  const proves = body.status === 'ready' && body.id === openId && body.reading === listed?.reading
+  const proves =
+    listed !== undefined &&
+    body.status === 'ready' &&
+    body.id === openId &&
+    body.reading === listed.reading
   const open =
     openId === undefined
       ? undefined

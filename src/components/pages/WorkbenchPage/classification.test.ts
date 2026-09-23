@@ -39,6 +39,13 @@ describe('evidenceFor', () => {
     expect(evidenceFor(undefined, undefined)).toBeUndefined()
   })
 
+  it('shows nothing where the reading listed nothing, whatever a read proved', () => {
+    // A proof answers a listing; it is never a listing of its own, so there
+    // is nothing to show it against.
+    expect(evidenceFor(undefined, current)).toBeUndefined()
+    expect(evidenceFor(undefined, stale)).toBeUndefined()
+  })
+
   it('lets a body read of the same judgment prove it current or outdated', () => {
     expect(evidenceFor(unverified, current)).toBe(current)
     expect(evidenceFor(unverified, stale)).toBe(stale)
@@ -124,6 +131,24 @@ describe('evidenceIn', () => {
   it('has nothing to show without a reading or an open row', () => {
     expect(evidenceIn(undefined, 'm1', idleBody).open).toBeUndefined()
     expect(evidenceIn(listed, undefined, idleBody).open).toBeUndefined()
+  })
+
+  it('shows no proof for a row no reading listed, so none ever stands alone', () => {
+    const body = readUnder('reading-1', 'm1', current)
+    // No reading at all, as a caller that passes no judgments has: the body
+    // may still carry what its thread proved, but nothing listed the row.
+    expect(evidenceIn(undefined, 'm1', body).open).toBeUndefined()
+    expect(evidenceIn(undefined, 'm1', body).of('m1')).toBeUndefined()
+    // A reading that listed this row nothing is no different.
+    const empty = { reading: 'reading-1', states: {} } as const
+    expect(evidenceIn(empty, 'm1', body).open).toBeUndefined()
+    expect(evidenceIn(empty, 'm1', body).of('m1')).toBeUndefined()
+  })
+
+  it('shows no proof over a listing the store already answered for itself', () => {
+    const body = readUnder('reading-1', 'm2', current)
+    // m2 is listed `none`: nothing was stored, so nothing can be promoted.
+    expect(evidenceIn(listed, 'm2', body).open).toEqual({ state: 'none' })
   })
 })
 
