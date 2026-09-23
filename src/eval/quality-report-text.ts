@@ -35,21 +35,23 @@ const decimals = (value: number, places = 2) => value.toFixed(places)
 
 /** The whole report, one slice after another. */
 export function formatQualityReport(report: QualityReport): string {
-  const { autoAccept, priorityConfidence, suspicionFloor } = report.thresholds
   return [
     'Triage quality on the reviewed evaluation set',
     `Observations: ${String(report.observed)}`,
-    `Thresholds: auto-accept ${decimals(autoAccept)}, priority confidence ` +
-      `${decimals(priorityConfidence)}, suspicion floor ${decimals(suspicionFloor)}`,
     ...report.slices.flatMap((slice) => ['', ...formatSlice(slice)]),
   ].join('\n')
 }
 
-/** One rubric and one pinned classifier build. */
+/**
+ * One rubric and one pinned classifier build. Its thresholds are printed
+ * inside it, beside the rubric they belong to, so no figure is ever read
+ * under thresholds that did not produce it.
+ */
 function formatSlice(slice: QualitySlice): string[] {
   const answered = slice.answeredBy.length === 0 ? 'nothing answered' : slice.answeredBy.join(', ')
   return [
     `Rubric ${slice.rubric}, classifier ${slice.classifierVersion} (answered by ${answered})`,
+    `  ${formatThresholds(slice)}`,
     `  Attempts: ${String(slice.attempts)}, provider failures ${ratio(slice.providerFailures)}` +
       formatCodes(slice),
     `  Judged: ${String(slice.judged)}`,
@@ -65,6 +67,11 @@ function formatSlice(slice: QualitySlice): string[] {
     '  Cost in money: unavailable (no price per token is recorded in this repository)',
   ]
 }
+
+const formatThresholds = ({ rubric, thresholds }: QualitySlice) =>
+  `Thresholds of ${rubric}: auto-accept ${decimals(thresholds.autoAccept)}, priority ` +
+  `confidence ${decimals(thresholds.priorityConfidence)}, suspicion floor ` +
+  decimals(thresholds.suspicionFloor)
 
 const formatCodes = ({ failureCodes }: QualitySlice) =>
   failureCodes.length === 0

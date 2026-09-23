@@ -1,3 +1,19 @@
+/**
+ * Every failure this build can report, named once so a schema reading a
+ * stored code back accepts exactly these and nothing else.
+ */
+export const jevErrorCodes = [
+  'unauthorized',
+  'rate_limited',
+  'unavailable',
+  'timeout',
+  'aborted',
+  'rejected_request',
+  'malformed_response',
+] as const
+
+export type JevErrorCode = (typeof jevErrorCodes)[number]
+
 const messages = {
   unauthorized: 'TypeSafe rejected the API key',
   rate_limited: 'TypeSafe rate limit exceeded',
@@ -6,9 +22,7 @@ const messages = {
   aborted: 'The TypeSafe call was cancelled',
   rejected_request: 'TypeSafe rejected the request',
   malformed_response: 'TypeSafe returned a response outside the contract',
-} as const
-
-export type JevErrorCode = keyof typeof messages
+} as const satisfies Record<JevErrorCode, string>
 
 /**
  * A failed Jev call. Messages and details are fixed strings written in this

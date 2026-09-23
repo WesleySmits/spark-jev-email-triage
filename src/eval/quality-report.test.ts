@@ -3,7 +3,13 @@ import { defaultRubric } from '../domain/rubric'
 import type { JevClassification } from '../jev/classifier'
 import { jevFailure, jevJudgment } from '../jev/fixtures'
 import type { ResponseOptions } from '../jev/fixtures'
-import { summarizeQuality, share, type QualityObservation } from './quality-report'
+import {
+  isReportableRubric,
+  reportableRubrics,
+  share,
+  summarizeQuality,
+  type QualityObservation,
+} from './quality-report'
 import { reviewedCases } from './reviewed-set'
 
 type Fixture = (typeof reviewedCases)[number]['fixture']
@@ -42,16 +48,17 @@ const onlySlice = (observations: readonly QualityObservation[]) => {
 }
 
 describe('summarizeQuality', () => {
-  it('names the thresholds every figure was produced under', () => {
-    expect(summarizeQuality(run()).thresholds).toEqual(defaultRubric.thresholds)
+  // A threshold belongs to the rubric whose meanings it is part of, so it
+  // is named inside the slice that names that rubric and nowhere else.
+  it('names, in each slice, the thresholds its own figures were produced under', () => {
+    const slice = onlySlice(run())
+
+    expect(slice.rubric).toBe(defaultRubric.id)
+    expect(slice.thresholds).toEqual(defaultRubric.thresholds)
   })
 
   it('reports nothing at all for no observations', () => {
-    expect(summarizeQuality([])).toEqual({
-      observed: 0,
-      thresholds: defaultRubric.thresholds,
-      slices: [],
-    })
+    expect(summarizeQuality([])).toEqual({ observed: 0, slices: [] })
   })
 
   // A failure is no judgment, so it belongs to its own rate and to no other.
@@ -207,6 +214,36 @@ describe('summarizeQuality', () => {
     const observations = run()
 
     expect(summarizeQuality([...observations].reverse())).toEqual(summarizeQuality(observations))
+  })
+
+  // Sums over floats depend on the order they are added in, so every
+  // arrangement of one run must give one mean and one calibration error.
+  it('gives one mean confidence and one calibration error for every arrangement', () => {
+    const observations = run()
+    const arrangements = observations.map((_, index) => [
+      ...observations.slice(index),
+      ...observations.slice(0, index),
+    ])
+    const figures = arrangements.map((arrangement) => {
+      const { bins, expectedCalibrationError } = onlySlice(arrangement).calibration
+      return { means: bins.map((bin) => bin.meanConfidence), expectedCalibrationError }
+    })
+
+    for (const figure of figures) expect(figure).toEqual(figures[0])
+  })
+})
+
+describe('isReportableRubric', () => {
+  it('is the rubric this build holds', () => {
+    expect(reportableRubrics).toEqual([defaultRubric.id])
+    expect(isReportableRubric(defaultRubric.id)).toBe(true)
+  })
+
+  // Old ids stay parseable on purpose, so a run naming one reads back fine
+  // and must be refused rather than counted under today's thresholds.
+  it('is not a rubric whose meanings and thresholds this build no longer holds', () => {
+    expect(isReportableRubric('email-triage.v1')).toBe(false)
+    expect(isReportableRubric('')).toBe(false)
   })
 })
 

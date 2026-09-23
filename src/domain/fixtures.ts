@@ -202,3 +202,24 @@ export const independentlyObservedCopies = {
     observedAt: '2026-01-14T09:41:00Z',
   },
 } satisfies Record<string, SnapshotInput>
+
+/**
+ * Every value the synthetic mail holds that must never leave this repository
+ * in a report, a log or a run snapshot: subjects, bodies, addresses, names
+ * and attachment names. The tests that hold those outputs to it read one
+ * list, so none of them has to walk the threads its own way and miss a
+ * field the next fixture adds.
+ */
+export const syntheticMailValues: readonly string[] = Object.values(syntheticThreads)
+  .flatMap((thread) => [
+    thread.subject,
+    ...thread.messages.flatMap((message) => [
+      message.bodyText,
+      ...[message.from, ...message.to, ...message.cc].flatMap(({ address, name }) => [
+        address,
+        name,
+      ]),
+      ...message.attachments.map(({ filename }) => filename),
+    ]),
+  ])
+  .filter((value): value is string => value !== null && value !== '')

@@ -22,8 +22,8 @@
  *   often that choice agreed. It is reported to be read, never to move a
  *   threshold on its own: `defaultRubric.thresholds` are not calibrated, the
  *   set is small, and a threshold changed from a handful of cases would be
- *   fitted to them. The thresholds every figure was produced under are named
- *   in the report, so a later run is comparable with this one.
+ *   fitted to them. Each slice names the thresholds its figures were
+ *   produced under, so a later run is comparable with this one.
  * - Provider failures are counted as their own rate over attempts and stay
  *   out of every quality figure. A failure is no judgment: counting it as a
  *   disagreement blames the set for an outage, and counting it as agreement
@@ -34,6 +34,21 @@
  * version says they mean, and two builds are two classifiers. The versioned
  * models that actually answered are named beside the build, so an alias that
  * moved under a pinned name is visible rather than averaged away.
+ *
+ * Only a rubric this build still holds can be counted, and `reportableRubrics`
+ * says which. A run judged under an older rubric was judged under other
+ * meanings and other thresholds, and this build kept neither: counting it
+ * here would apply today's policy to yesterday's judgments and then print
+ * today's thresholds beside them, as though they were the ones that produced
+ * the figures. Such a run is refused where it enters — see
+ * `replayRunSnapshot` in `run-snapshot.ts`, the one door untyped runs come
+ * through — rather than reported under a rubric it was never judged under.
+ * Every threshold therefore belongs to the slice that names its rubric, not
+ * to the report as a whole.
+ *
+ * Nothing depends on the order observations arrive in. Sums over
+ * floating-point confidences do depend on the order they are added in, so
+ * the judged rows are put in one canonical order before anything is summed.
  *
  * Latency and cost are reported only as far as the source data reaches.
  * Latency is whatever measured the call, and is `not_measured` when nothing
@@ -47,7 +62,7 @@
  */
 import type { z } from 'zod'
 import { defaultRubric, triageCategories } from '../domain/rubric'
-import type { categorySchema } from '../domain/triage'
+import { currentTriageRubric, type categorySchema } from '../domain/triage'
 import type { JevClassification } from '../jev/classifier'
 import { resolveClassification } from '../jev/policy'
 import { handlingAgrees } from './handling-agreement'
@@ -111,6 +126,12 @@ export interface TokenSummary {
 /** One rubric and one pinned classifier build, and how they did. */
 export interface QualitySlice {
   rubric: string
+  /**
+   * The thresholds this build holds for `rubric`, which are the ones policy
+   * applied to every figure below. Only a reportable rubric reaches a slice,
+   * so these are never another rubric's thresholds shown beside its run.
+   */
+  thresholds: typeof defaultRubric.thresholds
   /** The build that was asked, as a stored judgment names it. */
   classifierVersion: string
   /** The versioned models that answered, sorted. */
@@ -144,10 +165,20 @@ export interface QualitySlice {
 
 export interface QualityReport {
   observed: number
-  /** The thresholds every figure below was produced under. */
-  thresholds: typeof defaultRubric.thresholds
   slices: readonly QualitySlice[]
 }
+
+/**
+ * The rubric versions a run can be counted under: the ones whose meanings
+ * and thresholds this build still holds. There is one, and `triage.ts` keeps
+ * old ids parseable on purpose, so a run naming another rubric reads back
+ * fine and is refused here rather than misread.
+ */
+export const reportableRubrics = [currentTriageRubric] as const
+
+/** Whether this build can count a run that names `rubric`. */
+export const isReportableRubric = (rubric: string): rubric is typeof currentTriageRubric =>
+  reportableRubrics.some((reportable) => reportable === rubric)
 
 /** One judged observation, reduced to what the figures count. */
 interface JudgedRow {
@@ -162,6 +193,23 @@ interface JudgedRow {
 }
 
 const tally = (count: number, total: number): Tally => ({ count, total })
+
+/** One order for two strings, the same in every locale. */
+function compare(left: string, right: string): number {
+  if (left < right) return -1
+  return left > right ? 1 : 0
+}
+
+/**
+ * One order for the judged rows, whatever order their observations arrived
+ * in. Two rows that tie on this key carry the same confidence, so the
+ * sequence of numbers a sum sees is decided by the run rather than by the
+ * order it was handed over, and a float sum cannot drift with it.
+ */
+const canonically = (left: JudgedRow, right: JudgedRow) =>
+  compare(left.fixture, right.fixture) ||
+  compare(left.answered, right.answered) ||
+  left.confidence - right.confidence
 
 /** The share a tally describes, or `null` when it counts nothing. */
 export const share = ({ count, total }: Tally) => (total === 0 ? null : count / total)
@@ -180,9 +228,9 @@ export function summarizeQuality(observations: readonly QualityObservation[]): Q
     groups.set(key, group)
   }
   const slices = [...groups.entries()]
-    .sort(([left], [right]) => (left < right ? -1 : 1))
+    .sort(([left], [right]) => compare(left, right))
     .map(([, group]) => sliceOf(group))
-  return { observed: observations.length, thresholds: defaultRubric.thresholds, slices }
+  return { observed: observations.length, slices }
 }
 
 /** Every figure for one rubric and one pinned classifier build. */
@@ -192,10 +240,11 @@ function sliceOf(observations: readonly QualityObservation[]): QualitySlice {
   const failures = observations.flatMap(({ classification }) =>
     classification.status === 'provider_failure' ? [classification.failure.code] : [],
   )
-  const rows = observations.flatMap(judgedRow)
+  const rows = observations.flatMap(judgedRow).sort(canonically)
   const agreed = rows.filter((row) => row.agreed)
   return {
     rubric: first.classification.rubric,
+    thresholds: defaultRubric.thresholds,
     classifierVersion: first.classification.requestedModel,
     answeredBy: [
       ...new Set(
@@ -212,8 +261,7 @@ function sliceOf(observations: readonly QualityObservation[]): QualitySlice {
     byCategory: categoryTallies(rows),
     disagreements: rows
       .filter((row) => !row.agreed)
-      .map(({ fixture, expected, answered }) => ({ fixture, expected, answered }))
-      .sort((left, right) => (left.fixture < right.fixture ? -1 : 1)),
+      .map(({ fixture, expected, answered }) => ({ fixture, expected, answered })),
     reviewRate: tally(rows.filter((row) => row.needsReview).length, rows.length),
     expectedReviewRate: tally(rows.filter((row) => row.expectsPerson).length, rows.length),
     handlingAgreement: tally(rows.filter((row) => row.handlingAgreed).length, rows.length),
@@ -254,7 +302,7 @@ function countCodes(codes: readonly string[]) {
   for (const code of codes) counts.set(code, (counts.get(code) ?? 0) + 1)
   return [...counts.entries()]
     .map(([code, count]) => ({ code, count }))
-    .sort((left, right) => right.count - left.count || (left.code < right.code ? -1 : 1))
+    .sort((left, right) => right.count - left.count || compare(left.code, right.code))
 }
 
 /**

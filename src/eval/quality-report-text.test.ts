@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { syntheticMailValues } from '../domain/fixtures'
 import { jevFailure, jevJudgment } from '../jev/fixtures'
 import { formatQualityReport } from './quality-report-text'
 import { summarizeQuality, type QualityObservation } from './quality-report'
-import { reviewedCases, reviewedThread } from './reviewed-set'
+import { reviewedCases } from './reviewed-set'
 
 const reviewedFor = (fixture: string) => {
   const found = reviewedCases.find((reviewed) => reviewed.fixture === fixture)
@@ -42,17 +43,26 @@ const wholeSet = (): QualityObservation[] =>
   }))
 
 describe('formatQualityReport', () => {
-  it('names what was observed and the thresholds it was produced under', () => {
+  it('names what was observed', () => {
     expect(rendered(run())).toContain('Observations: 3')
-    expect(rendered(run())).toContain(
-      'Thresholds: auto-accept 0.80, priority confidence 0.50, suspicion floor 0.40',
-    )
   })
 
   it('names the rubric, the build that was asked and what answered', () => {
     expect(rendered(run())).toContain(
       'Rubric email-triage.v2, classifier jev-1.13.0 (answered by jev-1.13.0)',
     )
+  })
+
+  // A threshold is part of what a rubric means, so it is printed inside the
+  // slice that names that rubric, never once over a whole report.
+  it('names the thresholds inside the slice they produced, beside their rubric', () => {
+    const text = rendered(run())
+
+    expect(text).toContain(
+      '  Thresholds of email-triage.v2: auto-accept 0.80, priority confidence 0.50, ' +
+        'suspicion floor 0.40',
+    )
+    expect(text.indexOf('Thresholds of')).toBeGreaterThan(text.indexOf('Rubric email-triage.v2'))
   })
 
   it('prints each figure as its counts and the share they make', () => {
@@ -87,18 +97,9 @@ describe('formatQualityReport', () => {
 
   // The report is printed, logged and pasted into tickets, so nothing from
   // the mail it measures may reach it.
-  it('carries no subject, address or sender name from the mail it measures', () => {
+  it('carries no subject, body, address, name or attachment from the mail it measures', () => {
     const text = rendered(wholeSet())
 
-    for (const reviewed of reviewedCases) {
-      const thread = reviewedThread(reviewed)
-      const people = thread.messages.flatMap((message) => [message.from, ...message.to])
-      expect(text).not.toContain(thread.id)
-      if (thread.subject !== null) expect(text).not.toContain(thread.subject)
-      for (const { address, name } of people) {
-        expect(text).not.toContain(address)
-        if (name !== null) expect(text).not.toContain(name)
-      }
-    }
+    for (const value of syntheticMailValues) expect(text).not.toContain(value)
   })
 })

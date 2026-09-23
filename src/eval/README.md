@@ -97,6 +97,10 @@ The report is a pure function of the observations it is handed: the same
 answers always give the same figures, in whatever order they arrive, so a run
 can be recomputed rather than believed. It calls nothing, reads no mailbox
 and looks at no clock, and its tests run offline like the rest of the set.
+Sums over floating-point confidences do depend on the order they are added
+in, so the judged rows are put in one canonical order before anything is
+summed, and every arrangement of one run gives one mean and one calibration
+error.
 
 Every figure is split by rubric and by the pinned classifier build that was
 asked, because a category, a priority and a threshold mean what a rubric
@@ -127,6 +131,70 @@ What one slice holds:
 - **Cost**: the provider's own token counts. The cost in money is always
   unavailable: no price per token is recorded in this repository, and a
   number nobody can stand behind is worse than none.
+
+## Recounting a run
+
+A live run reaches the provider once, and another run is another run, so a
+printed report is a claim nobody else can check. `pnpm eval:jev:live`
+therefore writes the run down as well: a snapshot under `.data/`, named after
+the run's own UTC timestamp, holding the answers it received. Git ignores
+`.data/`, so a live answer is never committed, and no argument or environment
+variable decides where anything is written.
+
+```sh
+pnpm eval:report .data/eval-run-2026-09-23T09-00-00.000Z.json
+```
+
+`pnpm eval:report` counts the same figures from that file and prints the same
+report. It calls no provider, reads no mailbox, opens no database and writes
+nothing, so anyone holding a snapshot can check a run's figures without a
+key, a network or the machine that ran it.
+
+What a snapshot holds, and what it does not:
+
+- The mail is named, never copied: a fixture's name and the digest of the
+  thread it was measured against. The mail itself stays in
+  `src/domain/fixtures.ts`, where a person reviewed it, so no subject,
+  address, body or attachment can travel in a snapshot. A test writes the
+  whole set and fails if any of them does.
+- The classifier's answers travel whole — the chosen labels, every
+  probability, the provider's own token counts — because they are what the
+  figures are counted from. They are numbers and rubric labels.
+- A failed call keeps its content-free code and nothing else. A provider's
+  own detail, HTTP status or message is dropped: the report counts failures
+  by code, and a detail is the one field that could carry provider text into
+  a file meant to be shared.
+- Latency travels as measured, or as `null` where nothing measured it.
+
+A snapshot is read back as data and never trusted. Every field is parsed, and
+a run this build cannot honestly count is refused rather than reported:
+
+- `unknown_fixture`: it names a case this build does not have.
+- `changed_fixture`: the labelled thread has changed since the run, so the
+  answers describe mail this build no longer holds. The digest is recomputed
+  from the thread rather than read from the case, so an edit is caught even
+  if the recorded digest was edited with it.
+- `unsupported_rubric`: it was judged under a rubric this build no longer
+  holds. See below.
+
+One refused entry refuses the run: a report over the rest would be another
+run's report printed under this one's name.
+
+## One rubric at a time
+
+Only a rubric this build still holds can be counted, and `reportableRubrics`
+in `quality-report.ts` says which. There is one.
+
+A run judged under an older rubric was judged under other category and
+priority meanings and other thresholds, and this build kept neither. Counting
+it would apply today's policy to yesterday's judgments and then print today's
+thresholds beside them, as though those were the ones that produced the
+figures. `triage.ts` keeps old rubric ids parseable on purpose, so such a run
+reads back fine; it is refused where it enters instead.
+
+Thresholds therefore belong to the slice that names their rubric, in the
+report and in the text, rather than to the report as a whole. A figure is
+never shown under thresholds that did not produce it.
 
 ## Thresholds are not moved by a report
 
@@ -168,4 +236,6 @@ mail subjects, addresses and bodies stay out of logs and public errors. The
 quality report is written to be printed, logged and pasted into a ticket, so
 it carries only fixture names, categories, counts and content-free provider
 codes; a test renders the whole set and fails if any subject, address or
-sender name reaches the text.
+sender name reaches the text. A run snapshot is written to be shared for the
+same reason and holds no mail either, which a test of its own enforces over
+every case, bodies included.
