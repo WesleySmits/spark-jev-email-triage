@@ -46,7 +46,7 @@ const proposed: ActionStage = {
   id: 'proposal',
   name: 'Proposal',
   state: { label: 'Proposed', tone: 'review' },
-  detail: 'Archive, against the 1 mailbox copy named below.',
+  detail: 'Mark as read, against the 1 mailbox copy named below.',
 }
 
 const waiting: ActionStage = {
@@ -63,11 +63,11 @@ const approved: ActionStage = {
   detail: 'Approved by you, at this computer. That decision is recorded here and nowhere else.',
 }
 
-const effectOf = (copies: string, note = 'Archive') =>
+const effectOf = (copies: string) =>
   ({
     title: 'What it would change',
-    statement: `If this were ever carried out, it would ask a mail provider to archive the ${copies} named above, and nothing else.`,
-    note: `What a provider does when asked that is not verified here — including whether it would touch anything else in the thread, and what ${note.toLowerCase()} means to it. Nothing has been asked, nothing can be, and your mailbox is unchanged.`,
+    statement: `The intended effect is to mark only the ${copies} named above as read.`,
+    note: `Spark has not verified that this action can target these exact mailbox copies without changing others. Its effect on the rest of the thread is also unverified. No live write is connected, and your mailbox is unchanged.`,
   }) satisfies Props['effect']
 
 const adapter: PreconditionView = {
@@ -136,7 +136,7 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 /**
- * One archive proposed against one named mailbox copy, waiting for a person.
+ * One mark-as-read action proposed against one named mailbox copy, waiting for a person.
  * The three stages read apart: something is proposed, nobody has approved it,
  * and execution is blocked whatever happens above it.
  */
@@ -166,7 +166,9 @@ export const NothingProposed: Story = {
       note: 'Your mailbox is unchanged.',
     },
     preconditions: [approval('Not met'), adapter],
-    actions: [{ id: 'propose', label: 'Propose archive', variant: 'secondary', onClick: fn() }],
+    actions: [
+      { id: 'propose', label: 'Propose marking as read', variant: 'secondary', onClick: fn() },
+    ],
     result: {
       title: 'Nothing proposed',
       detail: 'Proposing names this one mailbox copy and no other. Your mailbox is unchanged.',
@@ -177,7 +179,7 @@ export const NothingProposed: Story = {
 /**
  * Approved by a person, and still not carried out. The approval stage says
  * who decided; execution stays blocked, and the result never says a message
- * was archived.
+ * was marked as read.
  */
 export const Approved: Story = {
   args: {
@@ -196,6 +198,66 @@ export const Approved: Story = {
     await expect(canvas.getByText('Blocked')).toBeVisible()
     await expect(canvas.getByText('Not connected')).toBeVisible()
     await expect(canvasElement).not.toHaveTextContent(/archived|completed/i)
+  },
+}
+
+/** Fictional provider result after the same copy was read back as seen. */
+export const FictionalReadbackConfirmed: Story = {
+  args: {
+    summary: 'Fictional provider test. No Spark mailbox was changed.',
+    stages: [
+      proposed,
+      approved,
+      {
+        id: 'execution',
+        name: 'Execution',
+        state: { label: 'Confirmed in test', tone: 'done' },
+        detail: 'A fictional provider returned the same mailbox copy as read after one attempt.',
+      },
+    ],
+    preconditions: [thread('Studio Noord', 'Met'), approval('Met')],
+    actions: [],
+    result: {
+      title: 'Test readback confirmed',
+      detail:
+        'Receipt test-001 records one attempt and a readback for studio@mail.example · message 11. No Spark mailbox was changed.',
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('Confirmed in test')).toBeVisible()
+    await expect(canvas.getByText(/Receipt test-001 records one attempt/)).toBeVisible()
+    await expect(canvas.queryByRole('button')).not.toBeInTheDocument()
+  },
+}
+
+/** A lost answer never becomes success or an invitation to repeat a write. */
+export const FictionalUncertainResult: Story = {
+  args: {
+    summary: 'Fictional provider test. No Spark mailbox was changed.',
+    stages: [
+      proposed,
+      approved,
+      {
+        id: 'execution',
+        name: 'Execution',
+        state: { label: 'Uncertain in test', tone: 'danger' },
+        detail: 'The provider answer was lost. The test cannot prove whether the action happened.',
+      },
+    ],
+    preconditions: [thread('Studio Noord', 'Met'), approval('Met')],
+    actions: [],
+    result: {
+      title: 'Test attempt held for review',
+      detail:
+        'Receipt test-002 records an uncertain result. Reconcile it before considering any further action on this copy. No Spark mailbox was changed.',
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('Uncertain in test')).toBeVisible()
+    await expect(canvas.getByText(/Reconcile it before considering/)).toBeVisible()
+    await expect(canvas.queryByRole('button')).not.toBeInTheDocument()
   },
 }
 
@@ -247,7 +309,7 @@ export const OutOfDate: Story = {
 export const TwoAliasCopies: Story = {
   args: {
     stages: stages(
-      { ...proposed, detail: 'Archive, against the 2 mailbox copies named below.' },
+      { ...proposed, detail: 'Mark as read, against the 2 mailbox copies named below.' },
       waiting,
     ),
     targets: [studioCopy, aliasCopy],

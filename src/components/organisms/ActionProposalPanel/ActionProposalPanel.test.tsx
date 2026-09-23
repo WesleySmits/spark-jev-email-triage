@@ -43,7 +43,7 @@ const base: Props = {
       id: 'proposal',
       name: 'Proposal',
       state: { label: 'Proposed', tone: 'review' },
-      detail: 'Archive, against the 1 mailbox copy named below.',
+      detail: 'Mark as read, against the 1 mailbox copy named below.',
     },
     {
       id: 'approval',
@@ -71,7 +71,7 @@ const base: Props = {
   targetsEmpty: 'Nothing is proposed, so no mailbox copy is named.',
   effect: {
     title: 'What it would change',
-    statement: 'It would ask a mail provider to archive the copy named above, and nothing else.',
+    statement: 'The intended effect is to mark only the copy named above as read.',
     note: 'What a provider does when asked that is not verified here. Your mailbox is unchanged.',
   },
   preconditionsTitle: 'Before anything could run',
@@ -200,13 +200,13 @@ describe('ActionProposalPanel', () => {
     const buttons = rendered({
       ...base,
       actions: [
-        { id: 'propose', label: 'Propose archive', disabled: true, onClick: vi.fn() },
+        { id: 'propose', label: 'Propose marking as read', disabled: true, onClick: vi.fn() },
         { id: 'withdraw', label: 'Withdraw', variant: 'quiet', onClick: vi.fn() },
       ],
     }).filter((element) => element.type === Button)
 
     expect(buttons.map((button) => button.props['children'])).toEqual([
-      'Propose archive',
+      'Propose marking as read',
       'Withdraw',
     ])
     expect(buttons[0]?.props['disabled']).toBe(true)
