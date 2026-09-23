@@ -8,14 +8,18 @@
  *   thread its body read returned proved. The store alone never proves
  *   currency, so only a body read can answer `current`, and only for the
  *   judgment the listing named, under the reading that read ran in.
- * - `classificationView` and `rowState` turn one state into the words and the
- *   tone the reader and the queue show. Every state is named in text, never
- *   by color alone, and nothing here claims more than its state holds: a
- *   probability is never shown, and `auto_accepted` reads as the model's own
- *   label, never as a review by a person.
+ * - `classificationView` and `rowState` turn one state, and what a person
+ *   decided about it, into the words and the tone the reader and the queue
+ *   show. Every state is named in text, never by color alone, and nothing
+ *   here claims more than its state holds: a probability is never shown, and
+ *   `auto_accepted` reads as the model's own label, never as a review by a
+ *   person. Where someone did review, their labels are what the row shows,
+ *   and the model's own suggestion stays beside them rather than being
+ *   replaced.
  *
  * Nothing here reads a mailbox, a store or a classifier.
  */
+import type { RowReview } from '../../../app/desk-review'
 import type { MailboxCopyRef } from '../../../domain/mailbox-copy'
 import { mailboxCopyId } from '../../../domain/mailbox-copy'
 import type { BodyState } from './body'
@@ -79,14 +83,26 @@ export type ListedEvidence = Readonly<{
   reading: string
   /** What the reading listed about each row, by the row's id. */
   states: Readonly<Record<string, StoredClassification>>
+  /**
+   * What a person decided about each row, where anyone has, by the row's id.
+   * The reading projected it from the reviews stored for that row's mailbox
+   * copy, keeping only those that named the very classification it listed, so
+   * a review of another copy or of a version that has moved on is not here.
+   * Left out: nothing was reviewed, or the reading does not say.
+   */
+  reviews?: Readonly<Record<string, RowReview>> | undefined
 }>
 
 /** What applies to each row of one reading. */
 export type Evidence = Readonly<{
   /** What applies to the open row, including what its own body read proved. */
   open: StoredClassification | undefined
+  /** What a person decided about the open row, where anyone has. */
+  openReview: RowReview | undefined
   /** What applies to any row, open or not. */
   of: (id: string) => StoredClassification | undefined
+  /** What a person decided about any row, open or not, where anyone has. */
+  reviewOf: (id: string) => RowReview | undefined
 }>
 
 /**
@@ -112,16 +128,32 @@ export function evidenceIn(
   body: BodyState,
 ): Evidence {
   const stored = (id: string) => listed?.states[id]
-  const proves =
+  const reviewed = (id: string) => listed?.reviews?.[id]
+  const read =
     listed !== undefined &&
     body.status === 'ready' &&
     body.id === openId &&
     body.reading === listed.reading
-  const open =
+      ? body
+      : undefined
+  const open = openId === undefined ? undefined : evidenceFor(stored(openId), read?.classification)
+  // A body read that answered the listing read the store as it is now, so
+  // what it found about a person's decision is newer than what the listing
+  // carried: a review saved since then shows without anything being listed
+  // again, and one the store no longer applies to stops showing. A read that
+  // proved nothing leaves the reading's own answer in place.
+  const openReview =
     openId === undefined
       ? undefined
-      : evidenceFor(stored(openId), proves ? body.classification : undefined)
-  return { open, of: (id) => (id === openId ? open : stored(id)) }
+      : read?.classification === undefined
+        ? reviewed(openId)
+        : read.review
+  return {
+    open,
+    openReview,
+    of: (id) => (id === openId ? open : stored(id)),
+    reviewOf: (id) => (id === openId ? openReview : reviewed(id)),
+  }
 }
 
 /** The state as the queue and the reader name it: always words, and a tone. */
@@ -189,7 +221,7 @@ export type ClassificationView = Readonly<{
 }>
 
 /** Review need, as labels the model produced: `auto_accepted` is no review by a person. */
-function reviewFact({ review, reviewPriority }: ClassificationLabels): ClassificationFact {
+function modelReviewFact({ review, reviewPriority }: ClassificationLabels): ClassificationFact {
   const raised = reviewPriority === 'elevated' ? ' Marked as more urgent to look at.' : ''
   if (review === 'needs_review') {
     return { term: 'Review', value: 'Needs a person', note: `The model was unsure.${raised}` }
@@ -201,15 +233,58 @@ function reviewFact({ review, reviewPriority }: ClassificationLabels): Classific
   }
 }
 
-function factsOf(labels: ClassificationLabels): readonly ClassificationFact[] {
+const decisions = {
+  confirmed: 'Confirmed by a person',
+  corrected: 'Corrected by a person',
+} as const
+
+/**
+ * Review need once someone has reviewed. It names the decision, who made it
+ * and when, and never claims more: a review decides labels, so nothing here
+ * reads as a message having been handled.
+ */
+const personReviewFact = (review: RowReview): ClassificationFact => ({
+  term: 'Review',
+  value: decisions[review.decision],
+  note: `By ${review.reviewer} on ${judgedText(review.reviewedAt)}. Labels only: your mail is unchanged.`,
+})
+
+/**
+ * What the row shows for category, and where a person chose it, the model's
+ * own suggestion beside it. The suggestion is never replaced: a correction is
+ * added to what was judged, and both stay readable.
+ */
+function categoryFact(
+  labels: ClassificationLabels,
+  review: RowReview | undefined,
+): ClassificationFact {
+  const suggested = categoryLabels[labels.category]
+  if (review === undefined) return { term: 'Category', value: suggested }
+  const chosen = categoryLabels[review.labels.category]
+  return {
+    term: 'Category',
+    value: chosen,
+    note:
+      review.decision === 'confirmed'
+        ? `A person confirmed the model's suggestion, ${suggested}.`
+        : `Chosen by a person. The model suggested ${suggested}.`,
+  }
+}
+
+function factsOf(
+  labels: ClassificationLabels,
+  review: RowReview | undefined,
+): readonly ClassificationFact[] {
+  const priority = review?.labels.priority ?? labels.priority
   return [
-    { term: 'Category', value: categoryLabels[labels.category] },
+    categoryFact(labels, review),
     {
       term: 'Priority',
-      value: priorities[labels.priority],
-      ...(labels.priorityUncertain && { note: 'The model was not sure of this priority.' }),
+      value: priorities[priority],
+      ...(labels.priorityUncertain &&
+        review === undefined && { note: 'The model was not sure of this priority.' }),
     },
-    reviewFact(labels),
+    review === undefined ? modelReviewFact(labels) : personReviewFact(review),
   ]
 }
 
@@ -230,24 +305,35 @@ const detailOf = (classification: StoredClassification) => {
   }
 }
 
-/** Everything the reader shows for one row's evidence. */
-export function classificationView(classification: StoredClassification): ClassificationView {
+/**
+ * Everything the reader shows for one row's evidence, and for what a person
+ * decided about it. A review decides the labels shown; the state beside them
+ * stays what it is, because reviewing a judgment does not make it current.
+ */
+export function classificationView(
+  classification: StoredClassification,
+  review?: RowReview,
+): ClassificationView {
   return {
     state: states[classification.state],
     detail: detailOf(classification),
-    facts: 'labels' in classification ? factsOf(classification.labels) : [],
+    facts: 'labels' in classification ? factsOf(classification.labels, review) : [],
     ...('judgedAt' in classification && { judgedAt: classification.judgedAt }),
     ...(classification.state === 'provider_failure' &&
       classification.errorCode !== null && { note: `Reported: ${classification.errorCode}` }),
   }
 }
 
-/** What one queue row shows: its state, and the category when labels apply. */
-export function rowState(classification: StoredClassification) {
+/**
+ * What one queue row shows: its state, and the category when labels apply.
+ * Where a person decided the category, that is the one the row shows, so a
+ * list read after a correction shows what it was corrected to.
+ */
+export function rowState(classification: StoredClassification, review?: RowReview) {
+  const labels = review?.labels ?? ('labels' in classification ? classification.labels : undefined)
   return {
     status: states[classification.state],
-    category:
-      'labels' in classification ? categoryLabels[classification.labels.category] : undefined,
+    category: labels && categoryLabels[labels.category],
   } as const
 }
 

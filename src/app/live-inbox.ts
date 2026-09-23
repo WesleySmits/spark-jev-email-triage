@@ -6,6 +6,7 @@
 import { z } from 'zod'
 import type { SidebarItem } from '../components/organisms/Sidebar/Sidebar'
 import type { StoredClassification } from '../domain/stored-classification'
+import type { RowReview } from './desk-review'
 import type { BodyLoader, InboxSummary, MessageBody } from './inbox'
 
 /** Live mail isn't triaged yet, so every message is in one workflow. */
@@ -43,6 +44,14 @@ export type LiveInbox =
 export type ListedClassifications = Readonly<Record<string, StoredClassification>>
 
 /**
+ * What a person decided about each listed row, by the row's id. Only rows
+ * someone reviewed are present, and only where that review named the exact
+ * classification the row holds; every other row is absent, which is not an
+ * error.
+ */
+export type ListedReviews = Readonly<Record<string, RowReview>>
+
+/**
  * One reading of the desk: the listed inbox, and what is stored about its
  * rows. An inbox that listed nothing carries no judgments either.
  *
@@ -54,7 +63,12 @@ export type ListedClassifications = Readonly<Record<string, StoredClassification
  */
 export type ClassifiedInbox =
   | (Extract<LiveInbox, { status: 'ready' }> &
-      Readonly<{ reading: string; classifications: ListedClassifications }>)
+      Readonly<{
+        reading: string
+        classifications: ListedClassifications
+        /** What a person made of those judgments, where anyone has. */
+        reviews: ListedReviews
+      }>)
   | Extract<LiveInbox, { status: 'unavailable' }>
 
 /** One body request: a mailbox copy the server listed, by its mailbox and message id. */

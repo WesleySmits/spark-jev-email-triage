@@ -522,6 +522,108 @@ describe('ReviewDesk.review', () => {
   })
 })
 
+/** What a person decided about one listed row, as the reading projects it. */
+const reviewOf = (view: DeskView, id: string) =>
+  view.status === 'ready' ? view.reviews[id] : undefined
+
+const correcting = (view: DeskView, id: string): DeskReviewRequest => ({
+  classification: shownSubject(view, id),
+  verdict: { decision: 'corrected', labels: { category: 'suspicious', priority: 'urgent' } },
+})
+
+describe('ReviewDesk.open, projecting what a person decided', () => {
+  it('reads a correction back on the next reading, so a refresh does not lose it', async () => {
+    shadowRun([{ mailboxId: one, messageIds: ['11'], classification: jevJudgment('11') }])
+    await ReviewDesk.review(correcting(await ReviewDesk.open(), copy(one, '11')))
+    spark.run.mockClear()
+
+    // A new reading of the same store: the person's decision is there again.
+    const refreshed = await ReviewDesk.open()
+
+    expect(reviewOf(refreshed, copy(one, '11'))).toMatchObject({
+      decidedBy: 'reviewer',
+      decision: 'corrected',
+      labels: { category: 'suspicious', priority: 'urgent' },
+    })
+    // What the classifier proposed is returned beside it, exactly as stored.
+    expect(classificationOf(refreshed, copy(one, '11'))).toMatchObject({
+      state: 'unverified',
+      labels: { category: 'personal', priority: 'high' },
+    })
+    // Nothing was read or classified to find that out.
+    expect(threadIds()).toEqual([])
+    expect(jev.createJevClassifier).not.toHaveBeenCalled()
+  })
+
+  it('lets a later confirmation take effect over the correction before it', async () => {
+    shadowRun([{ mailboxId: one, messageIds: ['11'], classification: jevJudgment('11') }])
+    const view = await ReviewDesk.open()
+    await ReviewDesk.review(correcting(view, copy(one, '11')))
+    await ReviewDesk.review(confirming(view, copy(one, '11')))
+
+    // A confirmation carries no labels of its own, so the row shows what the
+    // classifier proposed again — decided by a person this time.
+    expect(reviewOf(await ReviewDesk.open(), copy(one, '11'))).toMatchObject({
+      decidedBy: 'reviewer',
+      decision: 'confirmed',
+      labels: { category: 'personal', priority: 'high' },
+    })
+  })
+
+  it('keeps the review of one copy off another copy of the same message', async () => {
+    shadowRun([
+      { mailboxId: one, messageIds: ['11'], classification: jevJudgment('11') },
+      { mailboxId: two, messageIds: ['11'], classification: jevJudgment('11') },
+    ])
+    await ReviewDesk.review(correcting(await ReviewDesk.open(), copy(one, '11')))
+
+    const view = await ReviewDesk.open()
+
+    expect(reviewOf(view, copy(one, '11'))).toMatchObject({ decision: 'corrected' })
+    // One delivery to two aliases is two copies. Nothing here is evidence
+    // that reviewing one says anything about the other.
+    expect(reviewOf(view, copy(two, '11'))).toBeUndefined()
+    expect(classificationOf(view, copy(two, '11'))).toMatchObject({
+      labels: { category: 'personal' },
+    })
+  })
+
+  it('keeps a review of an earlier version off the version that replaced it', async () => {
+    shadowRun([{ mailboxId: one, messageIds: ['11'], classification: jevJudgment('11') }])
+    await ReviewDesk.review(correcting(await ReviewDesk.open(), copy(one, '11')))
+    // A later run judged the thread again, after a reply arrived in it. That
+    // judgment is the one the row holds now, and nobody has reviewed it.
+    shadowRun([
+      {
+        mailboxId: one,
+        messageIds: ['11', '13'],
+        classification: jevJudgment('11'),
+        judgedAt: '2026-09-23T09:00:00.000Z',
+      },
+    ])
+
+    const view = await ReviewDesk.open()
+
+    expect(classificationOf(view, copy(one, '11'))).toMatchObject({
+      state: 'unverified',
+      subject: { latestMessageId: '13' },
+    })
+    expect(reviewOf(view, copy(one, '11'))).toBeUndefined()
+  })
+
+  it('claims no review for a row it could not read the store of', async () => {
+    writeFileSync(databasePath, 'not a database')
+
+    const view = await ReviewDesk.open()
+
+    expect(classificationOf(view, copy(one, '11'))).toEqual({
+      state: 'unavailable',
+      reason: 'unreadable',
+    })
+    expect(reviewOf(view, copy(one, '11'))).toBeUndefined()
+  })
+})
+
 describe('ReviewDesk.focus, verifying a stored classification', () => {
   it('reads a judgment as current only once a thread proves it names this version', async () => {
     shadowRun([{ mailboxId: one, messageIds: ['11'], classification: jevJudgment('11') }])
@@ -558,6 +660,27 @@ describe('ReviewDesk.focus, verifying a stored classification', () => {
       text: 'Body of 11',
       classification: { state: 'stale', reason: 'newer_message', labels: { category: 'personal' } },
     })
+  })
+
+  it('carries what a person decided, so reopening a row shows the review again', async () => {
+    shadowRun([{ mailboxId: one, messageIds: ['11'], classification: jevJudgment('11') }])
+    const view = await ReviewDesk.open()
+    // Saved after this reading listed the row, as a person reviewing does.
+    await ReviewDesk.review(correcting(view, copy(one, '11')))
+
+    await expect(ReviewDesk.focus(view)(copy(one, '11'), { signal })).resolves.toMatchObject({
+      classification: { state: 'current', labels: { category: 'personal' } },
+      review: { decidedBy: 'reviewer', decision: 'corrected', labels: { category: 'suspicious' } },
+    })
+  })
+
+  it('carries no review for a row nobody reviewed', async () => {
+    shadowRun([{ mailboxId: one, messageIds: ['11'], classification: jevJudgment('11') }])
+    const view = await ReviewDesk.open()
+
+    const body = await ReviewDesk.focus(view)(copy(one, '11'), { signal })
+
+    expect(body).not.toHaveProperty('review')
   })
 
   it('still reads the body when the stored judgments cannot be read', async () => {

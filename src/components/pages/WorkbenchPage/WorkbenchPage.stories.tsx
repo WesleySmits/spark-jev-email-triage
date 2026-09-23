@@ -6,7 +6,7 @@ import ReaderStories from '../../organisms/MessageReader/MessageReader.stories'
 import SidebarStories from '../../organisms/Sidebar/Sidebar.stories'
 import TopBarStories from '../../organisms/TopBar/TopBar.stories'
 import { fixtureBodyLoader, type BodyLoader, type InboxFixture } from '../../../app/inbox'
-import type { DeskReviewOutcome } from '../../../app/desk-review'
+import type { DeskReviewOutcome, DeskReviewRequest, RowReview } from '../../../app/desk-review'
 import type { StoredClassification } from '../../../domain/stored-classification'
 import type { WorkbenchMessage } from './workbench'
 import { WorkbenchPage } from './WorkbenchPage'
@@ -1048,6 +1048,8 @@ const answering =
 
 const recorded: DeskReviewOutcome = { status: 'recorded' }
 
+const suspicious = { category: 'suspicious', priority: 'urgent' } as const
+
 // The same judgment of m1, but one the model was unsure of, so its panel
 // opens itself. `m1Unverified` keeps the auto-accepted labels, for the story
 // that shows what a row the model accepted offers instead.
@@ -1326,5 +1328,163 @@ export const ReviewMobile: Story = {
     await userEvent.click(save(canvasElement))
     await resultShows(canvasElement, 'Review saved')
     await expect(result(canvasElement)).toHaveTextContent('Your mailbox is unchanged')
+  },
+}
+
+/** The reviewer the story's store names, as this computer would name one. */
+const reviewer = 'wesley'
+
+/** What the store would hold after one review of m1, as a reading projects it. */
+function projected(verdict: DeskReviewRequest['verdict']): RowReview {
+  return {
+    decidedBy: 'reviewer',
+    decision: verdict.decision,
+    labels:
+      verdict.decision === 'corrected'
+        ? verdict.labels
+        : { category: unsureLabels.category, priority: unsureLabels.priority },
+    reviewer,
+    reviewedAt: '2026-09-23T08:30:00.000Z',
+  }
+}
+
+/**
+ * Stands in for the store and the route's loader together: a saved review is
+ * kept, and every Refresh hands the page a new reading that carries what the
+ * store now holds. Nothing is classified or read again to produce it.
+ */
+function WithStoredReviews(args: Props) {
+  const [reviews, setReviews] = useState<Readonly<Record<string, RowReview>>>({})
+  const [count, setCount] = useState(1)
+  return (
+    <WorkbenchPage
+      {...args}
+      classifications={{
+        reading: `reading-${String(count)}`,
+        states: unsureStates,
+        reviews,
+      }}
+      review={{
+        mode: 'enabled',
+        onSaveReview: (request) => {
+          setReviews({ m1: projected(request.verdict) })
+          return Promise.resolve(recorded)
+        },
+      }}
+      topBar={{
+        ...args.topBar,
+        syncActionLabel: 'Refresh mail',
+        onSyncClick: () => {
+          setCount((current) => current + 1)
+        },
+      }}
+    />
+  )
+}
+
+const refresh = (root: HTMLElement) =>
+  userEvent.click(within(root).getByRole('button', { name: 'Refresh mail' }))
+
+/** Leaves the reviewed row and comes back, so its panel is built afresh. */
+async function reopenReviewed(root: HTMLElement) {
+  const rows = within(root)
+  await userEvent.click(rows.getByRole('button', { name: /Newsletter: work/ }))
+  await userEvent.click(rows.getByRole('button', { name: reviewableRow }))
+}
+
+/**
+ * A correction is read back with the rows it belongs to. After Refresh, and
+ * after leaving the row and opening it again, the row still shows the
+ * category the person chose, the reader says who decided it and when, and the
+ * model's own suggestion is still there beside it. Nothing is classified and
+ * no thread is read again to show any of that.
+ */
+export const ReviewSurvivesRefresh: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewing({ outcome: recorded }),
+  render: (args) => <WithStoredReviews {...args} />,
+  play: async ({ args, canvasElement }) => {
+    const rows = within(canvasElement)
+    const reviewed = () => rows.getByRole('button', { name: reviewableRow })
+    await saveChosen(canvasElement, 'Suspicious')
+    await resultShows(canvasElement, 'Review saved')
+
+    await refresh(canvasElement)
+    await expect(reviewed()).toHaveTextContent('Suspicious')
+    await expect(evidence(canvasElement)).toHaveTextContent('Corrected by a person')
+    await expect(evidence(canvasElement)).toHaveTextContent(`By ${reviewer} on`)
+    // What the classifier proposed is kept beside what the person decided.
+    await expect(evidence(canvasElement)).toHaveTextContent('The model suggested Personal')
+    await expect(evidence(canvasElement)).toHaveTextContent('your mail is unchanged')
+
+    // Built afresh from what the reading carried, not from this session.
+    await reopenReviewed(canvasElement)
+    await expect(rows.getByRole('radio', { name: 'Suspicious' })).toBeChecked()
+    await expect(result(canvasElement)).toHaveTextContent('Review saved')
+    // Only the reviewed row moved; the others keep what triage said.
+    await expect(rows.getByRole('button', { name: /Correction on invoice/ })).toHaveTextContent(
+      'Purchase',
+    )
+    await expect(args.loadBody).toHaveBeenCalledTimes(3)
+  },
+}
+
+/**
+ * A later confirmation takes effect over the correction before it: the row
+ * shows the model's own category again, decided by a person this time. The
+ * correction is not undone — the store keeps both — it is simply no longer
+ * the latest review of this classification.
+ */
+export const LaterConfirmationWins: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewing({ outcome: recorded }),
+  render: (args) => <WithStoredReviews {...args} />,
+  play: async ({ canvasElement }) => {
+    const rows = within(canvasElement)
+    const reviewed = () => rows.getByRole('button', { name: reviewableRow })
+    await saveChosen(canvasElement, 'Suspicious')
+    await refresh(canvasElement)
+    await expect(reviewed()).toHaveTextContent('Suspicious')
+
+    // Confirming the model's own category, after having corrected it.
+    await pick(canvasElement, 'Personal')
+    await userEvent.click(save(canvasElement))
+    await resultShows(canvasElement, 'You confirmed Personal')
+    await refresh(canvasElement)
+
+    await expect(reviewed()).toHaveTextContent('Personal')
+    await expect(evidence(canvasElement)).toHaveTextContent('Confirmed by a person')
+    await expect(evidence(canvasElement)).toHaveTextContent(
+      "A person confirmed the model's suggestion, Personal",
+    )
+    await reopenReviewed(canvasElement)
+    await expect(rows.getByRole('radio', { name: 'Personal' })).toBeChecked()
+  },
+}
+
+/**
+ * A review decides only the row whose classification it named. A reading that
+ * carries one for another row leaves this one showing what triage said, and
+ * says nobody has reviewed it.
+ */
+export const ReviewStaysOnItsOwnRow: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: {
+    ...reviewing({ outcome: recorded }),
+    classifications: {
+      reading: 'reading-1',
+      states: unsureStates,
+      // Another row was reviewed, not this one.
+      reviews: { m2: projected({ decision: 'corrected', labels: suspicious }) },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const rows = within(canvasElement)
+    await reviewReady(canvasElement)
+
+    await expect(rows.getByRole('button', { name: reviewableRow })).toHaveTextContent('Personal')
+    await expect(evidence(canvasElement)).toHaveTextContent('Needs a person')
+    await expect(evidence(canvasElement)).not.toHaveTextContent('by a person')
+    await expect(result(canvasElement)).toHaveTextContent('Choose a category first')
   },
 }

@@ -14,6 +14,7 @@ import type { emailListingSchema, threadSchema } from '../domain/email'
 import type { MailReader, ReadOptions } from '../domain/mail-reader'
 import { mailboxCopyId, type MailboxCopyRef } from '../domain/mailbox-copy'
 import type { ObservedThread, StoredClassification } from '../domain/stored-classification'
+import type { RowReview } from './desk-review'
 import { SparkError } from '../spark/errors'
 import { inboxSummarySchema, messageBodySchema, type InboxSummary, type MessageBody } from './inbox'
 import type { BodyRequest, LiveInbox } from './live-inbox'
@@ -39,11 +40,18 @@ export interface LiveInboxOptions {
   now?: (() => Date) | undefined
   /**
    * What the thread a body read just returned proves about the judgment
-   * stored for that copy. Left out, a body carries no classification. It
-   * must read no provider; a body is never held up for it.
+   * stored for that copy, and what a person decided about that judgment.
+   * Left out, a body carries neither. It must read no provider; a body is
+   * never held up for it.
    */
-  verify?: ((observed: ObservedThread) => StoredClassification) | undefined
+  verify?: ((observed: ObservedThread) => VerifiedRow) | undefined
 }
+
+/** What `verify` answers: the judgment for a copy, and any review of it. */
+export type VerifiedRow = Readonly<{
+  classification: StoredClassification
+  review?: RowReview | undefined
+}>
 
 /** Why a read failed, without anything the provider said. */
 export function reasonFor(error: unknown): Extract<LiveInbox, { status: 'unavailable' }>['reason'] {
@@ -136,13 +144,13 @@ export function createLiveInbox({
 
 /**
  * What one read thread holds for the copy it was read for: that message's
- * text, `null` when it has none, and what the thread proves about the
- * judgment stored for the row.
+ * text, `null` when it has none, what the thread proves about the judgment
+ * stored for the row, and what a person decided about that judgment.
  */
 function bodyOf(thread: Thread, ref: MailboxCopyRef, verify: LiveInboxOptions['verify']) {
   const text = thread.messages.find((message) => message.id === ref.messageId)?.bodyText ?? null
   if (text === null) return null
-  const classification = evidence(verify, {
+  const found = evidence(verify, {
     copy: ref,
     threadId: thread.id,
     latestMessageId: thread.messages.at(-1)?.id ?? thread.id,
@@ -150,7 +158,8 @@ function bodyOf(thread: Thread, ref: MailboxCopyRef, verify: LiveInboxOptions['v
   return messageBodySchema.parse({
     id: mailboxCopyId(ref),
     text,
-    ...(classification && { classification }),
+    ...(found && { classification: found.classification }),
+    ...(found?.review && { review: found.review }),
   } satisfies MessageBody)
 }
 

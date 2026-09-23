@@ -30,6 +30,21 @@ const judgedAt = '2026-09-22T09:15:00.000Z'
 const judged = { subject, judgedAt } as const
 
 const unverified: StoredClassification = { ...judged, state: 'unverified', labels }
+
+/** What a person decided about that judgment, as a reading projects it. */
+const corrected = {
+  decidedBy: 'reviewer',
+  decision: 'corrected',
+  labels: { category: 'suspicious', priority: 'urgent' },
+  reviewer: 'wesley',
+  reviewedAt: '2026-09-23T08:30:00.000Z',
+} as const
+
+const confirmed = {
+  ...corrected,
+  decision: 'confirmed',
+  labels: { category: labels.category, priority: labels.priority },
+} as const
 const current: StoredClassification = { ...judged, state: 'current', labels }
 const stale: StoredClassification = { ...judged, state: 'stale', reason: 'newer_message', labels }
 
@@ -152,6 +167,62 @@ describe('evidenceIn', () => {
   })
 })
 
+describe('evidenceIn, what a person decided', () => {
+  const listed = {
+    reading: 'reading-1',
+    states: { m1: unverified, m2: { state: 'none' } },
+    reviews: { m1: corrected },
+  } as const
+
+  const readUnder = (reading: string, id: string, review?: typeof corrected): BodyState =>
+    settleBody(requestBody(idleBody, id, reading), 1, {
+      ok: true,
+      body: { id, text: 'Hello', classification: current, ...(review && { review }) },
+    })
+
+  it('shows what the reading projected, so a refresh keeps a saved review', () => {
+    const evidence = evidenceIn(listed, 'm1', idleBody)
+
+    expect(evidence.openReview).toBe(corrected)
+    expect(evidence.reviewOf('m1')).toBe(corrected)
+    // A row nobody reviewed carries none, which is not an error.
+    expect(evidence.reviewOf('m2')).toBeUndefined()
+  })
+
+  it('lets the body read of the open row answer with the store as it is now', () => {
+    // Saved after the reading listed the row: the body read found it.
+    const later = evidenceIn(
+      { ...listed, reviews: {} },
+      'm1',
+      readUnder('reading-1', 'm1', corrected),
+    )
+    expect(later.openReview).toBe(corrected)
+
+    // And a read that found none leaves the row with none, rather than
+    // showing a decision the store no longer applies to that row.
+    const gone = evidenceIn(listed, 'm1', readUnder('reading-1', 'm1'))
+    expect(gone.openReview).toBeUndefined()
+  })
+
+  it('keeps what the reading itself said where no body read has answered it', () => {
+    // A read under an earlier reading no longer answers this one.
+    const outlived = evidenceIn(
+      { ...listed, reading: 'reading-2' },
+      'm1',
+      readUnder('reading-1', 'm1'),
+    )
+    expect(outlived.openReview).toBe(corrected)
+    expect(evidenceIn(listed, 'm1', { status: 'stale' }).openReview).toBe(corrected)
+  })
+
+  it('has nothing to show without a reading, an open row or any reviews', () => {
+    expect(evidenceIn(undefined, 'm1', idleBody).openReview).toBeUndefined()
+    expect(evidenceIn(listed, undefined, idleBody).openReview).toBeUndefined()
+    const none = { reading: 'reading-1', states: { m1: unverified } } as const
+    expect(evidenceIn(none, 'm1', idleBody).openReview).toBeUndefined()
+  })
+})
+
 describe('classificationView', () => {
   it('names every state in words, with its own tone', () => {
     const named = (classification: StoredClassification) => classificationView(classification).state
@@ -237,7 +308,67 @@ describe('classificationView', () => {
   })
 })
 
+describe('classificationView, once a person has reviewed', () => {
+  it("shows the corrected category and keeps the model's suggestion beside it", () => {
+    const facts = classificationView(current, corrected).facts
+
+    expect(facts[0]).toEqual({
+      term: 'Category',
+      value: 'Suspicious',
+      note: 'Chosen by a person. The model suggested Personal.',
+    })
+    expect(facts[1]).toMatchObject({ term: 'Priority', value: 'Urgent' })
+  })
+
+  it("shows a confirmation as the model's own labels, decided by a person", () => {
+    const facts = classificationView(current, confirmed).facts
+
+    expect(facts[0]).toEqual({
+      term: 'Category',
+      value: 'Personal',
+      note: "A person confirmed the model's suggestion, Personal.",
+    })
+  })
+
+  it('names who decided and when, and says it changed no mail', () => {
+    const fact = classificationView(current, corrected).facts[2]
+
+    expect(fact?.value).toBe('Corrected by a person')
+    expect(fact?.note).toMatch(/^By wesley on /)
+    expect(fact?.note).toMatch(/Labels only: your mail is unchanged\.$/)
+    expect(classificationView(current, confirmed).facts[2]?.value).toBe('Confirmed by a person')
+  })
+
+  it("no longer offers the model's own review need, or its priority doubt", () => {
+    const unsure = { ...labels, priorityUncertain: true, review: 'needs_review' } as const
+    const facts = classificationView({ ...current, labels: unsure }, corrected).facts
+
+    expect(JSON.stringify(facts)).not.toContain('Needs a person')
+    expect(JSON.stringify(facts)).not.toContain('No person has reviewed this')
+    // The person chose the priority too, so the model's doubt is spent.
+    expect(facts[1]).toEqual({ term: 'Priority', value: 'Urgent' })
+  })
+
+  it('leaves the state beside the labels alone: reviewing makes nothing current', () => {
+    expect(classificationView(stale, corrected).state).toEqual({
+      label: 'Triage outdated',
+      tone: 'review',
+    })
+    expect(classificationView(stale, corrected).detail).toMatch(/newer message/)
+  })
+})
+
 describe('rowState', () => {
+  it('shows the category a person decided, so a corrected row reads as corrected', () => {
+    expect(rowState(current, corrected)).toEqual({
+      status: { label: 'Triage current', tone: 'done' },
+      category: 'Suspicious',
+    })
+    expect(rowState(current, confirmed).category).toBe('Personal')
+    // A review decides labels, never the state the badge names.
+    expect(rowState(stale, corrected).status).toEqual({ label: 'Triage outdated', tone: 'review' })
+  })
+
   it('gives a row its state badge, and a category only where labels apply', () => {
     expect(rowState(current)).toEqual({
       status: { label: 'Triage current', tone: 'done' },

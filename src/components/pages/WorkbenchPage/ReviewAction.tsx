@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import type { DeskReviewOutcome, DeskReviewRequest } from '../../../app/desk-review'
+import type { DeskReviewOutcome, DeskReviewRequest, RowReview } from '../../../app/desk-review'
 import { ReviewPanel } from '../../organisms/ReviewPanel/ReviewPanel'
 import { categoryLabels } from './classification'
 import {
@@ -19,8 +19,21 @@ export type SaveReview = (request: DeskReviewRequest) => Promise<DeskReviewOutco
 type ReviewActionProps = Readonly<{
   /** The classification to confirm or correct, and the version it names. */
   reviewable: Reviewable
+  /**
+   * What a person already decided about this exact classification, where
+   * anyone has. The panel opens on that decision, so a review that was saved
+   * earlier is still the one shown after a refresh or on reopening the row.
+   */
+  saved?: RowReview | undefined
   onSave: SaveReview
 }>
+
+/** Where the panel starts: on a review already stored, or on nothing chosen. */
+function startFrom(saved: RowReview | undefined) {
+  if (saved === undefined) return { chosen: null, state: { status: 'choosing' } as ReviewState }
+  const chosen = saved.labels.category
+  return { chosen, state: { status: 'saved', decision: saved.decision, chosen } as ReviewState }
+}
 
 /** What one outcome leaves behind. A recorded review names what it decided. */
 function stateFor(
@@ -43,31 +56,41 @@ function stateFor(
  * who chooses again while one is on its way is answered about that choice,
  * not about the one they left behind.
  */
-function useReview(reviewable: Reviewable, onSave: SaveReview) {
-  const [chosen, setChosen] = useState<ReviewCategoryValue | null>(null)
-  const [state, setState] = useState<ReviewState>({ status: 'choosing' })
+function useReview(reviewable: Reviewable, saved: RowReview | undefined, onSave: SaveReview) {
+  const start = startFrom(saved)
+  const [chosen, setChosen] = useState<ReviewCategoryValue | null>(start.chosen)
+  const [state, setState] = useState<ReviewState>(start.state)
+  // Only what happened here is announced. A review the reading already held
+  // is shown, not read out: nothing happened for the person to be told of.
+  const [announcement, setAnnouncement] = useState('')
   const latest = useRef(0)
+  const settle = (next: ReviewState, original: string) => {
+    setState(next)
+    setAnnouncement(reviewAnnouncement(next, original))
+  }
   const choose = (value: ReviewCategoryValue) => {
     latest.current += 1
     setChosen(value)
     setState({ status: 'unsaved' })
+    setAnnouncement('')
   }
-  const save = () => {
+  const save = (original: string) => {
     if (chosen === null) return
     latest.current += 1
     const attempt = latest.current
     const request = reviewRequest(reviewable, chosen)
     setState({ status: 'saving' })
+    setAnnouncement('')
     void onSave(request).then(
       (outcome) => {
-        if (attempt === latest.current) setState(stateFor(outcome, request, chosen))
+        if (attempt === latest.current) settle(stateFor(outcome, request, chosen), original)
       },
       () => {
-        if (attempt === latest.current) setState({ status: 'failed' })
+        if (attempt === latest.current) settle({ status: 'failed' }, original)
       },
     )
   }
-  return { chosen, state, choose, save } as const
+  return { chosen, state, announcement, choose, save } as const
 }
 
 /**
@@ -79,6 +102,10 @@ function useReview(reviewable: Reviewable, onSave: SaveReview) {
  * here. Choosing the category the model chose confirms it; choosing another
  * corrects the category and keeps the judged priority.
  *
+ * A review already stored for that same version is what the panel opens on,
+ * so a correction saved earlier is still chosen after a refresh, and a later
+ * confirmation replaces it. Only what happens here is announced.
+ *
  * Every state a save passes through is visible and announced: nothing
  * chosen, chosen but unsaved, saving, saved, refused as no longer current,
  * and not stored at all. None of that copy says a message was completed,
@@ -88,10 +115,11 @@ function useReview(reviewable: Reviewable, onSave: SaveReview) {
  * Give it a new `key` per row, so one message's choice never carries to the
  * next.
  */
-export function ReviewAction({ reviewable, onSave }: ReviewActionProps) {
+export function ReviewAction({ reviewable, saved, onSave }: ReviewActionProps) {
   const { labels } = reviewable
-  const [expanded, setExpanded] = useState(labels.review === 'needs_review')
-  const { chosen, state, choose, save } = useReview(reviewable, onSave)
+  // Open where the model asked for a person, and where one has answered.
+  const [expanded, setExpanded] = useState(labels.review === 'needs_review' || saved !== undefined)
+  const { chosen, state, announcement, choose, save } = useReview(reviewable, saved, onSave)
   const original = categoryLabels[labels.category]
   return (
     <>
@@ -104,12 +132,14 @@ export function ReviewAction({ reviewable, onSave }: ReviewActionProps) {
         selectedCategory={chosen}
         onSelectedCategoryChange={choose}
         saveDisabled={state.status === 'saving'}
-        onSave={save}
+        onSave={() => {
+          save(original)
+        }}
         result={reviewResult(state, original)}
       />
       {/* The panel announces nothing itself, so its caller says what happened. */}
       <p className="workbench__review-status" role="status">
-        {reviewAnnouncement(state, original)}
+        {announcement}
       </p>
     </>
   )

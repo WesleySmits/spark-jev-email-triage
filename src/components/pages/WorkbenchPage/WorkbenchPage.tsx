@@ -8,6 +8,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react'
+import type { RowReview } from '../../../app/desk-review'
 import type { BodyLoader } from '../../../app/inbox'
 import type { StoredClassification } from '../../../domain/stored-classification'
 import { ClassificationEvidence } from '../../molecules/ClassificationEvidence/ClassificationEvidence'
@@ -496,12 +497,10 @@ function PageRail({ state, canComplete, workflows, mailboxes }: PageRailProps) {
 
 type PaneProps = Readonly<{ state: PageState; title: string }>
 
-type QueueProps = PaneProps &
-  Pick<PageInput, 'mailboxes'> &
-  Readonly<{ evidenceOf: Evidence['of'] }>
+type QueueProps = PaneProps & Pick<PageInput, 'mailboxes'> & Readonly<{ evidence: Evidence }>
 
 /** The queue, headed by the workflow and the applied mailbox filter. */
-function Queue({ state, title, mailboxes, evidenceOf }: QueueProps) {
+function Queue({ state, title, mailboxes, evidence }: QueueProps) {
   const count = state.shown.length
   return (
     <MessageQueue
@@ -511,7 +510,7 @@ function Queue({ state, title, mailboxes, evidenceOf }: QueueProps) {
         count: `${String(count)} ${count === 1 ? 'result' : 'results'}`,
         context: mailboxLabel(state.filter.mailbox, mailboxes),
       }}
-      messages={queueRows(state.shown, evidenceOf)}
+      messages={queueRows(state.shown, evidence)}
       currentId={state.open?.id}
       onOpen={state.openMessage}
       empty={
@@ -562,18 +561,26 @@ function ReaderBody({ body, retry }: ReaderBodyProps) {
   )
 }
 
-/** The rows as the queue shows them: a stored state replaces the row's own status. */
-function queueRows(messages: readonly WorkbenchMessage[], evidenceOf: Evidence['of']) {
+/**
+ * The rows as the queue shows them: a stored state replaces the row's own
+ * status, and where a person decided the category, theirs is the one shown.
+ */
+function queueRows(messages: readonly WorkbenchMessage[], evidence: Evidence) {
   return messages.map((message) => {
-    const found = evidenceOf(message.id)
-    return found === undefined ? message : { ...message, ...rowState(found) }
+    const found = evidence.of(message.id)
+    return found === undefined
+      ? message
+      : { ...message, ...rowState(found, evidence.reviewOf(message.id)) }
   })
 }
 
 /** The evidence strip under the reader header, or none when nothing is known. */
-function readerEvidence(classification: StoredClassification | undefined) {
+function readerEvidence(
+  classification: StoredClassification | undefined,
+  review: RowReview | undefined,
+) {
   if (classification === undefined) return undefined
-  const { state, detail, facts, note, judgedAt } = classificationView(classification)
+  const { state, detail, facts, note, judgedAt } = classificationView(classification, review)
   return (
     <ClassificationEvidence
       title="Jev triage"
@@ -598,13 +605,20 @@ function readerEvidence(classification: StoredClassification | undefined) {
  */
 function readerReview(
   review: WorkbenchReview | undefined,
-  evidence: StoredClassification | undefined,
+  evidence: Evidence,
   openId: string | undefined,
 ) {
   if (review?.mode !== 'enabled' || openId === undefined) return undefined
-  const reviewable = reviewableIn(evidence)
+  const reviewable = reviewableIn(evidence.open)
   if (reviewable === undefined) return undefined
-  return <ReviewAction key={openId} reviewable={reviewable} onSave={review.onSaveReview} />
+  return (
+    <ReviewAction
+      key={openId}
+      reviewable={reviewable}
+      saved={evidence.openReview}
+      onSave={review.onSaveReview}
+    />
+  )
 }
 
 type ReaderActions = ComponentProps<typeof MessageReader>['actions']
@@ -623,11 +637,13 @@ type ReaderProps = PaneProps &
     complete: (() => void) | undefined
     /** What is known about the open row's triage. Left out to show none. */
     evidence: StoredClassification | undefined
+    /** What a person decided about it, where anyone has. */
+    reviewed: RowReview | undefined
     /** The review panel for the open row, or none when it offers no review. */
     review: ReactNode
   }>
 
-function Reader({ state, title, complete, body, retry, evidence, review }: ReaderProps) {
+function Reader({ state, title, complete, body, retry, evidence, reviewed, review }: ReaderProps) {
   const { shown, open } = state
   if (!open) {
     return (
@@ -657,7 +673,7 @@ function Reader({ state, title, complete, body, retry, evidence, review }: Reade
           dateTime: open.dateTime,
         },
       }}
-      evidence={readerEvidence(evidence)}
+      evidence={readerEvidence(evidence, reviewed)}
       review={review}
       actions={readerActions(complete)}
     >
@@ -742,7 +758,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             mailboxes={mailboxes}
           />
         }
-        queue={<Queue state={state} title={title} mailboxes={mailboxes} evidenceOf={evidence.of} />}
+        queue={<Queue state={state} title={title} mailboxes={mailboxes} evidence={evidence} />}
         reader={
           <Reader
             state={state}
@@ -751,7 +767,8 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             body={body}
             retry={retry}
             evidence={evidence.open}
-            review={readerReview(props.review, evidence.open, state.open?.id)}
+            reviewed={evidence.openReview}
+            review={readerReview(props.review, evidence, state.open?.id)}
           />
         }
       />
