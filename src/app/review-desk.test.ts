@@ -209,6 +209,22 @@ describe('ReviewDesk.open', () => {
     expect(threadIds()).toEqual([])
   })
 
+  it('names every reading, so nothing an earlier one proved holds under a later one', async () => {
+    const first = await ReviewDesk.open()
+    const second = await ReviewDesk.open()
+    if (first.status !== 'ready' || second.status !== 'ready') throw new Error('Expected readings')
+
+    // Refreshing lists the mailbox again and the provider may have moved on
+    // since; only reading a thread again can say, so the reading is new.
+    expect(first.reading).not.toBe(second.reading)
+    expect(first.reading).toEqual(expect.any(String))
+    // It names nothing about the mail it was read with.
+    for (const message of first.messages) {
+      expect(first.reading).not.toContain(message.id)
+      expect(first.reading).not.toContain(message.mailbox)
+    }
+  })
+
   it('reports Spark as unavailable with a coarse reason, and no mail', async () => {
     spark.run.mockRejectedValue(new SparkError('not_installed'))
 

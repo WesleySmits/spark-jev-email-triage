@@ -45,9 +45,16 @@ export type ListedClassifications = Readonly<Record<string, StoredClassification
 /**
  * One reading of the desk: the listed inbox, and what is stored about its
  * rows. An inbox that listed nothing carries no judgments either.
+ *
+ * `reading` names this one reading and nothing else. Every reading, a
+ * refresh included, gets its own, so a browser holding an older one can tell
+ * that what it proved about a row by reading that row's thread belongs to a
+ * reading the desk has moved on from. It is opaque and content-free: it
+ * names no mailbox, message or judgment.
  */
 export type ClassifiedInbox =
-  | (Extract<LiveInbox, { status: 'ready' }> & Readonly<{ classifications: ListedClassifications }>)
+  | (Extract<LiveInbox, { status: 'ready' }> &
+      Readonly<{ reading: string; classifications: ListedClassifications }>)
   | Extract<LiveInbox, { status: 'unavailable' }>
 
 /** One body request: a mailbox copy the server listed, by its mailbox and message id. */

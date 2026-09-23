@@ -159,13 +159,33 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
   of the client build; ESLint also keeps components and stories from
   importing `*.server`, `*.functions`, `src/spark` and Node built-ins, and
   keeps routes from importing that server-only code at all.
-- The page shows no triage yet, stored or not, so every message is in one
-  "Recent mail" workflow and reads "Not triaged". Spark's list shows at most 30
-  characters of a sender and 50 of a subject and has no uncut or
-  structured form. A cut sender keeps its whole name when the address
+- Live mail is not triaged in the app, so every message is in one "Recent
+  mail" workflow. Each row shows what shadow triage last stored about it
+  instead: "Triage current", "Triage from earlier", "Triage outdated",
+  "Triage failed", "Not triaged" or "Triage unreadable", always as words
+  beside their tone, with the model's category where labels apply. The
+  reader repeats that state under its header and says what it means, with
+  the category, the priority and whether the priority was uncertain, whether
+  the model accepted its own labels or sent them to a person, and when it
+  was judged. `auto_accepted` reads as the model accepting its labels, never
+  as a review by a person; no probability is shown, so nothing suggests the
+  model's confidence is calibrated. The page offers no way to save a review
+  or change a mailbox. Spark's list shows at most 30 characters of a sender
+  and 50 of a subject and has no uncut or structured form. A cut sender keeps its whole name when the address
   was cut, otherwise the visible start; a cut subject keeps its visible
   start. Both end in `…`, and nothing is guessed. Only a blank value
   shows as unavailable.
+- Only the row whose body was read can say "Triage current", and only for
+  the very judgment the reading listed. A judgment the store already
+  contradicts is never promoted back. Every reading of the desk is named
+  with an opaque id of its own, and a body request records the reading it
+  ran under, so a proof belongs to that reading alone. Refreshing lists the
+  mailbox again under a new reading: the provider may have moved on since
+  the open row's thread was read, and nothing reads a thread again to find
+  out, so the row falls back to what the store alone says until the reader
+  opens that thread anew. The text that was read stays; no body, thread or
+  classifier call follows a refresh. The same reading rendered again keeps
+  what it proved.
 - `src/app/inbox.ts` is the browser-safe read model: queue rows are strict
   summaries without a body, each naming its `mailbox` (the account marker
   is only a color, which several mailboxes may share), and the page loads

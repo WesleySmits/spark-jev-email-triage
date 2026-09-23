@@ -1,0 +1,84 @@
+/* ClassificationEvidence molecule: a strip of triage evidence that sits
+ * under the reader header. Rules divide it instead of a nested card, in the
+ * Compact workbench's 4px rhythm. Token values live in src/styles/tokens.css;
+ * rules for their use in src/styles/README.md. */
+.classification-evidence {
+  box-sizing: border-box;
+  max-width: var(--measure-message);
+  padding: var(--s3) 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-soft);
+  font: var(--text-ui);
+}
+
+.classification-evidence__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.classification-evidence__title {
+  margin: 0;
+  color: var(--muted);
+  font: var(--text-overline);
+  letter-spacing: var(--tracking-overline);
+  text-transform: uppercase;
+}
+
+/* Inherits the strip's --text-ui: the one line a reader must actually read. */
+.classification-evidence__detail {
+  margin: var(--s2) 0 0;
+}
+
+.classification-evidence__note {
+  margin: var(--s1) 0 0;
+  color: var(--muted);
+  font: var(--text-meta);
+}
+
+/* Terms and values in columns that stack in a narrow reader. */
+.classification-evidence__facts {
+  display: grid;
+  gap: var(--s2) var(--s4);
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  margin: var(--s3) 0 0;
+}
+
+.classification-evidence__fact {
+  min-width: 0;
+}
+
+.classification-evidence__term {
+  color: var(--muted);
+  font: var(--text-meta);
+}
+
+.classification-evidence__value {
+  margin: var(--s1) 0 0;
+  color: var(--ink);
+  font: var(--text-control);
+}
+
+.classification-evidence__fact-note {
+  display: block;
+  color: var(--muted);
+  font: var(--text-meta);
+}
+
+.classification-evidence__judged {
+  margin: var(--s3) 0 0;
+  color: var(--muted);
+  font: var(--text-meta);
+}
+
+.classification-evidence__time {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 480px) {
+  .classification-evidence__facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

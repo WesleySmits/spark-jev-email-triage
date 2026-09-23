@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState, type ComponentProps, type ReactNode } from 'react'
-import { expect, fn } from 'storybook/test'
+import { expect, fn, within } from 'storybook/test'
+import { ClassificationEvidence } from '../../molecules/ClassificationEvidence/ClassificationEvidence'
 import { ReviewPanel } from '../ReviewPanel/ReviewPanel'
 import { formatMessageBody } from './formatMessageBody'
 import { MessageReader } from './MessageReader'
@@ -65,6 +66,7 @@ const meta = {
     contentLabel: { control: 'text' },
     mobileBar: { control: 'object' },
     actions: { control: 'object' },
+    evidence: { control: false },
     review: { control: false },
     className: { control: false },
   },
@@ -129,6 +131,41 @@ const reviewArgs = {
 
 /** The source's composition: the review panel sits under the body in the same scroll. */
 export const Review: Story = { args: reviewArgs }
+
+/**
+ * Read-only, as live mail is shown: what triage stored about this message
+ * sits directly under the header, above the body, and the footer says the
+ * view changes nothing.
+ */
+export const Evidence: Story = {
+  args: {
+    header: { ...meta.args.header, status: undefined },
+    evidence: (
+      <ClassificationEvidence
+        title="Jev triage"
+        state={{ label: 'Triage from earlier', tone: 'neutral' }}
+        detail="Stored by an earlier triage run. Nothing here read the thread, so it is not confirmed for the message as it stands now."
+        facts={[
+          { term: 'Category', value: 'Personal' },
+          { term: 'Priority', value: 'High' },
+          {
+            term: 'Review',
+            value: 'Accepted by the model',
+            note: 'No person has reviewed this.',
+          },
+        ]}
+        judged={{ label: 'Judged', text: '22 Sep, 09:15', dateTime: '2026-09-22T09:15:00.000Z' }}
+      />
+    ),
+    actions: { note: { title: 'Read only', detail: 'Nothing here changes your mail.' } },
+  },
+  play: async ({ canvasElement }) => {
+    const region = canvasElement.querySelector('.message-reader__scroll')
+    await expect(region?.firstElementChild).toHaveClass('message-reader__evidence')
+    await expect(within(canvasElement).getByText('Triage from earlier')).toBeVisible()
+    await expect(within(canvasElement).getByText('Judged')).toBeVisible()
+  },
+}
 
 /** Only a header and a body: no status, review or footer. */
 export const NoReview: Story = {
