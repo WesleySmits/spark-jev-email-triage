@@ -60,6 +60,7 @@ triage would do. It changes nothing in Spark or any mailbox.
 
 ```sh
 pnpm shadow --preflight                              # check migrations on a disposable database
+pnpm shadow --migrate --db .data/shadow-triage.sqlite # upgrade an existing database locally
 pnpm shadow --mailbox you@example.com                # dry run: counts only, no Jev calls, no writes
 pnpm shadow --mailbox you@example.com --apply        # classify with Jev and store the outcomes
 ```
@@ -69,6 +70,9 @@ pnpm shadow --mailbox you@example.com --apply        # classify with Jev and sto
   `--db` (default `.data/shadow-triage.sqlite`, which Git ignores).
 - `--apply` needs `TYPESAFE_API_KEY`; without it the command reports itself
   blocked.
+- `--migrate` requires an existing `--db` path. It upgrades schema 1 to 2
+  without Spark, Jev, or a TypeSafe key. Back up the file first using the
+  procedure in `docs/runbook.md`.
 - `SHADOW_DATABASE_PATH` points the app at a database a run wrote elsewhere
   with `--db`. The app only ever reads it.
 - Output is status and counts only. The exit code is `0` for completed or

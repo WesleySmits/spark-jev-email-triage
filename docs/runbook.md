@@ -8,6 +8,65 @@ a merge says nothing about what is deployed, a healthy deployment says
 nothing about whether Spark answers, and a Spark that answers on one host
 says nothing about which code asked it or about any other host.
 
+## Upgrade an existing shadow database to schema 2
+
+Do this on the machine that holds the local SQLite file before using the
+review desk with an older database. Stop the app and any `pnpm shadow --apply`
+run first, and keep them stopped until the upgrade has been checked. The
+upgrade changes only this file. It does not read Spark, call Jev, or require
+`TYPESAFE_API_KEY`. The app's read path never migrates a database.
+
+The example uses the default database location. For another file, set `db`
+to the same path used with `--db` or `SHADOW_DATABASE_PATH`. The backup contains
+mail metadata and classifications; keep it private and outside Git.
+
+```sh
+db=.data/shadow-triage.sqlite
+backup=.data/shadow-triage.schema1.backup.sqlite
+test -f "$db" && test ! -e "$backup" || exit 1
+sqlite3 "$db" 'PRAGMA wal_checkpoint(TRUNCATE);'
+test ! -e "$db-wal" && test ! -e "$db-shm" || exit 1
+sqlite3 "$db" ".backup '$backup'"
+sqlite3 "$backup" 'PRAGMA integrity_check; PRAGMA foreign_key_check; PRAGMA user_version;'
+```
+
+The backup check must print `ok`, no foreign-key rows, then `1`. If it does
+not, stop and investigate the original database before changing anything.
+Keep the backup until the upgraded app and stored classifications have been
+checked. With the app still stopped, run:
+
+```sh
+pnpm shadow --migrate --db "$db"
+sqlite3 "$db" 'PRAGMA integrity_check; PRAGMA foreign_key_check; PRAGMA user_version;'
+```
+
+The migration prints `migration ok: schema 2` or, on a repeat, `migration
+skipped: schema current`. The final SQLite check must print `ok`, no
+foreign-key rows, then `2`. A missing file, unsupported schema, damaged
+database, or populated legacy `corrections` table is refused. The migration
+uses a SQLite transaction, so an error before commit leaves schema 1 in
+place. The review desk can then read the existing classifications and store
+reviews. Never use `shadow --apply` merely to upgrade a database: that is a
+classification run.
+
+To roll back, stop the app and shadow runs again. Restore the backup while
+all writers are stopped, then run the SQLite check. A rollback discards any
+reviews written after the backup, so decide on it before resuming work.
+
+```sh
+sqlite3 "$db" 'PRAGMA wal_checkpoint(TRUNCATE);'
+test ! -e "$db-wal" && test ! -e "$db-shm" || exit 1
+test ! -e "$db.schema2-retained.sqlite" || exit 1
+mv "$db" "$db.schema2-retained.sqlite"
+cp -p "$backup" "$db"
+sqlite3 "$db" 'PRAGMA integrity_check; PRAGMA foreign_key_check; PRAGMA user_version;'
+```
+
+The restored check must print `ok`, no foreign-key rows, then `1`. Run the
+previous app version with that schema-1 file, or upgrade it again before
+starting the schema-2 app. Keep the retained file private for investigation;
+do not put either SQLite file in a release report.
+
 ## 1. Build: the required check
 
 CI is `.github/workflows/ci.yml`. The `quality` job runs the whole of

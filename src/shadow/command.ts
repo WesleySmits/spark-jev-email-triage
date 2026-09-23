@@ -14,7 +14,14 @@ import { createSdkTransport } from '../jev/transport'
 import { createProcessTransport, defaultLimits } from '../spark/process'
 import { createSparkMailReader } from '../spark/reader'
 import { shadowConfigSchema, type ShadowConfig } from './config'
-import { checkDatabase, openDatabase, openReadOnly, schemaVersion } from './database'
+import {
+  checkDatabase,
+  migrateExistingDatabase,
+  openDatabase,
+  openReadOnly,
+  schemaVersion,
+  ShadowMigrationError,
+} from './database'
 import { runShadowTriage, type ShadowSummary } from './pipeline'
 
 export const exitCodes = { ok: 0, failed: 1, partial: 2, blocked: 3, usage: 64 } as const
@@ -27,17 +34,34 @@ const options = {
   concurrency: { type: 'string' },
   db: { type: 'string' },
   preflight: { type: 'boolean' },
+  migrate: { type: 'boolean' },
 } as const
 
 const number = (value: string | undefined) => (value === undefined ? undefined : Number(value))
 
 const usage =
   'usage: pnpm shadow --mailbox <address> [--apply] [--limit <n>] [--max-jev-calls <n>] ' +
-  '[--concurrency <n>] [--db <path>] | pnpm shadow --preflight'
+  '[--concurrency <n>] [--db <path>] | pnpm shadow --preflight | ' +
+  'pnpm shadow --migrate --db <existing-path>'
 
 export async function main(args: string[], env: NodeJS.ProcessEnv, print: (line: string) => void) {
   const values = parseOptions(args)
   if (values === null) {
+    print(usage)
+    return exitCodes.usage
+  }
+  if (values.migrate === true) {
+    if (
+      values.db === undefined ||
+      values.db.trim() === '' ||
+      Object.keys(values).some((name) => name !== 'migrate' && name !== 'db')
+    ) {
+      print(usage)
+      return exitCodes.usage
+    }
+    return migrateLocal(values.db, print)
+  }
+  if (values.preflight !== undefined && Object.keys(values).length !== 1) {
     print(usage)
     return exitCodes.usage
   }
@@ -57,6 +81,23 @@ export async function main(args: string[], env: NodeJS.ProcessEnv, print: (line:
     return exitCodes.usage
   }
   return run(config.data, env, print)
+}
+
+/** A separate local-only path: no configuration, Spark process, or Jev client. */
+function migrateLocal(path: string, print: (line: string) => void): number {
+  try {
+    const result = migrateExistingDatabase(path)
+    print(
+      result === 'migrated'
+        ? `migration ok: schema ${String(schemaVersion)}`
+        : 'migration skipped: schema current',
+    )
+    return exitCodes.ok
+  } catch (error) {
+    const reason = error instanceof ShadowMigrationError ? error.code : 'database_unavailable'
+    print(`migration blocked: ${reason}`)
+    return exitCodes.blocked
+  }
 }
 
 async function run(config: ShadowConfig, env: NodeJS.ProcessEnv, print: (line: string) => void) {
