@@ -9,11 +9,13 @@
  * - A body names the message it belongs to, so a response for another
  *   message is never shown.
  * - A body may carry what the thread its read returned proves about the
- *   judgment stored for that row. It is evidence about the row, never a new
- *   judgment: nothing classifies to answer a body read.
+ *   judgment stored for that row, and what a person decided about that
+ *   judgment. Both are evidence about the row, never a new judgment: nothing
+ *   classifies to answer a body read, and no review is written by one.
  */
 import { z } from 'zod'
 import { storedClassificationSchema } from '../domain/stored-classification'
+import { rowReviewSchema } from './desk-review'
 
 const id = z.string().trim().min(1)
 
@@ -65,6 +67,12 @@ export const messageBodySchema = z.strictObject({
    * for it. Absent when no judgment was looked up at all, as for fixtures.
    */
   classification: storedClassificationSchema.optional(),
+  /**
+   * What a person decided about that judgment, where anyone has. Only sent
+   * beside a `classification`, because a review decides a row through the
+   * classification it named and never on its own.
+   */
+  review: rowReviewSchema.optional(),
 })
 
 export type MessageBody = z.infer<typeof messageBodySchema>

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { RowReview } from '../../../app/desk-review'
 import type {
   ClassificationLabels,
   StoredClassification,
@@ -30,6 +31,21 @@ const judgedAt = '2026-09-22T09:15:00.000Z'
 const judged = { subject, judgedAt } as const
 
 const unverified: StoredClassification = { ...judged, state: 'unverified', labels }
+
+/** What a person decided about that judgment, as a reading projects it. */
+const corrected = {
+  decidedBy: 'reviewer',
+  decision: 'corrected',
+  labels: { category: 'suspicious', priority: 'urgent' },
+  reviewer: 'wesley',
+  reviewedAt: '2026-09-23T08:30:00.000Z',
+} as const
+
+const confirmed = {
+  ...corrected,
+  decision: 'confirmed',
+  labels: { category: labels.category, priority: labels.priority },
+} as const
 const current: StoredClassification = { ...judged, state: 'current', labels }
 const stale: StoredClassification = { ...judged, state: 'stale', reason: 'newer_message', labels }
 
@@ -152,6 +168,155 @@ describe('evidenceIn', () => {
   })
 })
 
+describe('evidenceIn, what a person decided', () => {
+  const listed = {
+    reading: 'reading-1',
+    states: { m1: unverified, m2: { state: 'none' } },
+    reviews: { m1: corrected },
+  } as const
+
+  /**
+   * A body of `id` read under `reading`, carrying what it found about the
+   * row: the judgment it named, and any review of that judgment.
+   */
+  const readUnder = (
+    reading: string,
+    id: string,
+    review?: RowReview,
+    classification: StoredClassification = current,
+  ): BodyState =>
+    settleBody(requestBody(idleBody, id, reading), 1, {
+      ok: true,
+      body: { id, text: 'Hello', classification, ...(review && { review }) },
+    })
+
+  // A judgment of a later version of the same copy, as a run stored after
+  // the reading listed this row would be. It is not the judgment the page is
+  // showing, so nothing the store says about it describes what is shown.
+  const otherJudgment: StoredClassification = {
+    state: 'current',
+    subject: { ...subject, latestMessageId: '13' },
+    judgedAt: '2026-09-23T10:00:00.000Z',
+    labels,
+  }
+
+  /** A review of that other judgment, distinct from the listed one. */
+  const reviewOfOther: RowReview = { ...confirmed, reviewedAt: '2026-09-24T08:00:00.000Z' }
+
+  it('shows what the reading projected, so a refresh keeps a saved review', () => {
+    const evidence = evidenceIn(listed, 'm1', idleBody)
+
+    expect(evidence.openReview).toBe(corrected)
+    expect(evidence.reviewOf('m1')).toBe(corrected)
+    // A row nobody reviewed carries none, which is not an error.
+    expect(evidence.reviewOf('m2')).toBeUndefined()
+  })
+
+  it('lets the body read of the open row answer with the store as it is now', () => {
+    // Saved after the reading listed the row: the body read found it.
+    const later = evidenceIn(
+      { ...listed, reviews: {} },
+      'm1',
+      readUnder('reading-1', 'm1', corrected),
+    )
+    expect(later.openReview).toBe(corrected)
+  })
+
+  it("keeps another judgment's reviewer off the judgment being shown", () => {
+    // The read named a later version of the copy, so it is not promoted; the
+    // decision a person made about that version may not be shown beside the
+    // version that stayed either, however fresh the read was.
+    const evidence = evidenceIn(
+      listed,
+      'm1',
+      readUnder('reading-1', 'm1', reviewOfOther, otherJudgment),
+    )
+
+    expect(evidence.open).toBe(unverified)
+    expect(evidence.openReview).toBe(corrected)
+    expect(evidence.reviewOf('m1')).not.toBe(reviewOfOther)
+  })
+
+  it('shows no reviewer at all where only another judgment has one', () => {
+    const evidence = evidenceIn(
+      { ...listed, reviews: {} },
+      'm1',
+      readUnder('reading-1', 'm1', reviewOfOther, otherJudgment),
+    )
+
+    expect(evidence.open).toBe(unverified)
+    expect(evidence.openReview).toBeUndefined()
+  })
+
+  it('takes a fresh review from a read that did answer the listed judgment', () => {
+    // The same judgment the listing named, so what the read found about it
+    // is about what is shown, and the newer answer is the one that counts.
+    const evidence = evidenceIn(listed, 'm1', readUnder('reading-1', 'm1', reviewOfOther))
+
+    expect(evidence.open).toBe(current)
+    expect(evidence.openReview).toBe(reviewOfOther)
+  })
+
+  it('never lets a read that carries no review take the listed one away', () => {
+    // Reviews are only appended, and the read names the version the listing
+    // named, so it has no way of finding that a listed review has gone. A
+    // loader that carries no reviews at all is the same case, and neither
+    // may leave the row looking unreviewed.
+    expect(evidenceIn(listed, 'm1', readUnder('reading-1', 'm1')).openReview).toBe(corrected)
+  })
+
+  it('keeps what the reading itself said where no body read has answered it', () => {
+    // A read under an earlier reading no longer answers this one.
+    const outlived = evidenceIn(
+      { ...listed, reading: 'reading-2' },
+      'm1',
+      readUnder('reading-1', 'm1'),
+    )
+    expect(outlived.openReview).toBe(corrected)
+    expect(evidenceIn(listed, 'm1', { status: 'stale' }).openReview).toBe(corrected)
+  })
+
+  it('shows a review recorded here at once, on the open row and in the list', () => {
+    const own = { subject, review: reviewOfOther }
+    const evidence = evidenceIn({ ...listed, reviews: {} }, 'm2', idleBody, { m1: own })
+
+    // m1 is not the open row, so nothing was read for it: the page shows
+    // what it recorded, which is the store's own answer to that save.
+    expect(evidence.reviewOf('m1')).toBe(reviewOfOther)
+    expect(evidenceIn({ ...listed, reviews: {} }, 'm1', idleBody, { m1: own }).openReview).toBe(
+      reviewOfOther,
+    )
+  })
+
+  it('stops showing a recorded review once the row shows another version', () => {
+    const own = { subject: { ...subject, latestMessageId: '13' }, review: reviewOfOther }
+    const evidence = evidenceIn({ ...listed, reviews: {} }, 'm1', idleBody, { m1: own })
+
+    expect(evidence.openReview).toBeUndefined()
+    expect(evidence.reviewOf('m1')).toBeUndefined()
+    // Nor does it reach a row it never named.
+    expect(
+      evidenceIn({ ...listed, reviews: {} }, 'm1', idleBody, { m2: own }).reviewOf('m2'),
+    ).toBeUndefined()
+  })
+
+  it('lets the later of a recorded and a listed review decide, as the store would', () => {
+    const older = { subject, review: { ...corrected, reviewedAt: '2026-09-22T08:00:00.000Z' } }
+    const newer = { subject, review: reviewOfOther }
+
+    // `corrected` is the listed one, at 2026-09-23T08:30.
+    expect(evidenceIn(listed, 'm1', idleBody, { m1: older }).openReview).toBe(corrected)
+    expect(evidenceIn(listed, 'm1', idleBody, { m1: newer }).openReview).toBe(reviewOfOther)
+  })
+
+  it('has nothing to show without a reading, an open row or any reviews', () => {
+    expect(evidenceIn(undefined, 'm1', idleBody).openReview).toBeUndefined()
+    expect(evidenceIn(listed, undefined, idleBody).openReview).toBeUndefined()
+    const none = { reading: 'reading-1', states: { m1: unverified } } as const
+    expect(evidenceIn(none, 'm1', idleBody).openReview).toBeUndefined()
+  })
+})
+
 describe('classificationView', () => {
   it('names every state in words, with its own tone', () => {
     const named = (classification: StoredClassification) => classificationView(classification).state
@@ -237,7 +402,67 @@ describe('classificationView', () => {
   })
 })
 
+describe('classificationView, once a person has reviewed', () => {
+  it("shows the corrected category and keeps the model's suggestion beside it", () => {
+    const facts = classificationView(current, corrected).facts
+
+    expect(facts[0]).toEqual({
+      term: 'Category',
+      value: 'Suspicious',
+      note: 'Chosen by a person. The model suggested Personal.',
+    })
+    expect(facts[1]).toMatchObject({ term: 'Priority', value: 'Urgent' })
+  })
+
+  it("shows a confirmation as the model's own labels, decided by a person", () => {
+    const facts = classificationView(current, confirmed).facts
+
+    expect(facts[0]).toEqual({
+      term: 'Category',
+      value: 'Personal',
+      note: "A person confirmed the model's suggestion, Personal.",
+    })
+  })
+
+  it('names who decided and when, and says it changed no mail', () => {
+    const fact = classificationView(current, corrected).facts[2]
+
+    expect(fact?.value).toBe('Corrected by a person')
+    expect(fact?.note).toMatch(/^By wesley on /)
+    expect(fact?.note).toMatch(/Labels only: your mail is unchanged\.$/)
+    expect(classificationView(current, confirmed).facts[2]?.value).toBe('Confirmed by a person')
+  })
+
+  it("no longer offers the model's own review need, or its priority doubt", () => {
+    const unsure = { ...labels, priorityUncertain: true, review: 'needs_review' } as const
+    const facts = classificationView({ ...current, labels: unsure }, corrected).facts
+
+    expect(JSON.stringify(facts)).not.toContain('Needs a person')
+    expect(JSON.stringify(facts)).not.toContain('No person has reviewed this')
+    // The person chose the priority too, so the model's doubt is spent.
+    expect(facts[1]).toEqual({ term: 'Priority', value: 'Urgent' })
+  })
+
+  it('leaves the state beside the labels alone: reviewing makes nothing current', () => {
+    expect(classificationView(stale, corrected).state).toEqual({
+      label: 'Triage outdated',
+      tone: 'review',
+    })
+    expect(classificationView(stale, corrected).detail).toMatch(/newer message/)
+  })
+})
+
 describe('rowState', () => {
+  it('shows the category a person decided, so a corrected row reads as corrected', () => {
+    expect(rowState(current, corrected)).toEqual({
+      status: { label: 'Triage current', tone: 'done' },
+      category: 'Suspicious',
+    })
+    expect(rowState(current, confirmed).category).toBe('Personal')
+    // A review decides labels, never the state the badge names.
+    expect(rowState(stale, corrected).status).toEqual({ label: 'Triage outdated', tone: 'review' })
+  })
+
   it('gives a row its state badge, and a category only where labels apply', () => {
     expect(rowState(current)).toEqual({
       status: { label: 'Triage current', tone: 'done' },

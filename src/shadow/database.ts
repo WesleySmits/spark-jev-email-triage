@@ -189,6 +189,29 @@ export function openReadOnly(path: string): DatabaseSync {
   return db
 }
 
+/**
+ * Opens an existing database for writing, without migrating it. A schema
+ * this build does not hold exactly is refused rather than changed: migrating
+ * belongs to a `pnpm shadow --apply` run, and recording one person's review
+ * is no place to alter the store that holds what they reviewed. The file
+ * must already exist; nothing that only appends to a run's work creates one.
+ */
+export function openForWriting(path: string): DatabaseSync {
+  const db = new DatabaseSync(path)
+  try {
+    db.exec(`PRAGMA foreign_keys = ON; PRAGMA busy_timeout = ${String(busyTimeoutMs)}`)
+    const version = userVersion(db)
+    if (version === schemaVersion) return db
+    throw new ShadowDatabaseError(
+      version > schemaVersion ? 'newer_schema' : 'outdated_schema',
+      version,
+    )
+  } catch (error) {
+    db.close()
+    throw error
+  }
+}
+
 export function migrate(db: DatabaseSync): void {
   const current = userVersion(db)
   if (current > schemaVersion) throw new ShadowDatabaseError('newer_schema', current)

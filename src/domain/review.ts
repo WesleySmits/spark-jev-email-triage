@@ -101,7 +101,7 @@ export type ReviewAdmission =
 const refused = (reason: ReviewRefusal): ReviewAdmission => ({ status: 'refused', reason })
 
 /** Whether two subjects name the same version of the same mailbox copy. */
-const sameSubject = (a: JudgedSubject, b: JudgedSubject) =>
+export const sameSubject = (a: JudgedSubject, b: JudgedSubject) =>
   mailboxCopyId(a.copy) === mailboxCopyId(b.copy) &&
   a.threadId === b.threadId &&
   a.latestMessageId === b.latestMessageId &&

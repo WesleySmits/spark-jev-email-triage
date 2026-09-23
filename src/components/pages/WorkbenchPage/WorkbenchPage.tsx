@@ -5,8 +5,10 @@ import {
   useRef,
   useState,
   type ComponentProps,
+  type ReactNode,
   type RefObject,
 } from 'react'
+import type { RowReview } from '../../../app/desk-review'
 import type { BodyLoader } from '../../../app/inbox'
 import type { StoredClassification } from '../../../domain/stored-classification'
 import { ClassificationEvidence } from '../../molecules/ClassificationEvidence/ClassificationEvidence'
@@ -27,7 +29,10 @@ import {
   rowState,
   type Evidence,
   type ListedEvidence,
+  type RecordedReviews,
 } from './classification'
+import { ReviewAction, type SaveReview } from './ReviewAction'
+import { reviewableIn } from './review'
 import { useMessageBody } from './useMessageBody'
 import { shortcutLegend, useWorkbenchShortcuts } from './useWorkbenchShortcuts'
 import {
@@ -72,6 +77,24 @@ type WorkbenchCompletion =
       note?: string | undefined
     }>
 
+/**
+ * Whether the open message's classification may be reviewed. `off` shows no
+ * review panel at all, which is what a page that has nowhere to record one
+ * does.
+ */
+type WorkbenchReview =
+  | Readonly<{ mode: 'off' }>
+  | Readonly<{
+      /**
+       * Records one review of the classification the reader is showing. It is
+       * given the exact version that was shown, and reports what became of it
+       * rather than rejecting. It must change no mail: a review decides
+       * labels, and the page says so in every state.
+       */
+      mode: 'enabled'
+      onSaveReview: SaveReview
+    }>
+
 type WorkbenchPageProps = Readonly<{
   /** Every message the page can show, in display order, without bodies. The caller loads them. */
   messages: readonly WorkbenchMessage[]
@@ -104,6 +127,16 @@ type WorkbenchPageProps = Readonly<{
   classifications?: ListedEvidence | undefined
   /** Whether Complete is offered, and what it does. */
   completion: WorkbenchCompletion
+  /**
+   * Whether the open message's classification may be confirmed or corrected,
+   * and where such a review goes. Left out, or `off`: no review is offered.
+   *
+   * A review is only offered for a classification that still describes the
+   * row, so an outdated one, a failed attempt, an untriaged row and a store
+   * that could not be read all show none. Reviewing is not completing: it
+   * records labels, runs no provider command and changes no mail.
+   */
+  review?: WorkbenchReview | undefined
   /** Sync status and profile. The page owns the search. */
   topBar: Omit<
     ComponentProps<typeof TopBar>,
@@ -295,6 +328,40 @@ function noticeFor(shown: Shown | undefined, now: Spot) {
   return shown && samePlace(shown, now) ? shown.message : undefined
 }
 
+/**
+ * The reviews recorded from this page, by row, so the queue and the reader
+ * show what was just decided without the mailbox being listed again.
+ *
+ * Only a save the store recorded is kept, and only the answer the store gave
+ * for it: nothing here invents a reviewer or a time, and a refusal or a
+ * failure records nothing at all. What is kept stops applying on its own once
+ * a row no longer shows the version it named, so none of it has to be thrown
+ * away by hand.
+ */
+function useRecordedReviews(review: WorkbenchReview | undefined) {
+  const [recorded, setRecorded] = useState<RecordedReviews>({})
+  if (review?.mode !== 'enabled') return { recorded, save: undefined } as const
+  const { onSaveReview } = review
+  return {
+    recorded,
+    /** Saves one review of the row `id`, and keeps what the store answered. */
+    save:
+      (id: string): SaveReview =>
+      async (request) => {
+        const outcome = await onSaveReview(request)
+        if (outcome.status !== 'recorded') return outcome
+        const stored = outcome.review
+        if (stored !== undefined) {
+          setRecorded((current) => ({
+            ...current,
+            [id]: { subject: request.classification, review: stored },
+          }))
+        }
+        return outcome
+      },
+  } as const
+}
+
 /** A ref that always holds the latest render's value, for use in callbacks. */
 function useLatest<T>(value: T) {
   const ref = useRef(value)
@@ -465,12 +532,10 @@ function PageRail({ state, canComplete, workflows, mailboxes }: PageRailProps) {
 
 type PaneProps = Readonly<{ state: PageState; title: string }>
 
-type QueueProps = PaneProps &
-  Pick<PageInput, 'mailboxes'> &
-  Readonly<{ evidenceOf: Evidence['of'] }>
+type QueueProps = PaneProps & Pick<PageInput, 'mailboxes'> & Readonly<{ evidence: Evidence }>
 
 /** The queue, headed by the workflow and the applied mailbox filter. */
-function Queue({ state, title, mailboxes, evidenceOf }: QueueProps) {
+function Queue({ state, title, mailboxes, evidence }: QueueProps) {
   const count = state.shown.length
   return (
     <MessageQueue
@@ -480,7 +545,7 @@ function Queue({ state, title, mailboxes, evidenceOf }: QueueProps) {
         count: `${String(count)} ${count === 1 ? 'result' : 'results'}`,
         context: mailboxLabel(state.filter.mailbox, mailboxes),
       }}
-      messages={queueRows(state.shown, evidenceOf)}
+      messages={queueRows(state.shown, evidence)}
       currentId={state.open?.id}
       onOpen={state.openMessage}
       empty={
@@ -531,18 +596,26 @@ function ReaderBody({ body, retry }: ReaderBodyProps) {
   )
 }
 
-/** The rows as the queue shows them: a stored state replaces the row's own status. */
-function queueRows(messages: readonly WorkbenchMessage[], evidenceOf: Evidence['of']) {
+/**
+ * The rows as the queue shows them: a stored state replaces the row's own
+ * status, and where a person decided the category, theirs is the one shown.
+ */
+function queueRows(messages: readonly WorkbenchMessage[], evidence: Evidence) {
   return messages.map((message) => {
-    const found = evidenceOf(message.id)
-    return found === undefined ? message : { ...message, ...rowState(found) }
+    const found = evidence.of(message.id)
+    return found === undefined
+      ? message
+      : { ...message, ...rowState(found, evidence.reviewOf(message.id)) }
   })
 }
 
 /** The evidence strip under the reader header, or none when nothing is known. */
-function readerEvidence(classification: StoredClassification | undefined) {
+function readerEvidence(
+  classification: StoredClassification | undefined,
+  review: RowReview | undefined,
+) {
   if (classification === undefined) return undefined
-  const { state, detail, facts, note, judgedAt } = classificationView(classification)
+  const { state, detail, facts, note, judgedAt } = classificationView(classification, review)
   return (
     <ClassificationEvidence
       title="Jev triage"
@@ -555,6 +628,30 @@ function readerEvidence(classification: StoredClassification | undefined) {
           ? undefined
           : { label: 'Judged', text: judgedText(judgedAt), dateTime: judgedAt }
       }
+    />
+  )
+}
+
+/**
+ * The review panel under the body, or none. It is offered only where there
+ * is somewhere to record a review and something that still describes the row
+ * to review; `reviewableIn` decides the second. The open row's id keys it, so
+ * a choice made on one message never carries to the next.
+ */
+function readerReview(
+  save: ((id: string) => SaveReview) | undefined,
+  evidence: Evidence,
+  openId: string | undefined,
+) {
+  if (save === undefined || openId === undefined) return undefined
+  const reviewable = reviewableIn(evidence.open)
+  if (reviewable === undefined) return undefined
+  return (
+    <ReviewAction
+      key={openId}
+      reviewable={reviewable}
+      saved={evidence.openReview}
+      onSave={save(openId)}
     />
   )
 }
@@ -575,9 +672,13 @@ type ReaderProps = PaneProps &
     complete: (() => void) | undefined
     /** What is known about the open row's triage. Left out to show none. */
     evidence: StoredClassification | undefined
+    /** What a person decided about it, where anyone has. */
+    reviewed: RowReview | undefined
+    /** The review panel for the open row, or none when it offers no review. */
+    review: ReactNode
   }>
 
-function Reader({ state, title, complete, body, retry, evidence }: ReaderProps) {
+function Reader({ state, title, complete, body, retry, evidence, reviewed, review }: ReaderProps) {
   const { shown, open } = state
   if (!open) {
     return (
@@ -607,7 +708,8 @@ function Reader({ state, title, complete, body, retry, evidence }: ReaderProps) 
           dateTime: open.dateTime,
         },
       }}
-      evidence={readerEvidence(evidence)}
+      evidence={readerEvidence(evidence, reviewed)}
+      review={review}
       actions={readerActions(complete)}
     >
       <ReaderBody body={body} retry={retry} />
@@ -631,8 +733,9 @@ function useWorkbench(props: WorkbenchPageProps) {
     state.open?.id,
     props.classifications?.reading,
   )
-  const evidence = evidenceIn(props.classifications, state.open?.id, body)
-  return { state, searchId, root, notice, complete, body, retry, evidence } as const
+  const reviews = useRecordedReviews(props.review)
+  const evidence = evidenceIn(props.classifications, state.open?.id, body, reviews.recorded)
+  return { state, searchId, root, notice, complete, body, retry, evidence, reviews } as const
 }
 
 /**
@@ -675,7 +778,8 @@ function useWorkbench(props: WorkbenchPageProps) {
  */
 export function WorkbenchPage(props: WorkbenchPageProps) {
   const { workflows, mailboxes, completion } = props
-  const { state, searchId, root, notice, complete, body, retry, evidence } = useWorkbench(props)
+  const { state, searchId, root, notice, complete, body, retry, evidence, reviews } =
+    useWorkbench(props)
   const title = workflows.find((item) => item.id === state.filter.workflow)?.label ?? ''
   const canComplete = completion.mode === 'enabled'
   return (
@@ -691,7 +795,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             mailboxes={mailboxes}
           />
         }
-        queue={<Queue state={state} title={title} mailboxes={mailboxes} evidenceOf={evidence.of} />}
+        queue={<Queue state={state} title={title} mailboxes={mailboxes} evidence={evidence} />}
         reader={
           <Reader
             state={state}
@@ -700,6 +804,8 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             body={body}
             retry={retry}
             evidence={evidence.open}
+            reviewed={evidence.openReview}
+            review={readerReview(reviews.save, evidence, state.open?.id)}
           />
         }
       />
