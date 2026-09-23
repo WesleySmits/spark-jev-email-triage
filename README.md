@@ -31,7 +31,10 @@ pnpm dev
 
 `pnpm eval:jev:live` runs the live Jev evaluation over the candidate
 evaluation set. It calls the TypeSafe API, needs `TYPESAFE_API_KEY`, reports
-itself blocked without it, and is never part of `pnpm test` or CI.
+itself blocked without it, and is never part of `pnpm test` or CI. It reports
+what each case expects beside what policy did, and how often the two agree on
+category and on handling; a provider failure is no judgment and counts in
+neither figure.
 
 ## Shadow triage
 

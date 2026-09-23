@@ -68,6 +68,25 @@ then read again rather than carried onto mail, or into meanings, that nobody
 chose them for. Recording a new digest is how a person says they re-read the
 mail; it is not a formality to paste past.
 
+## Reading a live report
+
+`pnpm eval:jev:live` prints one row per case: what the set expects, what Jev
+answered, and what policy made of it. Two vocabularies meet there, so
+`handling-agreement.ts` writes down how they line up rather than leaving a
+reader of the table to guess: `may_auto_label` predicts `auto_accepted`, and
+`needs_person` predicts `needs_review`. The row's `handlingAgrees` says
+whether policy did what the case expected.
+
+A provider failure is not a judgment. Policy reports `needs_review` for one
+because nothing judged the thread, not because it decided a person should
+see it, so such a row has no `handlingAgrees` at all and counts towards
+neither the category nor the handling figure. Counting it as agreement would
+flatter the set; counting it as a mismatch would blame it for an outage.
+
+Agreement is reported, never asserted. These expectations are a proposal, the
+thresholds are not calibrated, and a disagreement is something to read rather
+than a failure to fix.
+
 ## Provenance and privacy
 
 Every case records where its mail came from.

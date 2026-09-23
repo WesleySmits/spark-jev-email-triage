@@ -12,6 +12,7 @@ import {
   candidateThread,
   type CandidateCase,
 } from '../eval/candidate-set'
+import { handlingAgrees } from '../eval/handling-agreement'
 import { createJevClassifier, type JevClassification } from './classifier'
 import { apiKeyVariable, readJevConfig } from './config'
 import { resolveClassification } from './policy'
@@ -22,14 +23,16 @@ const provenance = (classification: JevClassification) =>
     ? { model: classification.model, inputTokens: classification.usage.inputTokens }
     : { failure: classification.failure.code }
 
-function labels(classification: JevClassification) {
+function labels(candidate: CandidateCase, classification: JevClassification) {
   const outcome = resolveClassification(classification)
-  if (outcome.status !== 'classified') return { review: outcome.review }
+  const agrees = handlingAgrees(candidate.expectation, outcome)
+  if (outcome.status !== 'classified') return { review: outcome.review, handlingAgrees: agrees }
   return {
     category: outcome.category,
     confidence: Number(outcome.confidence.toFixed(3)),
     priority: outcome.priority,
     review: outcome.review,
+    handlingAgrees: agrees,
     reviewPriority: outcome.reviewPriority,
     suspicion: outcome.suspicionSignals.join(', '),
   }
@@ -42,7 +45,7 @@ const report = (candidate: CandidateCase, classification: JevClassification) => 
   expectedHandling: candidate.expectation.handling,
   status: classification.status,
   ...provenance(classification),
-  ...labels(classification),
+  ...labels(candidate, classification),
 })
 
 const config = readJevConfig(process.env)
@@ -65,9 +68,13 @@ describe('Jev on the candidate evaluation set (live)', () => {
       }
       rows.push(report(candidate, await classify(request)))
     }
-    const agreed = rows.filter((row) => row.category === row.expected).length
+    // A provider failure is no judgment, so it is outside both figures.
+    const judged = rows.filter((row) => row.handlingAgrees !== null)
+    const onCategory = judged.filter((row) => row.category === row.expected).length
+    const onHandling = judged.filter((row) => row.handlingAgrees === true).length
     console.table(rows)
-    console.info(`Category agreement: ${String(agreed)}/${String(rows.length)}`)
+    console.info(`Category agreement: ${String(onCategory)}/${String(judged.length)}`)
+    console.info(`Handling agreement: ${String(onHandling)}/${String(judged.length)}`)
 
     expect(rows.map((row) => row.status)).not.toContain('provider_failure')
   })
