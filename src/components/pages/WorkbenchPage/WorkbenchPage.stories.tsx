@@ -1133,6 +1133,20 @@ async function saveChosen(root: HTMLElement, category: string) {
   await userEvent.click(save(root))
 }
 
+/** A correction keeps the judged priority and names the version shown. */
+function expectSavedCorrection(
+  args: Props,
+  classification: DeskReviewRequest['classification'],
+  category: 'suspicious' | 'notification',
+) {
+  return expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith(
+    expect.objectContaining({
+      classification,
+      verdict: { decision: 'corrected', labels: { category, priority: 'high' } },
+    }),
+  )
+}
+
 /**
  * Confirming one classification. The judgment the open row's body proved
  * current may be reviewed: choosing the category the model chose confirms
@@ -1192,13 +1206,7 @@ export const ReviewCorrect: Story = {
     await expect(result(canvasElement)).toHaveTextContent('Category set to Suspicious')
     await expect(result(canvasElement)).toHaveTextContent('The original stays Personal')
     await expect(panel(canvasElement)).toHaveTextContent('Original AI suggestion')
-    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith(
-      expect.objectContaining({
-        classification: subjectOf('m1'),
-        // The panel asks about the category, so the judged priority stays.
-        verdict: { decision: 'corrected', labels: { category: 'suspicious', priority: 'high' } },
-      }),
-    )
+    await expectSavedCorrection(args, subjectOf('m1'), 'suspicious')
   },
 }
 
@@ -1326,12 +1334,7 @@ export const ReviewKeyboard: Story = {
     await expect(save(canvasElement)).toHaveFocus()
     await userEvent.keyboard('{Enter}')
     await resultShows(canvasElement, 'Review saved')
-    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith(
-      expect.objectContaining({
-        classification: subjectOf('m1'),
-        verdict: { decision: 'corrected', labels: { category: 'notification', priority: 'high' } },
-      }),
-    )
+    await expectSavedCorrection(args, subjectOf('m1'), 'notification')
   },
 }
 
@@ -1603,12 +1606,7 @@ export const PanelFollowsANewerVersion: Story = {
     await userEvent.click(save(canvasElement))
     await resultShows(canvasElement, 'Review saved')
     await expect(reviewOf(args).onSaveReview).toHaveBeenCalledTimes(1)
-    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith(
-      expect.objectContaining({
-        classification: { ...subjectOf('m1'), latestMessageId: '13' },
-        verdict: { decision: 'corrected', labels: { category: 'notification', priority: 'high' } },
-      }),
-    )
+    await expectSavedCorrection(args, { ...subjectOf('m1'), latestMessageId: '13' }, 'notification')
   },
 }
 
@@ -1663,12 +1661,7 @@ export const RefreshDuringSaveIsLeftAlone: Story = {
     // The answer is in, so the panel takes up the version the refresh brought.
     await expect(result(canvasElement)).toHaveTextContent('Choose a category first')
     await expect(rows.getByRole('radio', { name: 'Suspicious' })).not.toBeChecked()
-    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith(
-      expect.objectContaining({
-        classification: subjectOf('m1'),
-        verdict: { decision: 'corrected', labels: { category: 'suspicious', priority: 'high' } },
-      }),
-    )
+    await expectSavedCorrection(args, subjectOf('m1'), 'suspicious')
   },
 }
 
