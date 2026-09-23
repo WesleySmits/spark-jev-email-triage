@@ -29,9 +29,9 @@ pnpm dev
 | `pnpm build`          | Production build                                     |
 | `pnpm check`          | Format check, lint, typecheck, tests, Fallow, builds |
 
-`pnpm eval:jev:live` runs the live Jev evaluation over synthetic fixtures. It
-calls the TypeSafe API, needs `TYPESAFE_API_KEY`, reports itself blocked
-without it, and is never part of `pnpm test` or CI.
+`pnpm eval:jev:live` runs the live Jev evaluation over the reviewed
+evaluation set. It calls the TypeSafe API, needs `TYPESAFE_API_KEY`, reports
+itself blocked without it, and is never part of `pnpm test` or CI.
 
 ## Shadow triage
 
@@ -208,6 +208,17 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
   low-confidence category to review and reports an uncertain priority
   without forcing review. Suspicion only raises review priority. Nothing
   authorizes a mailbox action, and only the shadow command calls it.
+- `src/eval/reviewed-set.ts` is the reviewed evaluation set: the invented,
+  sanitized threads triage is measured against, each with the category,
+  priority, handling and reason a person wrote after reading it against the
+  rubric. It covers ambiguous, suspicious, personal, purchase and
+  notification mail among the rest. Expectations are never taken from a
+  classifier answer or from policy, and the set calls nothing, so its tests
+  run in CI with no provider, network or secret; only `pnpm eval:jev:live`
+  reaches Jev. Each case names the thread version it was reviewed at, so an
+  edited thread fails the test until a person re-reads it, and each records
+  its provenance. `src/eval/README.md` holds the provenance and privacy
+  rules, including what sanitizing a real message would require.
 - `src/domain/rubric.ts` holds the opinionated default rubric for any Spark
   inbox, personal or work: the categories `personal`, `notification`,
   `security`, `purchase`, `newsletter`, `promotion`, `suspicious`, and
