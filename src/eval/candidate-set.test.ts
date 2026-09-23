@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { threadSchema } from '../domain/email'
 import { syntheticThreads } from '../domain/fixtures'
 import { defaultRubric } from '../domain/rubric'
 import { categorySchema, prioritySchema } from '../domain/triage'
@@ -9,8 +10,15 @@ import {
   candidateThread,
   requiredCoverage,
 } from './candidate-set'
+import { threadDigest } from './thread-digest'
 
 const source = readFileSync(new URL('./candidate-set.ts', import.meta.url), 'utf8')
+
+function caseFor(fixture: string) {
+  const found = candidateCases.find((candidate) => candidate.fixture === fixture)
+  if (found === undefined) throw new Error(`No candidate case for ${fixture}`)
+  return found
+}
 
 describe('candidateCases', () => {
   it('cover ambiguous, suspicious, personal, purchase and notification mail', () => {
@@ -35,11 +43,44 @@ describe('candidateCases', () => {
       expect({
         subject: thread.subject,
         latestMessageId: thread.messages.at(-1)?.id,
+        threadDigest: threadDigest(thread),
       }).toEqual({
         subject: candidate.writtenAgainst.subject,
         latestMessageId: candidate.writtenAgainst.latestMessageId,
+        threadDigest: candidate.writtenAgainst.threadDigest,
       })
     }
+  })
+
+  // A subject and a latest message id are too little to pin on: the mail a
+  // reader judged is the whole thread, as `classificationSubjectSchema` has
+  // it. Edit an earlier message's body and both of those still match.
+  it('notice an edited body that leaves the subject and every message id alone', () => {
+    const candidate = caseFor('multiMessage')
+    const thread = candidateThread(candidate)
+    const edited = threadSchema.parse({
+      ...thread,
+      messages: thread.messages.map((message, index) =>
+        index === 0 ? { ...message, bodyText: 'The item arrived in perfect condition.' } : message,
+      ),
+    })
+
+    expect(edited.subject).toBe(candidate.writtenAgainst.subject)
+    expect(edited.messages.map(({ id }) => id)).toEqual(thread.messages.map(({ id }) => id))
+    expect(edited.messages.at(-1)).toEqual(thread.messages.at(-1))
+    expect(threadDigest(edited)).not.toBe(candidate.writtenAgainst.threadDigest)
+  })
+
+  it('digest a thread by its content, not by the order its fields are written', () => {
+    const thread = candidateThread(caseFor('invoice'))
+    const reordered = threadSchema.parse({
+      messages: thread.messages,
+      subject: thread.subject,
+      mailboxId: thread.mailboxId,
+      id: thread.id,
+    })
+
+    expect(threadDigest(reordered)).toBe(threadDigest(thread))
   })
 
   // Categories, priorities and thresholds belong to a rubric version. Bumping

@@ -39,6 +39,7 @@ const report = (candidate: CandidateCase, classification: JevClassification) => 
   fixture: candidate.fixture,
   expected: candidate.expectation.category,
   expectedPriority: candidate.expectation.priority,
+  expectedHandling: candidate.expectation.handling,
   status: classification.status,
   ...provenance(classification),
   ...labels(classification),

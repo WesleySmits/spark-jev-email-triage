@@ -218,10 +218,11 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
   a proposal until a named person confirms or corrects them. Expectations are
   never taken from a classifier answer or from policy, and the set calls
   nothing, so its tests run in CI with no provider, network or secret; only
-  `pnpm eval:jev:live` reaches Jev. Each case names the thread version and
-  the rubric id it was written against, so an edited thread or a bumped
-  rubric fails the test until the labels are read again, and each records its
-  provenance. `src/eval/README.md` holds the confirmation status and the
+  `pnpm eval:jev:live` reaches Jev. Each case names the thread it was written
+  against by subject, latest message and a digest of the whole parsed thread,
+  along with the rubric id, so any edit to that mail — a body, a sender, an
+  attachment or an earlier message — or a bumped rubric fails the test until
+  the labels are read again, and each records its provenance. `src/eval/README.md` holds the confirmation status and the
   provenance and privacy rules, including what sanitizing a real message
   would require.
 - `src/domain/rubric.ts` holds the opinionated default rubric for any Spark

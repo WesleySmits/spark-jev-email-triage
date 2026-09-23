@@ -17,10 +17,11 @@
  * - The set holds no provider call and no credential, so tests that use it
  *   run in CI offline. Only `src/jev/synthetic.live.ts` calls Jev, and it is
  *   never part of `pnpm test`.
- * - Every case names what its expectation was written against: the thread
- *   version and the rubric whose categories, priorities and thresholds it
- *   applies. A changed thread or a bumped rubric fails the set's test rather
- *   than quietly keeping labels that were written for something else.
+ * - Every case names what its expectation was written against: the thread,
+ *   by subject, latest message and a digest of the whole of it, and the
+ *   rubric whose categories, priorities and thresholds it applies. Any edit
+ *   to the mail, or a bumped rubric, fails the set's test rather than
+ *   quietly keeping labels that were written for something else.
  * - A case claims a confirmation only when it names the person who gave it
  *   and the day they did.
  * - The mail is invented, never copied from a mailbox. `src/eval/README.md`
@@ -75,13 +76,19 @@ export interface CandidateExpectation {
 export interface CandidateCase {
   fixture: FixtureName
   /**
-   * Exactly what the expectation was written against. Provider order decides
-   * which message is latest, as elsewhere in the domain, and `rubricId` is
-   * the rubric whose meanings the labels were chosen under.
+   * Exactly what the expectation was written against. `subject` and
+   * `latestMessageId` name the thread a reader recognises, with provider
+   * order deciding which message is latest as elsewhere in the domain;
+   * `threadDigest` covers the parsed thread whole, so a changed body,
+   * sender, attachment or earlier message is caught as well; and `rubricId`
+   * is the rubric whose meanings the labels were chosen under. Every value
+   * is written down rather than computed, so a fixture is compared against
+   * what was read and not against itself.
    */
   writtenAgainst: {
     subject: string | null
     latestMessageId: string
+    threadDigest: string
     rubricId: z.infer<typeof rubricSchema>
   }
   expectation: CandidateExpectation
@@ -128,6 +135,7 @@ export const candidateCases: readonly CandidateCase[] = [
     writtenAgainst: {
       subject: 'Can I change my delivery address?',
       latestMessageId: 'msg-customer-question',
+      threadDigest: 'c192663f32fc35dc',
       rubricId,
     },
     expectation: {
@@ -147,6 +155,7 @@ export const candidateCases: readonly CandidateCase[] = [
     writtenAgainst: {
       subject: 'Invoice INV-0001 for January',
       latestMessageId: 'msg-invoice',
+      threadDigest: '04cea43d67d33316',
       rubricId,
     },
     expectation: {
@@ -165,6 +174,7 @@ export const candidateCases: readonly CandidateCase[] = [
     writtenAgainst: {
       subject: '[ALERT] Disk usage above 90% on build-01',
       latestMessageId: 'msg-system-alert',
+      threadDigest: '7144693e9947164a',
       rubricId,
     },
     expectation: {
@@ -183,6 +193,7 @@ export const candidateCases: readonly CandidateCase[] = [
     writtenAgainst: {
       subject: '[example/app] Add avatar component (PR #17)',
       latestMessageId: 'msg-service-notification',
+      threadDigest: '090ebb710c31324e',
       rubricId,
     },
     expectation: {
@@ -201,6 +212,7 @@ export const candidateCases: readonly CandidateCase[] = [
     writtenAgainst: {
       subject: 'New sign-in to your Example account',
       latestMessageId: 'msg-security-notice',
+      threadDigest: '357f0b987b425312',
       rubricId,
     },
     expectation: {
@@ -220,6 +232,7 @@ export const candidateCases: readonly CandidateCase[] = [
     writtenAgainst: {
       subject: 'Product updates for January',
       latestMessageId: 'msg-newsletter',
+      threadDigest: '963af32ba459aeda',
       rubricId,
     },
     expectation: {
@@ -239,6 +252,7 @@ export const candidateCases: readonly CandidateCase[] = [
     writtenAgainst: {
       subject: 'Quick intro: grow your pipeline this quarter',
       latestMessageId: 'msg-cold-sales',
+      threadDigest: '6498fa3a5af1209b',
       rubricId,
     },
     expectation: {
@@ -257,6 +271,7 @@ export const candidateCases: readonly CandidateCase[] = [
     writtenAgainst: {
       subject: 'Action required: verify your account',
       latestMessageId: 'msg-suspicious',
+      threadDigest: '1c67d8a958430274',
       rubricId,
     },
     expectation: {
@@ -277,6 +292,7 @@ export const candidateCases: readonly CandidateCase[] = [
     writtenAgainst: {
       subject: 'Your reward is waiting',
       latestMessageId: 'msg-prompt-injection',
+      threadDigest: '132d57e65d3ef626',
       rubricId,
     },
     expectation: {
@@ -294,7 +310,12 @@ export const candidateCases: readonly CandidateCase[] = [
   },
   {
     fixture: 'ambiguous',
-    writtenAgainst: { subject: null, latestMessageId: 'msg-ambiguous', rubricId },
+    writtenAgainst: {
+      subject: null,
+      latestMessageId: 'msg-ambiguous',
+      threadDigest: 'd74f075f21f787f9',
+      rubricId,
+    },
     expectation: {
       category: 'other',
       priority: 'normal',
@@ -312,6 +333,7 @@ export const candidateCases: readonly CandidateCase[] = [
     writtenAgainst: {
       subject: 'Damaged item in order EX-1002',
       latestMessageId: 'msg-multi-3',
+      threadDigest: '80fc833a5155f966',
       rubricId,
     },
     expectation: {

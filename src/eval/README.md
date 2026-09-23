@@ -45,14 +45,28 @@ the thread should go in front of a person, and the argument for all three.
 
 ## What an expectation was written against
 
-Each case names the subject and latest message id it was written against, and
-the rubric id whose meanings its labels were chosen under. Provider order
-decides which message is latest, as everywhere else in the domain.
+Each case names three things: the subject and latest message id of the thread
+it was written against, a digest of that whole parsed thread, and the rubric
+id whose meanings its labels were chosen under. Provider order decides which
+message is latest, as everywhere else in the domain.
 
-Editing a labelled thread, or bumping the rubric id because a meaning or a
-threshold changed, therefore fails the set's test. The labels are then read
-again rather than carried onto mail, or into meanings, that nobody chose them
-for.
+The subject and the message id are the anchors a reader recognises, and they
+are not enough on their own. What a person judged is the whole thread, which
+is why `classificationSubjectSchema` freezes a whole snapshot rather than a
+few of its fields. An edited body, a renamed sender, a different attachment
+or a changed earlier message can leave a subject and every message id intact
+while making the labels wrong, so `threadDigest` in `thread-digest.ts` covers
+the parsed thread whole. It hashes the thread with its keys sorted at every
+depth, so the value follows content rather than the order a schema declares
+its fields. It detects drift; it is not a security boundary.
+
+Every one of those values is written down in the case rather than computed
+when the test runs, so a fixture is compared against what was read and not
+against itself. Editing a labelled thread, or bumping the rubric id because a
+meaning or threshold changed, therefore fails the set's test. The labels are
+then read again rather than carried onto mail, or into meanings, that nobody
+chose them for. Recording a new digest is how a person says they re-read the
+mail; it is not a formality to paste past.
 
 ## Provenance and privacy
 
