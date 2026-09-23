@@ -36,6 +36,14 @@ One delivery of a logical message to a recipient or alias. A delivery may produc
 
 A requested provider mutation against explicitly named mailbox copies. A classification or review is not a mailbox action.
 
+## Action proposal
+
+One proposed mailbox action: the action, every target mailbox copy named explicitly by its mailbox and provider message id, the thread version each was proposed against, and what explains it. Making one changes nothing and authorizes nothing. A copy is a target only where the proposal names it, so a copy of the same message in another mailbox is never added to one.
+
+## Action approval
+
+One person's decision about one exact proposal. It is that person's decision, recorded by this application; it is not a provider's permission and no provider is told about it. An approval lapses once a target's thread moves past the version proposed against.
+
 ## Action receipt
 
 The durable record of one mailbox action attempt and its provider readback, including failed or uncertain outcomes.

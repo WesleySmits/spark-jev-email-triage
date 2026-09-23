@@ -21,6 +21,8 @@ import { formatMessageBody } from '../../organisms/MessageReader/formatMessageBo
 import { Sidebar, type SidebarItem } from '../../organisms/Sidebar/Sidebar'
 import { TopBar } from '../../organisms/TopBar/TopBar'
 import { WorkbenchTemplate } from '../../templates/WorkbenchTemplate/WorkbenchTemplate'
+import { ActionProposalAction } from './ActionProposalAction'
+import { observationIn, proposableIn, type LabelOf } from './action'
 import type { BodyState } from './body'
 import {
   classificationView,
@@ -95,6 +97,23 @@ type WorkbenchReview =
       onSaveReview: SaveReview
     }>
 
+/**
+ * Whether the open message offers a mailbox action to propose. `off` shows
+ * no panel at all, which is what a page with nothing to propose against does.
+ *
+ * There is no enabled mode that executes: a proposal and a person's approval
+ * of it are held and shown by the page, and nothing carries either out. No
+ * write adapter exists in this build, so the panel says execution is blocked
+ * at every stage.
+ */
+type WorkbenchProposals =
+  | Readonly<{ mode: 'off' }>
+  | Readonly<{
+      mode: 'enabled'
+      /** How this computer names the person approving. Never a mailbox address. */
+      approver: string
+    }>
+
 type WorkbenchPageProps = Readonly<{
   /** Every message the page can show, in display order, without bodies. The caller loads them. */
   messages: readonly WorkbenchMessage[]
@@ -137,6 +156,15 @@ type WorkbenchPageProps = Readonly<{
    * records labels, runs no provider command and changes no mail.
    */
   review?: WorkbenchReview | undefined
+  /**
+   * Whether the open message offers a mailbox action to propose, and how the
+   * person approving one is named. Left out, or `off`: no panel is shown.
+   *
+   * A proposal names the open row's own mailbox copy and no other, an
+   * approval is that person's decision recorded on this page, and execution
+   * is blocked: nothing here reaches a mailbox or asks anything to.
+   */
+  proposals?: WorkbenchProposals | undefined
   /** Sync status and profile. The page owns the search. */
   topBar: Omit<
     ComponentProps<typeof TopBar>,
@@ -656,6 +684,45 @@ function readerReview(
   )
 }
 
+/**
+ * The mailbox action panel under the review, or none. It is offered for the
+ * open row wherever the page may propose at all, including where that row
+ * names no version to propose against: proposing is then refused in words
+ * rather than silently absent, and the panel still says execution is blocked.
+ *
+ * The open row's id keys it, so one message's proposal never carries to the
+ * next, while a reading that lists the mailbox again leaves it in place. A
+ * proposal must be seen to lapse when a later message reaches its thread,
+ * which is exactly what an unchanged panel under a changed reading shows.
+ */
+function readerProposal(
+  proposals: WorkbenchProposals | undefined,
+  evidence: Evidence,
+  openId: string | undefined,
+  labelOf: LabelOf,
+) {
+  if (proposals?.mode !== 'enabled' || openId === undefined) return undefined
+  return (
+    <ActionProposalAction
+      key={openId}
+      proposable={proposableIn(evidence.open)}
+      observation={observationIn(evidence.open)}
+      approver={proposals.approver}
+      labelOf={labelOf}
+    />
+  )
+}
+
+/**
+ * How a mailbox copy is named in the action panel: as the rail names its
+ * mailbox, never as an address the page would otherwise not show. A mailbox
+ * none of the listed rows came from is named as such rather than guessed at.
+ */
+function mailboxNames(messages: readonly WorkbenchMessage[]): LabelOf {
+  const labels = new Map(messages.map((message) => [message.mailbox, message.account.label]))
+  return ({ mailboxId }) => labels.get(mailboxId) ?? 'Another mailbox'
+}
+
 type ReaderActions = ComponentProps<typeof MessageReader>['actions']
 
 /** Complete when the page may offer it; read-only says so instead. */
@@ -676,9 +743,21 @@ type ReaderProps = PaneProps &
     reviewed: RowReview | undefined
     /** The review panel for the open row, or none when it offers no review. */
     review: ReactNode
+    /** The mailbox action panel for the open row, or none when none is offered. */
+    proposal: ReactNode
   }>
 
-function Reader({ state, title, complete, body, retry, evidence, reviewed, review }: ReaderProps) {
+function Reader({
+  state,
+  title,
+  complete,
+  body,
+  retry,
+  evidence,
+  reviewed,
+  review,
+  proposal,
+}: ReaderProps) {
   const { shown, open } = state
   if (!open) {
     return (
@@ -710,6 +789,7 @@ function Reader({ state, title, complete, body, retry, evidence, reviewed, revie
       }}
       evidence={readerEvidence(evidence, reviewed)}
       review={review}
+      proposal={proposal}
       actions={readerActions(complete)}
     >
       <ReaderBody body={body} retry={retry} />
@@ -762,6 +842,13 @@ function useWorkbench(props: WorkbenchPageProps) {
  * ran under: passing a new one, as a refresh does, drops back to what the
  * store alone says without asking for anything again.
  *
+ * Passing `proposals` offers the open message a mailbox action to propose:
+ * what is proposed, what a person approved, and that execution is blocked,
+ * as three stages nothing lets read as one another. The page proposes
+ * against the open row's own mailbox copy and no other, holds the proposal
+ * and any approval itself, and reaches no mailbox: no adapter that could
+ * carry one out exists.
+ *
  * @example
  * import { WorkbenchPage } from '../components/pages/WorkbenchPage/WorkbenchPage'
  *
@@ -806,6 +893,12 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             evidence={evidence.open}
             reviewed={evidence.openReview}
             review={readerReview(reviews.save, evidence, state.open?.id)}
+            proposal={readerProposal(
+              props.proposals,
+              evidence,
+              state.open?.id,
+              mailboxNames(props.messages),
+            )}
           />
         }
       />
