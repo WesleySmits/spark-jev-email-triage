@@ -49,6 +49,8 @@ pnpm shadow --mailbox you@example.com --apply        # classify with Jev and sto
   `--db` (default `.data/shadow-triage.sqlite`, which Git ignores).
 - `--apply` needs `TYPESAFE_API_KEY`; without it the command reports itself
   blocked.
+- `SHADOW_DATABASE_PATH` points the app at a database a run wrote elsewhere
+  with `--db`. The app only ever reads it.
 - Output is status and counts only. The exit code is `0` for completed or
   dry runs, `1` for failed, `2` for partial, `3` for blocked, and `64` for
   invalid options.
@@ -106,15 +108,48 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
 
 ## Safety status
 
-- The app's root route shows recent Spark mail, strictly read-only. Its
-  loader calls `getLiveInbox` in `src/app/live-inbox.functions.ts`, a server
-  function: it discovers the readable mailboxes (at most 5), lists the 10
-  most recent Inbox messages in each, one Spark call at a time, and returns
-  strict summaries without a body, newest first. Opening a message calls
-  `getLiveBody` for that message only; it returns that message's plain-text
-  body, or `null` when it has none, and reads only messages the last list
-  offered. Both answer only requests from this computer (loopback) and send
-  `Cache-Control: no-store`.
+- The app's root route shows recent Spark mail, strictly read-only. It
+  reads only through `ReviewDesk` in `src/app/review-desk.ts`, its one deep
+  read interface: `open` for the list and what was stored about it, `focus`
+  for one opened row's body and `probe` for whether Spark answers.
+  Everything below it stays behind that module, so the route imports no
+  server, Spark, Jev or persistence code.
+- `ReviewDesk.open` calls `getLiveInbox` in `src/app/live-inbox.functions.ts`,
+  a server function: it discovers the readable mailboxes (at most 5), lists
+  the 10 most recent Inbox messages in each, one Spark call at a time, and
+  returns strict summaries without a body, newest first. An app server that
+  doesn't answer is reported as `unreachable`, not as an error. Opening a
+  message calls `getLiveBody` for that message only; it returns that
+  message's plain-text body, or `null` when it has none, and reads only
+  messages the last list offered. Both answer only requests from this
+  computer (loopback) and send `Cache-Control: no-store`.
+- `ReviewDesk.open` also carries the judgment shadow triage last stored
+  about each listed row, read through `src/app/stored-classifications.server.ts`
+  from the local shadow database, opened read-only. Loading or refreshing
+  the page classifies nothing: no classifier is constructed and no Jev call
+  is made. A stored judgment applies to the one mailbox copy it covered, so
+  two alias copies of one delivery never share one, and a covered message
+  that names another mailbox than its own judgment matches no row at all.
+- What the store alone can prove is bounded, and the states say so. Listing
+  reads no thread, so a judgment the store does not contradict reads as
+  `unverified`: what was judged, not what holds now. A message delivered
+  after the last shadow run leaves the store untouched, so silence is no
+  evidence of currency. A judgment the store does contradict — it observed a
+  later message in that thread, or it names another rubric or classifier
+  build — reads as `stale` and keeps its labels. A failed Jev attempt reads
+  as `provider_failure`, never as a classification, and a row nothing
+  applies to reads as `none`.
+- Only opening a row can make a judgment `current`. The lazy body read of
+  that one row already reads its thread, and that thread is what decides:
+  the judgment must name the same mailbox copy, thread and latest message,
+  under the current rubric and classifier build. So `current` costs no
+  provider call beyond the body the reader asked for, and no thread is ever
+  read to list or refresh. A judgment the store already contradicts is never
+  promoted back by a later read.
+- Judgments that cannot be read are reported as unavailable, not as absent.
+  A database that was never written says `none`; one that is there but holds
+  an unsupported schema or cannot be read says `unavailable`. Either way all
+  listed mail still shows, and a body is never held up for its judgment.
 - When Spark is missing, fails, or prints output that doesn't parse, the
   page says so and shows no mail; it never falls back to sample data.
   Errors reach the browser only as a coarse reason or a fixed message.
@@ -122,14 +157,35 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
   notice or Undo. The sync button only reads the inbox again.
 - Spark wiring lives in `*.server.ts` files, which TanStack Start keeps out
   of the client build; ESLint also keeps components and stories from
-  importing `*.server`, `*.functions`, `src/spark` and Node built-ins.
-- Live mail isn't triaged yet, so every message is in one "Recent mail"
-  workflow and reads "Not triaged". Spark's list shows at most 30
-  characters of a sender and 50 of a subject and has no uncut or
-  structured form. A cut sender keeps its whole name when the address
+  importing `*.server`, `*.functions`, `src/spark` and Node built-ins, and
+  keeps routes from importing that server-only code at all.
+- Live mail is not triaged in the app, so every message is in one "Recent
+  mail" workflow. Each row shows what shadow triage last stored about it
+  instead: "Triage current", "Triage from earlier", "Triage outdated",
+  "Triage failed", "Not triaged" or "Triage unreadable", always as words
+  beside their tone, with the model's category where labels apply. The
+  reader repeats that state under its header and says what it means, with
+  the category, the priority and whether the priority was uncertain, whether
+  the model accepted its own labels or sent them to a person, and when it
+  was judged. `auto_accepted` reads as the model accepting its labels, never
+  as a review by a person; no probability is shown, so nothing suggests the
+  model's confidence is calibrated. The page offers no way to save a review
+  or change a mailbox. Spark's list shows at most 30 characters of a sender
+  and 50 of a subject and has no uncut or structured form. A cut sender keeps its whole name when the address
   was cut, otherwise the visible start; a cut subject keeps its visible
   start. Both end in `…`, and nothing is guessed. Only a blank value
   shows as unavailable.
+- Only the row whose body was read can say "Triage current", and only for
+  the very judgment the reading listed. A judgment the store already
+  contradicts is never promoted back. Every reading of the desk is named
+  with an opaque id of its own, and a body request records the reading it
+  ran under, so a proof belongs to that reading alone. Refreshing lists the
+  mailbox again under a new reading: the provider may have moved on since
+  the open row's thread was read, and nothing reads a thread again to find
+  out, so the row falls back to what the store alone says until the reader
+  opens that thread anew. The text that was read stays; no body, thread or
+  classifier call follows a refresh. The same reading rendered again keeps
+  what it proved.
 - `src/app/inbox.ts` is the browser-safe read model: queue rows are strict
   summaries without a body, each naming its `mailbox` (the account marker
   is only a color, which several mailboxes may share), and the page loads

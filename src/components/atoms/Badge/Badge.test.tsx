@@ -11,7 +11,7 @@ describe('Badge', () => {
     expect(element.props).toEqual({ className: 'badge badge--neutral', children: 'Invoice' })
   })
 
-  it.each(['review', 'done'] as const)('applies the %s tone', (tone) => {
+  it.each(['review', 'done', 'danger'] as const)('applies the %s tone', (tone) => {
     expect((Badge({ tone, children: 'State' }) as Element).props.className).toBe(
       `badge badge--${tone}`,
     )

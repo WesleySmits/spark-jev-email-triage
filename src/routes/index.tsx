@@ -6,17 +6,10 @@ import { ConnectionPage } from '../components/pages/ConnectionPage/ConnectionPag
 import { connectionView } from '../components/pages/ConnectionPage/connection'
 import { useReconnect } from '../components/pages/ConnectionPage/useReconnect'
 import { WorkbenchPage } from '../components/pages/WorkbenchPage/WorkbenchPage'
-import { getLiveBody, getLiveInbox } from '../app/live-inbox.functions'
-import { liveBodyLoader, liveWorkflows, type LiveInbox } from '../app/live-inbox'
-import type { ConnectionReason } from '../app/reconnect'
-import { getSparkReadiness } from '../app/spark-readiness.functions'
-
-/** The inbox, or why there is none, including an app server that didn't answer. */
-type Home = LiveInbox | Readonly<{ status: 'unavailable'; reason: 'unreachable' }>
+import { ReviewDesk, type DeskReason, type DeskView } from '../app/review-desk'
 
 export const Route = createFileRoute('/')({
-  loader: (): Promise<Home> =>
-    getLiveInbox().catch(() => ({ status: 'unavailable', reason: 'unreachable' }) as const),
+  loader: (): Promise<DeskView> => ReviewDesk.open(),
   component: Home,
   errorComponent: Unreachable,
 })
@@ -27,7 +20,7 @@ const profile = { profileLabel: 'Profile', profileInitials: 'ME' } as const
 const noticeMs = 8_000
 
 type ConnectionProps = Readonly<{
-  reason: ConnectionReason
+  reason: DeskReason
   /** Reads the inbox once Spark answers. */
   onReady: () => Promise<void>
 }>
@@ -40,7 +33,7 @@ type ConnectionProps = Readonly<{
 function Connection({ reason, onReady }: ConnectionProps) {
   const { state, checkNow } = useReconnect({
     reason,
-    probe: (signal) => getSparkReadiness({ signal }),
+    probe: (signal) => ReviewDesk.probe(signal),
     load: onReady,
   })
   return (
@@ -48,7 +41,7 @@ function Connection({ reason, onReady }: ConnectionProps) {
       <ConnectionPage
         connection={connectionView(state)}
         onCheckNow={checkNow}
-        workflows={liveWorkflows}
+        workflows={ReviewDesk.workflows}
         {...profile}
       />
     </div>
@@ -110,7 +103,7 @@ function useConnectedNotice(root: RefObject<HTMLDivElement | null>, arrived: boo
 }
 
 type PageProps = Readonly<{
-  inbox: Home
+  inbox: DeskView
   root: RefObject<HTMLDivElement | null>
   onReady: () => Promise<void>
 }>
@@ -134,14 +127,14 @@ function Page({ inbox, root, onReady }: PageProps) {
       </main>
     )
   }
-  const loadBody = liveBodyLoader(inbox.messages, (data, signal) => getLiveBody({ data, signal }))
   const syncLabel = `Updated at ${inbox.readAt} · read only`
   return (
     <div ref={root} className="app-root">
       <WorkbenchPage
         messages={inbox.messages}
-        loadBody={loadBody}
-        workflows={liveWorkflows}
+        classifications={{ reading: inbox.reading, states: inbox.classifications }}
+        loadBody={ReviewDesk.focus(inbox)}
+        workflows={ReviewDesk.workflows}
         mailboxes={inbox.mailboxes}
         completion={{ mode: 'read-only' }}
         topBar={{
@@ -156,9 +149,14 @@ function Page({ inbox, root, onReady }: PageProps) {
   )
 }
 
-// Recent Spark mail, strictly read-only. Rows arrive without bodies; one body
-// loads when its message opens. Refresh only reads again. While Spark is
-// away the workbench waits in place and reads the inbox once it answers.
+// Recent Spark mail, strictly read-only, beside what shadow triage last
+// stored about it. Rows arrive without bodies; one body loads when its
+// message opens, and that read is the only thing that can say a stored
+// judgment still describes the row. Refresh lists the mailbox again under a
+// new reading, so what an earlier read proved stops counting as proof
+// without anything being read again. Neither refreshing nor opening a row
+// calls a classifier. While Spark is away the workbench waits in place and
+// reads the inbox once it answers.
 function Home() {
   const inbox = Route.useLoaderData()
   const router = useRouter()

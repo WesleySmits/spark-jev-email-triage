@@ -6,6 +6,7 @@ import ReaderStories from '../../organisms/MessageReader/MessageReader.stories'
 import SidebarStories from '../../organisms/Sidebar/Sidebar.stories'
 import TopBarStories from '../../organisms/TopBar/TopBar.stories'
 import { fixtureBodyLoader, type BodyLoader, type InboxFixture } from '../../../app/inbox'
+import type { StoredClassification } from '../../../domain/stored-classification'
 import type { WorkbenchMessage } from './workbench'
 import { WorkbenchPage } from './WorkbenchPage'
 
@@ -745,5 +746,282 @@ export const SharedMarkerMailboxes: Story = {
     await expect(args.loadBody).toHaveBeenCalledTimes(2)
     await expect(args.loadBody).toHaveBeenLastCalledWith('m2', expect.anything())
     await expect(canvas.queryByRole('button', { name: 'Complete' })).not.toBeInTheDocument()
+  },
+}
+
+// Fictional stored triage of the fictional mail above. Nothing is read from
+// a store here: the story passes what a reading would have carried.
+const judgedAt = '2026-09-22T09:15:00.000Z'
+
+const subjectOf = (id: string) => ({
+  copy: { mailboxId: 'studio@mail.example', messageId: id },
+  threadId: `t-${id}`,
+  latestMessageId: id,
+  rubric: 'email-triage.v2',
+  classifierVersion: 'jev-1.13.0',
+})
+
+const judgedLabels = {
+  category: 'personal',
+  priority: 'high',
+  confidence: 0.93,
+  priorityUncertain: false,
+  review: 'auto_accepted',
+  reviewPriority: 'normal',
+} as const
+
+/** What the store alone can say about m1: judged, and nothing contradicts it. */
+const m1Unverified: StoredClassification = {
+  state: 'unverified',
+  subject: subjectOf('m1'),
+  judgedAt,
+  labels: judgedLabels,
+}
+
+/** The same judgment, once the thread read for m1 proved it names this version. */
+const m1Current: StoredClassification = { ...m1Unverified, state: 'current' }
+
+/** The same judgment, once that read found the thread had moved on. */
+const m1Stale: StoredClassification = { ...m1Unverified, state: 'stale', reason: 'newer_message' }
+
+const storedStates: Readonly<Record<string, StoredClassification>> = {
+  m1: m1Unverified,
+  m2: {
+    state: 'stale',
+    reason: 'newer_message',
+    subject: subjectOf('m2'),
+    judgedAt,
+    labels: {
+      ...judgedLabels,
+      category: 'purchase',
+      priority: 'normal',
+      confidence: 0.61,
+      priorityUncertain: true,
+      review: 'needs_review',
+      reviewPriority: 'elevated',
+    },
+  },
+  m3: { state: 'provider_failure', subject: subjectOf('m3'), judgedAt, errorCode: 'timeout' },
+  m4: { state: 'none' },
+}
+
+/** Sample bodies that carry what the thread each read returned proved about its row. */
+const provingBodies = (proofs: Readonly<Record<string, StoredClassification>>): BodyLoader => {
+  const load = bodiesAfter(0)
+  return async (id, options) => {
+    const body = await load(id, options)
+    const proof = proofs[id]
+    return body === null || proof === undefined ? body : { ...body, classification: proof }
+  }
+}
+
+const oneWorkflow: Props['workflows'] = [{ id: 'inbox', icon: 'inbox', label: 'Recent mail' }]
+
+/** Every sample message in the one workflow live mail has. */
+const listedRows = messages.map((message) => ({ ...message, workflow: 'inbox' }))
+
+/** One reading of the desk, as the route hands one over: its id and its rows. */
+const reading = (id: string, states = storedStates) => ({ reading: id, states }) as const
+
+const classified = {
+  ...readOnly,
+  messages: listedRows,
+  workflows: oneWorkflow,
+  classifications: reading('reading-1'),
+} satisfies Partial<Props>
+
+/** The evidence strip under the reader header, whatever it says. */
+function evidence(root: HTMLElement) {
+  const strip = root.querySelector('.workbench__reader .classification-evidence')
+  if (!strip) throw new Error('No classification evidence in the reader')
+  return strip
+}
+
+/**
+ * Live-shaped and read-only: every row says what triage stored about it, and
+ * the open row also says what the thread its body read returned proved. Only
+ * that read can say a judgment is current; the rows the reader never opened
+ * stay at what the store alone can say. Nothing here classifies, and no row
+ * offers a way to change mail.
+ */
+export const StoredClassifications: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: { ...classified, loadBody: fn(provingBodies({ m1: m1Current })) },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    const row = (name: RegExp) => canvas.getByRole('button', { name })
+
+    // The open row's body proved its judgment; the others stay unproven.
+    await waitFor(() => expect(evidence(canvasElement)).toHaveTextContent('Triage current'))
+    await expect(evidence(canvasElement)).toHaveTextContent('Accepted by the model')
+    await expect(evidence(canvasElement)).toHaveTextContent('No person has reviewed this.')
+    await expect(row(/Can delivery move/)).toHaveTextContent('Triage current')
+    await expect(row(/Correction on invoice/)).toHaveTextContent('Triage outdated')
+    await expect(row(/Move Friday dinner\?/)).toHaveTextContent('Triage failed')
+    await expect(row(/Newsletter: work/)).toHaveTextContent('Not triaged')
+
+    // An outdated judgment keeps its labels, its uncertainty and its review need.
+    await userEvent.click(row(/Correction on invoice/))
+    await expect(evidence(canvasElement)).toHaveTextContent('Triage outdated')
+    await expect(evidence(canvasElement)).toHaveTextContent('Purchase')
+    await expect(evidence(canvasElement)).toHaveTextContent('not sure of this priority')
+    await expect(evidence(canvasElement)).toHaveTextContent('Needs a person')
+
+    // A failed attempt is never a classification, and absence is not failure.
+    await userEvent.click(row(/Move Friday dinner\?/))
+    await expect(evidence(canvasElement)).toHaveTextContent('Reported: timeout')
+    await expect(evidence(canvasElement)).not.toHaveTextContent('Category')
+    await userEvent.click(row(/Newsletter: work/))
+    await expect(evidence(canvasElement)).toHaveTextContent('No triage run has stored anything')
+
+    // Only the open message's body was ever asked for, one at a time.
+    await expect(args.loadBody).toHaveBeenCalledTimes(4)
+    await expect(canvas.queryByRole('button', { name: 'Complete' })).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: /Save/ })).not.toBeInTheDocument()
+  },
+}
+
+/**
+ * Opening a row is also how a judgment can turn out to be outdated: the
+ * thread its body read had moved on since the run. The row and the reader
+ * both say so, and the labels stay visible as the ones it was given then.
+ */
+export const ClassificationOutdatedOnOpen: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: { ...classified, loadBody: fn(provingBodies({ m1: m1Stale })) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await waitFor(() => expect(evidence(canvasElement)).toHaveTextContent('Triage outdated'))
+    await expect(evidence(canvasElement)).toHaveTextContent('A newer message arrived')
+    await expect(evidence(canvasElement)).toHaveTextContent('Personal')
+    await expect(canvas.getByRole('button', { name: /Can delivery move/ })).toHaveTextContent(
+      'Triage outdated',
+    )
+  },
+}
+
+/**
+ * A body read that proves nothing about the open row leaves the reading's own
+ * evidence in place: a judgment from an earlier run stays exactly that, and
+ * is never shown as current.
+ */
+export const UnprovenStaysUnproven: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: { ...classified, loadBody: fn(bodiesAfter(0)) },
+  play: async ({ canvasElement }) => {
+    await bodyShows(canvasElement, 'Hi Wesley,')
+    await expect(evidence(canvasElement)).toHaveTextContent('Triage from earlier')
+    await expect(evidence(canvasElement)).toHaveTextContent('not confirmed')
+    await expect(evidence(canvasElement)).not.toHaveTextContent('Triage current')
+  },
+}
+
+/**
+ * The stored judgments could not be read at all. Every row says so, none of
+ * them claims to be untriaged, and all the mail still shows and reads.
+ */
+export const ClassificationsUnreadable: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: {
+    ...classified,
+    classifications: reading(
+      'reading-1',
+      Object.fromEntries(
+        listedRows.map((message) => [
+          message.id,
+          { state: 'unavailable', reason: 'unsupported_schema' } as const,
+        ]),
+      ),
+    ),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('4 results')).toBeVisible()
+    await expect(canvas.getAllByText('Triage unreadable')).toHaveLength(5)
+    await bodyShows(canvasElement, 'Hi Wesley,')
+    await expect(evidence(canvasElement)).toHaveTextContent(
+      'written by a version of this app that this one cannot read',
+    )
+  },
+}
+
+/**
+ * The mobile reader at 320px: the evidence sits above the message it
+ * describes, so it is the first thing the content region announces.
+ */
+export const StoredClassificationsMobile: Story = {
+  globals: { viewport: { value: 'mobile1', isRotated: false } },
+  args: { ...classified, loadBody: fn(provingBodies({ m1: m1Current })) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: /Can delivery move/ }))
+    await expect(content(canvasElement)).toHaveFocus()
+    await waitFor(() => expect(evidence(canvasElement)).toHaveTextContent('Triage current'))
+    await expect(content(canvasElement).firstElementChild).toHaveClass('message-reader__evidence')
+  },
+}
+
+/**
+ * Stands in for the route's loader: each Refresh reads the desk again, so
+ * the page gets a new reading of the same rows. The store has not changed,
+ * so every judgment is listed exactly as before. Nothing re-reads a body.
+ */
+function WithReadings(args: Props) {
+  const [count, setCount] = useState(1)
+  return (
+    <WorkbenchPage
+      {...args}
+      classifications={reading(`reading-${String(count)}`)}
+      topBar={{
+        ...args.topBar,
+        syncActionLabel: 'Refresh mail',
+        onSyncClick: () => {
+          setCount((current) => current + 1)
+        },
+      }}
+    />
+  )
+}
+
+/**
+ * Refresh lists the mailbox again, and the provider may have moved on since
+ * the open row's thread was read. Nothing re-reads that thread, so what the
+ * earlier read proved stops counting: the row and the reader fall back to
+ * what the store alone says, without a single extra request. Opening the
+ * thread anew proves it again under the reading that is current then.
+ */
+export const RefreshOutlivesProof: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: { ...classified, loadBody: fn(provingBodies({ m1: m1Current })) },
+  render: (args) => <WithReadings {...args} />,
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    const open = () => canvas.getByRole('button', { name: /Can delivery move/ })
+    await waitFor(() => expect(evidence(canvasElement)).toHaveTextContent('Triage current'))
+    await expect(open()).toHaveTextContent('Triage current')
+    await expect(args.loadBody).toHaveBeenCalledTimes(1)
+
+    // Refresh: the same row stays open and the same judgment is listed, but
+    // the proof belonged to the reading before it.
+    await userEvent.click(canvas.getByRole('button', { name: 'Refresh mail' }))
+    await expect(evidence(canvasElement)).toHaveTextContent('Triage from earlier')
+    await expect(evidence(canvasElement)).toHaveTextContent('not confirmed')
+    await expect(open()).toHaveTextContent('Triage from earlier')
+    // No thread was read to find that out, and the body that was read stays.
+    await expect(args.loadBody).toHaveBeenCalledTimes(1)
+    await expect(content(canvasElement)).toHaveTextContent('Hi Wesley,')
+
+    // Reading the thread anew proves it under the reading that is current now.
+    await userEvent.click(canvas.getByRole('button', { name: /Move Friday dinner\?/ }))
+    await userEvent.click(open())
+    await waitFor(() => expect(evidence(canvasElement)).toHaveTextContent('Triage current'))
+    await expect(args.loadBody).toHaveBeenCalledTimes(3)
+
+    // Rendering the same reading again keeps what it proved.
+    await userEvent.click(canvas.getByRole('searchbox'))
+    await userEvent.keyboard('delivery')
+    await expect(canvas.getByText('1 result')).toBeVisible()
+    await expect(evidence(canvasElement)).toHaveTextContent('Triage current')
+    await expect(args.loadBody).toHaveBeenCalledTimes(3)
   },
 }

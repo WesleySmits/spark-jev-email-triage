@@ -106,10 +106,26 @@ describe('MessageReader', () => {
     expect(get('message-reader__review').props['children']).toBe(review)
   })
 
-  it('leaves out the bar, review and footer when not given', () => {
+  it('renders the evidence above the body, still inside the scroll region', () => {
+    const evidence = <section>Triage</section>
+    const { get } = render({ evidence, review: <section>Review</section> })
+    const scroll = descendants(get('message-reader__scroll'))
+    expect(scroll.map((element) => element.props['className'] ?? element.type)).toEqual([
+      'message-reader__evidence',
+      'section',
+      'message-reader__body',
+      'p',
+      'message-reader__review',
+      'section',
+    ])
+    expect(get('message-reader__evidence').props['children']).toBe(evidence)
+  })
+
+  it('leaves out the bar, evidence, review and footer when not given', () => {
     const { one, byClass } = render()
     expect(one(MobileReaderBar)).toBeUndefined()
     expect(one(ReaderActionBar)).toBeUndefined()
+    expect(byClass('message-reader__evidence')).toBeUndefined()
     expect(byClass('message-reader__review')).toBeUndefined()
   })
 

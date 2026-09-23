@@ -29,3 +29,9 @@
   color: var(--success);
   background: var(--success-soft);
 }
+
+.badge--danger {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: var(--danger-soft);
+}
