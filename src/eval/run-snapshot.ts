@@ -60,6 +60,9 @@ import { threadDigest } from './thread-digest'
 
 const name = z.string().trim().min(1)
 
+/** Model names printed in reports must be version identifiers, never free text. */
+const modelVersion = z.string().regex(/^jev-\d{1,3}\.\d{1,3}\.\d{1,3}$/)
+
 /**
  * Every handling a case can expect. `captureRunSnapshot` writes an
  * expectation's handling into this schema, so a handling the set gains later
@@ -87,7 +90,7 @@ const resultSchema = z.discriminatedUnion('status', [
   z.strictObject({
     status: z.literal('classified'),
     /** The versioned model that answered, which may differ from the request. */
-    model: name,
+    model: modelVersion,
     usage: z.strictObject({
       inputTokens: z.int().nonnegative(),
       outputTokens: z.int().nonnegative(),
@@ -111,7 +114,7 @@ const entrySchema = z.strictObject({
   /** The rubric the classifier judged under. */
   rubric: name,
   /** The pinned classifier build that was asked. */
-  requestedModel: name,
+  requestedModel: modelVersion,
   /** Wall-clock milliseconds of the call, or `null` where nothing timed it. */
   latencyMs: z.number().nonnegative().nullable(),
   result: resultSchema,
@@ -175,24 +178,18 @@ export function captureRunSnapshot(
  *   holds. Its categories, priorities and thresholds meant something else,
  *   and today's policy is not what produced those answers.
  *
- * Every reason is content-free, as are the fixture and rubric beside it, so
- * a refusal may be printed and logged as it is.
+ * Every reason is content-free, so a refusal may be printed and logged.
  */
 export type SnapshotRefusal =
   'unknown_fixture' | 'changed_fixture' | 'changed_expectation' | 'unsupported_rubric'
 
 export type SnapshotReplay =
   | Readonly<{ status: 'replayed'; observations: readonly QualityObservation[] }>
-  | Readonly<{ status: 'refused'; reason: SnapshotRefusal; fixture: string; rubric: string }>
+  | Readonly<{ status: 'refused'; reason: SnapshotRefusal }>
 
-const refused = (
-  reason: SnapshotRefusal,
-  entry: RunSnapshot['entries'][number],
-): SnapshotReplay => ({
+const refused = (reason: SnapshotRefusal): SnapshotReplay => ({
   status: 'refused',
   reason,
-  fixture: entry.fixture,
-  rubric: entry.rubric,
 })
 
 /**
@@ -207,12 +204,12 @@ export function replayRunSnapshot(
   const observations: QualityObservation[] = []
   for (const entry of snapshot.entries) {
     const reviewed = cases.find(({ fixture }) => fixture === entry.fixture)
-    if (reviewed === undefined) return refused('unknown_fixture', entry)
-    if (!isReportableRubric(entry.rubric)) return refused('unsupported_rubric', entry)
+    if (reviewed === undefined) return refused('unknown_fixture')
+    if (!isReportableRubric(entry.rubric)) return refused('unsupported_rubric')
     const thread = reviewedThread(reviewed)
-    if (threadDigest(thread) !== entry.threadDigest) return refused('changed_fixture', entry)
+    if (threadDigest(thread) !== entry.threadDigest) return refused('changed_fixture')
     if (!sameLabels(expectedLabels(reviewed.expectation), entry.expectation)) {
-      return refused('changed_expectation', entry)
+      return refused('changed_expectation')
     }
     observations.push({
       reviewed,

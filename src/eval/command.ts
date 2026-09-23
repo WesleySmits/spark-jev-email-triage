@@ -42,7 +42,7 @@ export function main(args: readonly string[], print: (line: string) => void): nu
   }
   const replay = replayRunSnapshot(snapshot.data)
   if (replay.status === 'refused') {
-    print(`refused ${replay.reason}: ${replay.fixture} under ${replay.rubric}`)
+    print(`refused ${replay.reason}`)
     return exitCodes.failed
   }
   print(formatQualityReport(summarizeQuality(replay.observations)))

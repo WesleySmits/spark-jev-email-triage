@@ -126,8 +126,6 @@ describe('replayRunSnapshot', () => {
     expect(replayRunSnapshot(runSnapshotSchema.parse({ ...snapshot, entries }))).toEqual({
       status: 'refused',
       reason: 'unknown_fixture',
-      fixture: 'goneFromTheSet',
-      rubric: 'email-triage.v2',
     })
   })
 
@@ -156,8 +154,6 @@ describe('replayRunSnapshot', () => {
     expect(replayRunSnapshot(snapshot, cases)).toEqual({
       status: 'refused',
       reason: 'changed_expectation',
-      fixture: 'invoice',
-      rubric: 'email-triage.v2',
     })
   })
 
@@ -191,8 +187,6 @@ describe('replayRunSnapshot', () => {
     expect(replayRunSnapshot(parsed)).toEqual({
       status: 'refused',
       reason: 'unsupported_rubric',
-      fixture: parsed.entries[0]?.fixture,
-      rubric: 'email-triage.v1',
     })
   })
 
