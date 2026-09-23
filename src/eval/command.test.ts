@@ -84,7 +84,7 @@ describe('pnpm eval:report', () => {
 
     expect(code).toBe(exitCodes.failed)
     expect(output).toContain('refused unsupported_rubric')
-    expect(output).toContain('email-triage.v1')
+    expect(output).not.toContain('email-triage.v1')
     expect(output).not.toContain('Triage quality')
   })
 })
