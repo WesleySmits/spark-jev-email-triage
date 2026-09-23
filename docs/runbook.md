@@ -8,7 +8,7 @@ a merge says nothing about what is deployed, a healthy deployment says
 nothing about whether Spark answers, and a Spark that answers on one host
 says nothing about which code asked it or about any other host.
 
-## Upgrade an existing shadow database to schema 2
+## Upgrade an existing shadow database to schema 3
 
 Do this on the machine that holds the local SQLite file before using the
 review desk with an older database. Stop the app and any `pnpm shadow --apply`
@@ -22,7 +22,7 @@ mail metadata and classifications; keep it private and outside Git.
 
 ```sh
 db=.data/shadow-triage.sqlite
-backup=.data/shadow-triage.schema1.backup.sqlite
+backup=.data/shadow-triage.before-upgrade.backup.sqlite
 test -f "$db" && test ! -e "$backup" || exit 1
 sqlite3 "$db" 'PRAGMA wal_checkpoint(TRUNCATE);'
 test ! -e "$db-wal" && test ! -e "$db-shm" || exit 1
@@ -30,7 +30,7 @@ sqlite3 "$db" ".backup '$backup'"
 sqlite3 "$backup" 'PRAGMA integrity_check; PRAGMA foreign_key_check; PRAGMA user_version;'
 ```
 
-The backup check must print `ok`, no foreign-key rows, then `1`. If it does
+The backup check must print `ok`, no foreign-key rows, then `1` or `2`. If it does
 not, stop and investigate the original database before changing anything.
 Keep the backup until the upgraded app and stored classifications have been
 checked. With the app still stopped, run:
@@ -40,11 +40,12 @@ pnpm shadow --migrate --db "$db"
 sqlite3 "$db" 'PRAGMA integrity_check; PRAGMA foreign_key_check; PRAGMA user_version;'
 ```
 
-The migration prints `migration ok: schema 2` or, on a repeat, `migration
+The migration prints `migration ok: schema 3` or, on a repeat, `migration
 skipped: schema current`. The final SQLite check must print `ok`, no
-foreign-key rows, then `2`. A missing file, unsupported schema, damaged
-database, or populated legacy `corrections` table is refused. The migration
-uses a SQLite transaction, so an error before commit leaves schema 1 in
+foreign-key rows, then `3`. A missing file, unsupported schema, damaged
+database, or populated schema-1 `corrections` table is refused. Schema 1
+upgrades through schema 2 to 3; schema 2 upgrades directly to 3. The migration
+uses one SQLite transaction, so an error before commit leaves the original schema in
 place. The review desk can then read the existing classifications and store
 reviews. Never use `shadow --apply` merely to upgrade a database: that is a
 classification run.
@@ -56,15 +57,15 @@ reviews written after the backup, so decide on it before resuming work.
 ```sh
 sqlite3 "$db" 'PRAGMA wal_checkpoint(TRUNCATE);'
 test ! -e "$db-wal" && test ! -e "$db-shm" || exit 1
-test ! -e "$db.schema2-retained.sqlite" || exit 1
-mv "$db" "$db.schema2-retained.sqlite"
+test ! -e "$db.schema3-retained.sqlite" || exit 1
+mv "$db" "$db.schema3-retained.sqlite"
 cp -p "$backup" "$db"
 sqlite3 "$db" 'PRAGMA integrity_check; PRAGMA foreign_key_check; PRAGMA user_version;'
 ```
 
-The restored check must print `ok`, no foreign-key rows, then `1`. Run the
-previous app version with that schema-1 file, or upgrade it again before
-starting the schema-2 app. Keep the retained file private for investigation;
+The restored check must print `ok`, no foreign-key rows, then the original
+schema version (`1` or `2`). Run an app version compatible with that schema,
+or upgrade it again before starting the schema-3 app. Keep the retained file private for investigation;
 do not put either SQLite file in a release report.
 
 ## 1. Build: the required check

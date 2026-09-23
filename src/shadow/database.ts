@@ -260,7 +260,7 @@ function applyMigration(db: DatabaseSync, sql: string, version: number): void {
   db.exec(`PRAGMA user_version = ${String(version)}`)
 }
 
-/** Upgrade only an existing, healthy schema-1 file. Never creates a database. */
+/** Upgrade an existing, healthy schema-1 or schema-2 file. Never creates one. */
 export function migrateExistingDatabase(path: string): 'migrated' | 'current' {
   if (!existsSync(path)) throw new ShadowMigrationError('missing_database')
   const db = new DatabaseSync(path)
@@ -271,19 +271,21 @@ export function migrateExistingDatabase(path: string): 'migrated' | 'current' {
       if (checkDatabase(db).length > 0) throw new ShadowMigrationError('unhealthy_database')
       return 'current'
     }
-    if (version !== 1) throw new ShadowMigrationError('unsupported_source')
+    if (version !== 1 && version !== 2) throw new ShadowMigrationError('unsupported_source')
     transaction(db, () => {
       if (checkDatabaseHealth(db).length > 0) throw new ShadowMigrationError('unhealthy_database')
 
-      // The old table was a placeholder, but refuse to discard unexpected decisions.
-      const corrections = db.prepare('SELECT COUNT(*) AS count FROM corrections').get()
-      if (z.object({ count: z.int().nonnegative() }).parse(corrections).count > 0) {
-        throw new ShadowMigrationError('legacy_corrections')
+      if (version === 1) {
+        // The old table was a placeholder; refuse to discard unexpected decisions.
+        const corrections = db.prepare('SELECT COUNT(*) AS count FROM corrections').get()
+        if (z.object({ count: z.int().nonnegative() }).parse(corrections).count > 0) {
+          throw new ShadowMigrationError('legacy_corrections')
+        }
       }
 
-      const migration = migrations[1]
-      if (migration === undefined) throw new ShadowMigrationError('unsupported_source')
-      applyMigration(db, migration, schemaVersion)
+      migrations.slice(version).forEach((migration, index) => {
+        applyMigration(db, migration, version + index + 1)
+      })
       if (checkDatabase(db).length > 0) throw new ShadowMigrationError('unhealthy_database')
     })
     return 'migrated'

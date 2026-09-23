@@ -70,7 +70,7 @@ pnpm shadow --mailbox you@example.com --apply        # classify with Jev and sto
   `--db` (default `.data/shadow-triage.sqlite`, which Git ignores).
 - `--apply` needs `TYPESAFE_API_KEY`; without it the command reports itself
   blocked.
-- `--migrate` requires an existing `--db` path. It upgrades schema 1 to 2
+- `--migrate` requires an existing `--db` path. It upgrades schema 1 or 2 to 3
   without Spark, Jev, or a TypeSafe key. Back up the file first using the
   procedure in `docs/runbook.md`.
 - `SHADOW_DATABASE_PATH` points the app at a database a run wrote elsewhere
