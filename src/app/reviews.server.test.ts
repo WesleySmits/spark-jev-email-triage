@@ -24,6 +24,7 @@ import { openDatabase } from '../shadow/database'
 import { jevFailure, jevJudgment, storeJudgments, type StoredEntry } from '../shadow/fixtures'
 import { readReviews } from '../shadow/reviews'
 import type { DeskReviewRequest } from './desk-review'
+import type * as StoredClassifications from './stored-classifications.server'
 import { localReviewer, storeReview } from './reviews.server'
 
 // `spark/process` is the only module that starts a process. Recording a
@@ -31,6 +32,22 @@ import { localReviewer, storeReview } from './reviews.server'
 // would show up here all the same.
 const spawned = vi.hoisted(() => vi.fn())
 vi.mock('node:child_process', () => ({ spawn: spawned }))
+
+// The one thing that runs after a review is committed. A real database
+// cannot be made to fail there on demand, so the readback itself is made to,
+// over a store that really was written.
+const readback = vi.hoisted(() => ({ failing: false }))
+
+vi.mock('./stored-classifications.server', async (importOriginal) => {
+  const actual = await importOriginal<typeof StoredClassifications>()
+  return {
+    ...actual,
+    storedReviewFor: (...args: Parameters<typeof actual.storedReviewFor>) => {
+      if (readback.failing) throw new Error('The store could not be read back')
+      return actual.storedReviewFor(...args)
+    },
+  }
+})
 
 // Synthetic mail only: every address uses a reserved `.example` domain.
 const one = 'one@mail.example'
@@ -60,6 +77,7 @@ let env: Record<string, string | undefined>
 
 beforeEach(() => {
   spawned.mockReset()
+  readback.failing = false
   directory = mkdtempSync(join(tmpdir(), 'reviews-server-test-'))
   databasePath = join(directory, 'shadow.sqlite')
   env = { [databasePathVariable]: databasePath }
@@ -187,6 +205,42 @@ describe('storeReview', () => {
         decision: 'corrected',
         labels: { category: 'not-a-category', priority: 'urgent' },
       },
+    } as unknown as DeskReviewRequest
+
+    expect(storeReview(impossible, env)).toEqual({ status: 'failed' })
+    expect(stored()).toEqual([])
+  })
+
+  it('reports a review it committed as recorded, even when reading it back fails', () => {
+    judged()
+    readback.failing = true
+
+    // The review is history the database itself refuses to change, so what
+    // fails afterwards cannot take it back. Only the projection is lost.
+    expect(storeReview(confirm(), env, at('2026-09-23T08:30:00.000Z'))).toEqual({
+      status: 'recorded',
+    })
+    expect(stored()).toMatchObject([{ verdict: { decision: 'confirmed' } }])
+  })
+
+  it('never invites a second write of a review it already stored', () => {
+    judged()
+    readback.failing = true
+
+    // Reported as stored, so nothing offers to try again; were it reported
+    // as failed, a retry would append the same decision a second time.
+    const outcome = storeReview(confirm(), env, at('2026-09-23T08:30:00.000Z'))
+
+    expect(outcome.status).toBe('recorded')
+    expect(stored()).toHaveLength(1)
+  })
+
+  it('still reports a failure that happened before anything was written', () => {
+    judged()
+    readback.failing = true
+    const impossible = {
+      classification: subject(one),
+      verdict: { decision: 'corrected', labels: { category: 'not-a-category', priority: 'low' } },
     } as unknown as DeskReviewRequest
 
     expect(storeReview(impossible, env)).toEqual({ status: 'failed' })

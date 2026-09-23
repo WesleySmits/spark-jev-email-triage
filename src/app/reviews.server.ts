@@ -63,9 +63,52 @@ function opened(path: string): DatabaseSync | null {
 }
 
 /**
+ * Appends the review, or says why nothing was stored. Everything that can go
+ * wrong here happens before anything is committed, so a failure means the
+ * store is untouched.
+ */
+function append(db: DatabaseSync, request: DeskReviewRequest, now: () => Date): DeskReviewOutcome {
+  try {
+    const review = humanReviewSchema.parse({
+      ...request,
+      reviewer: localReviewer(),
+      reviewedAt: now().toISOString(),
+    })
+    return recordReview(db, review, currentJudge)
+  } catch {
+    // A write that did not go through is never reported as one that did.
+    return failed
+  }
+}
+
+/**
+ * What the store now projects for the copy, or nothing when it cannot be
+ * read. This runs after a review is committed, so its failing says nothing
+ * about whether that review was stored, and it is never allowed to say so:
+ * the page would show a review that could not be saved and offer to try
+ * again, and trying again would append the same decision a second time.
+ * Showing no reviewer until the next reading is the smaller loss by far.
+ */
+function projected(db: DatabaseSync, copy: DeskReviewRequest['classification']['copy']) {
+  try {
+    // Read back rather than assembled from what was just written: a
+    // confirmation carries no labels of its own, and the row may have been
+    // judged again in between, so only the store can say what it now shows.
+    return storedReviewFor(db, copy)
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Appends one review, or says why nothing was stored. A store no run has
  * ever written holds no classification to review, so the review is refused
  * as `unclassified` rather than creating a database to put it in.
+ *
+ * Once the write commits the outcome is `recorded`, whatever happens after
+ * it. A review is history the database itself refuses to change, so nothing
+ * that goes wrong later can take it back, and reporting otherwise would ask
+ * for it to be written twice.
  */
 export function storeReview(
   request: DeskReviewRequest,
@@ -77,20 +120,9 @@ export function storeReview(
   const db = opened(path)
   if (db === null) return failed
   try {
-    const review = humanReviewSchema.parse({
-      ...request,
-      reviewer: localReviewer(),
-      reviewedAt: now().toISOString(),
-    })
-    const recorded = recordReview(db, review, currentJudge)
-    if (recorded.status !== 'recorded') return recorded
-    // Read back rather than assembled from what was just written: a
-    // confirmation carries no labels of its own, and the row may have been
-    // judged again in between, so only the store can say what it now shows.
-    return { status: 'recorded', review: storedReviewFor(db, request.classification.copy) }
-  } catch {
-    // A write that did not go through is never reported as one that did.
-    return failed
+    const written = append(db, request, now)
+    if (written.status !== 'recorded') return written
+    return { status: 'recorded', review: projected(db, request.classification.copy) }
   } finally {
     db.close()
   }
