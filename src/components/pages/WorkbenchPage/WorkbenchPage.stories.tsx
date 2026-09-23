@@ -1036,14 +1036,18 @@ export const RefreshOutlivesProof: Story = {
 
 // Stands in for the desk's review seam. It records nothing anywhere: a story
 // only says what the store would have answered, after `delay` milliseconds.
-type ReviewAnswer = Readonly<{ outcome: DeskReviewOutcome; delay?: number | undefined }>
+type ReviewAnswer = Readonly<{
+  /** The store's answer, or how it answers the request it was given. */
+  outcome: DeskReviewOutcome | ((request: DeskReviewRequest) => DeskReviewOutcome)
+  delay?: number | undefined
+}>
 
 const answering =
   ({ outcome, delay = 0 }: ReviewAnswer) =>
-  (): Promise<DeskReviewOutcome> =>
+  (request: DeskReviewRequest): Promise<DeskReviewOutcome> =>
     new Promise((resolve) =>
       setTimeout(() => {
-        resolve(outcome)
+        resolve(typeof outcome === 'function' ? outcome(request) : outcome)
       }, delay),
     )
 
@@ -1099,6 +1103,20 @@ const resultShows = (root: HTMLElement, text: string | RegExp) =>
 
 /** The row whose stored judgment still describes it, so it may be reviewed. */
 const reviewableRow = /Can delivery move/
+
+/** The row that may be reviewed, as the queue shows it. */
+const reviewedRow = (root: HTMLElement) => within(root).getByRole('button', { name: reviewableRow })
+
+/**
+ * The row and the reader both showing the correction a person made, with the
+ * model's own suggestion still beside it.
+ */
+async function showsTheCorrection(root: HTMLElement) {
+  await expect(reviewedRow(root)).toHaveTextContent('Suspicious')
+  await expect(evidence(root)).toHaveTextContent('Corrected by a person')
+  await expect(evidence(root)).toHaveTextContent(`By ${reviewer} on`)
+  await expect(evidence(root)).toHaveTextContent('The model suggested Personal')
+}
 
 /** Waits for the open row's body to prove its judgment names this version. */
 const reviewReady = (root: HTMLElement) =>
@@ -1229,6 +1247,8 @@ export const ReviewNotStored: Story = {
     await resultShows(canvasElement, 'Not saved')
     await expect(result(canvasElement)).toHaveTextContent('could not be stored')
     await expect(save(canvasElement)).toBeEnabled()
+    // Nothing was stored, so nothing about the row changed either.
+    await expect(evidence(canvasElement)).toHaveTextContent('Needs a person')
 
     await userEvent.click(save(canvasElement))
     await waitFor(() => expect(reviewOf(args).onSaveReview).toHaveBeenCalledTimes(2))
@@ -1406,16 +1426,11 @@ export const ReviewSurvivesRefresh: Story = {
   render: (args) => <WithStoredReviews {...args} />,
   play: async ({ args, canvasElement }) => {
     const rows = within(canvasElement)
-    const reviewed = () => rows.getByRole('button', { name: reviewableRow })
     await saveChosen(canvasElement, 'Suspicious')
     await resultShows(canvasElement, 'Review saved')
 
     await refresh(canvasElement)
-    await expect(reviewed()).toHaveTextContent('Suspicious')
-    await expect(evidence(canvasElement)).toHaveTextContent('Corrected by a person')
-    await expect(evidence(canvasElement)).toHaveTextContent(`By ${reviewer} on`)
-    // What the classifier proposed is kept beside what the person decided.
-    await expect(evidence(canvasElement)).toHaveTextContent('The model suggested Personal')
+    await showsTheCorrection(canvasElement)
     await expect(evidence(canvasElement)).toHaveTextContent('your mail is unchanged')
 
     // Built afresh from what the reading carried, not from this session.
@@ -1528,6 +1543,17 @@ function WithNextReading({ next, ...args }: Props & { next: ListedEvidence }) {
   )
 }
 
+/**
+ * A store that records the review and answers with what it now projects for
+ * that row, as `storeReview` does. Nothing invents a reviewer or a time here
+ * either: this stands in for the store, and the page only ever shows what it
+ * was answered.
+ */
+const recording = (request: DeskReviewRequest): DeskReviewOutcome => ({
+  status: 'recorded',
+  review: projected(request.verdict),
+})
+
 /** The reading a Refresh brings: the same row, judged again since. */
 const newerReading: ListedEvidence = { reading: 'reading-2', states: newerStates }
 
@@ -1628,5 +1654,54 @@ export const RefreshDuringSaveIsLeftAlone: Story = {
       classification: subjectOf('m1'),
       verdict: { decision: 'corrected', labels: { category: 'suspicious', priority: 'high' } },
     })
+  },
+}
+
+/**
+ * A saved review shows on the whole page at once. The store answers the save
+ * with what it now projects for that row, so the queue shows the category the
+ * person chose and the reader names their decision — no refresh, no thread
+ * read again and nothing classified to say it. The panel, the row and the
+ * evidence never disagree.
+ */
+export const SavedReviewShowsAtOnce: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewing({ outcome: recording }),
+  play: async ({ args, canvasElement }) => {
+    await reviewReady(canvasElement)
+    await expect(reviewedRow(canvasElement)).toHaveTextContent('Personal')
+    await expect(evidence(canvasElement)).toHaveTextContent('Needs a person')
+
+    await pick(canvasElement, 'Suspicious')
+    await userEvent.click(save(canvasElement))
+    await resultShows(canvasElement, 'Review saved')
+
+    await showsTheCorrection(canvasElement)
+    await expect(evidence(canvasElement)).not.toHaveTextContent('Needs a person')
+
+    // It holds for the row in the list once the reader has moved on.
+    await userEvent.click(within(canvasElement).getByRole('button', { name: /Newsletter: work/ }))
+    await expect(reviewedRow(canvasElement)).toHaveTextContent('Suspicious')
+    // Only the two bodies the reader opened were ever asked for.
+    await expect(args.loadBody).toHaveBeenCalledTimes(2)
+  },
+}
+
+/**
+ * A review the store refused as no longer current changes nothing on the
+ * page: the row keeps the category triage gave it and the reader still says
+ * the model asked for a person. Only a review the store recorded shows.
+ */
+export const RefusedReviewShowsNowhere: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewing({ outcome: { status: 'refused', reason: 'stale_subject' } }),
+  play: async ({ canvasElement }) => {
+    await saveChosen(canvasElement, 'Suspicious')
+    await resultShows(canvasElement, 'Not saved')
+
+    await expect(reviewedRow(canvasElement)).toHaveTextContent('Personal')
+    await expect(reviewedRow(canvasElement)).not.toHaveTextContent('Suspicious')
+    await expect(evidence(canvasElement)).toHaveTextContent('Needs a person')
+    await expect(evidence(canvasElement)).not.toHaveTextContent('by a person')
   },
 }

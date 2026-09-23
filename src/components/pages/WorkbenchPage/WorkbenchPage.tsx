@@ -29,6 +29,7 @@ import {
   rowState,
   type Evidence,
   type ListedEvidence,
+  type RecordedReviews,
 } from './classification'
 import { ReviewAction, type SaveReview } from './ReviewAction'
 import { reviewableIn } from './review'
@@ -327,6 +328,40 @@ function noticeFor(shown: Shown | undefined, now: Spot) {
   return shown && samePlace(shown, now) ? shown.message : undefined
 }
 
+/**
+ * The reviews recorded from this page, by row, so the queue and the reader
+ * show what was just decided without the mailbox being listed again.
+ *
+ * Only a save the store recorded is kept, and only the answer the store gave
+ * for it: nothing here invents a reviewer or a time, and a refusal or a
+ * failure records nothing at all. What is kept stops applying on its own once
+ * a row no longer shows the version it named, so none of it has to be thrown
+ * away by hand.
+ */
+function useRecordedReviews(review: WorkbenchReview | undefined) {
+  const [recorded, setRecorded] = useState<RecordedReviews>({})
+  if (review?.mode !== 'enabled') return { recorded, save: undefined } as const
+  const { onSaveReview } = review
+  return {
+    recorded,
+    /** Saves one review of the row `id`, and keeps what the store answered. */
+    save:
+      (id: string): SaveReview =>
+      async (request) => {
+        const outcome = await onSaveReview(request)
+        if (outcome.status !== 'recorded') return outcome
+        const stored = outcome.review
+        if (stored !== undefined) {
+          setRecorded((current) => ({
+            ...current,
+            [id]: { subject: request.classification, review: stored },
+          }))
+        }
+        return outcome
+      },
+  } as const
+}
+
 /** A ref that always holds the latest render's value, for use in callbacks. */
 function useLatest<T>(value: T) {
   const ref = useRef(value)
@@ -604,11 +639,11 @@ function readerEvidence(
  * a choice made on one message never carries to the next.
  */
 function readerReview(
-  review: WorkbenchReview | undefined,
+  save: ((id: string) => SaveReview) | undefined,
   evidence: Evidence,
   openId: string | undefined,
 ) {
-  if (review?.mode !== 'enabled' || openId === undefined) return undefined
+  if (save === undefined || openId === undefined) return undefined
   const reviewable = reviewableIn(evidence.open)
   if (reviewable === undefined) return undefined
   return (
@@ -616,7 +651,7 @@ function readerReview(
       key={openId}
       reviewable={reviewable}
       saved={evidence.openReview}
-      onSave={review.onSaveReview}
+      onSave={save(openId)}
     />
   )
 }
@@ -698,8 +733,9 @@ function useWorkbench(props: WorkbenchPageProps) {
     state.open?.id,
     props.classifications?.reading,
   )
-  const evidence = evidenceIn(props.classifications, state.open?.id, body)
-  return { state, searchId, root, notice, complete, body, retry, evidence } as const
+  const reviews = useRecordedReviews(props.review)
+  const evidence = evidenceIn(props.classifications, state.open?.id, body, reviews.recorded)
+  return { state, searchId, root, notice, complete, body, retry, evidence, reviews } as const
 }
 
 /**
@@ -742,7 +778,8 @@ function useWorkbench(props: WorkbenchPageProps) {
  */
 export function WorkbenchPage(props: WorkbenchPageProps) {
   const { workflows, mailboxes, completion } = props
-  const { state, searchId, root, notice, complete, body, retry, evidence } = useWorkbench(props)
+  const { state, searchId, root, notice, complete, body, retry, evidence, reviews } =
+    useWorkbench(props)
   const title = workflows.find((item) => item.id === state.filter.workflow)?.label ?? ''
   const canComplete = completion.mode === 'enabled'
   return (
@@ -768,7 +805,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             retry={retry}
             evidence={evidence.open}
             reviewed={evidence.openReview}
-            review={readerReview(props.review, evidence, state.open?.id)}
+            review={readerReview(reviews.save, evidence, state.open?.id)}
           />
         }
       />

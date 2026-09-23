@@ -187,6 +187,19 @@ function reviewOf(db: DatabaseSync, copy: MailboxCopyRef, classification: Stored
   return decidedByPerson(effectiveOutcome(classification, reviews))
 }
 
+/**
+ * What a person has decided about one mailbox copy, on the store alone, as a
+ * reading would project it. Used to answer a review that was just recorded
+ * with what the next reading will say about that row, so nothing has to be
+ * listed or read again to show it. No provider is asked and nothing is
+ * classified, and the answer is scoped as every other one is: the review must
+ * name the exact version the store now holds for that copy, or there is none.
+ */
+export function storedReviewFor(db: DatabaseSync, copy: MailboxCopyRef) {
+  const judgments = readJudgments(db, [copy]).get(mailboxCopyId(copy)) ?? []
+  return reviewOf(db, copy, projectClassification(judgments, currentJudge))
+}
+
 /** Each row's copy, judged against the versions this build uses now. */
 function stored(
   db: DatabaseSync,

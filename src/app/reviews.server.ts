@@ -14,8 +14,11 @@
  *
  * Who reviewed and when are decided here rather than sent by a browser. The
  * reviewer is this computer's account name, never a mailbox address, and the
- * time is this computer's clock. Nothing that fails here says more than a
- * coarse status: no subject, address or body leaves this module.
+ * time is this computer's clock. A recorded review is answered with what a
+ * reading of the store would now project for that row, so the page can show
+ * it at once without listing anything again and without making up a reviewer
+ * or a time of its own. Nothing that fails here says more than a coarse
+ * status: no subject, address or body leaves this module.
  */
 import { existsSync } from 'node:fs'
 import { userInfo } from 'node:os'
@@ -27,6 +30,7 @@ import { readDatabasePath } from '../shadow/config'
 import { openForWriting } from '../shadow/database'
 import { recordReview } from '../shadow/reviews'
 import type { DeskReviewOutcome, DeskReviewRequest } from './desk-review'
+import { storedReviewFor } from './stored-classifications.server'
 
 /** The versions a stored judgment must name to still be the one reviewed. */
 const currentJudge = { rubric: currentTriageRubric, classifierVersion: jevModel }
@@ -78,7 +82,12 @@ export function storeReview(
       reviewer: localReviewer(),
       reviewedAt: now().toISOString(),
     })
-    return recordReview(db, review, currentJudge)
+    const recorded = recordReview(db, review, currentJudge)
+    if (recorded.status !== 'recorded') return recorded
+    // Read back rather than assembled from what was just written: a
+    // confirmation carries no labels of its own, and the row may have been
+    // judged again in between, so only the store can say what it now shows.
+    return { status: 'recorded', review: storedReviewFor(db, request.classification.copy) }
   } catch {
     // A write that did not go through is never reported as one that did.
     return failed

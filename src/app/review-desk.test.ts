@@ -462,8 +462,11 @@ describe('ReviewDesk.review', () => {
     const view = await ReviewDesk.open()
     spark.run.mockClear()
 
-    await expect(ReviewDesk.review(confirming(view, copy(one, '11')))).resolves.toEqual({
+    await expect(ReviewDesk.review(confirming(view, copy(one, '11')))).resolves.toMatchObject({
       status: 'recorded',
+      // Answered with what a reading would now project, so the page can show
+      // it without listing anything again.
+      review: { decidedBy: 'reviewer', decision: 'confirmed' },
     })
     // Reviewing is not a mailbox action: no Spark command and no classifier.
     expect(commands()).toEqual([])
@@ -479,7 +482,10 @@ describe('ReviewDesk.review', () => {
         classification: shownSubject(view, copy(one, '11')),
         verdict: { decision: 'corrected', labels: { category: 'suspicious', priority: 'urgent' } },
       }),
-    ).resolves.toEqual({ status: 'recorded' })
+    ).resolves.toMatchObject({
+      status: 'recorded',
+      review: { decision: 'corrected', labels: { category: 'suspicious', priority: 'urgent' } },
+    })
 
     // The next reading lists exactly what the classifier proposed, still.
     expect(classificationOf(await ReviewDesk.open(), copy(one, '11'))).toMatchObject({

@@ -276,6 +276,39 @@ describe('evidenceIn, what a person decided', () => {
     expect(evidenceIn(listed, 'm1', { status: 'stale' }).openReview).toBe(corrected)
   })
 
+  it('shows a review recorded here at once, on the open row and in the list', () => {
+    const own = { subject, review: reviewOfOther }
+    const evidence = evidenceIn({ ...listed, reviews: {} }, 'm2', idleBody, { m1: own })
+
+    // m1 is not the open row, so nothing was read for it: the page shows
+    // what it recorded, which is the store's own answer to that save.
+    expect(evidence.reviewOf('m1')).toBe(reviewOfOther)
+    expect(evidenceIn({ ...listed, reviews: {} }, 'm1', idleBody, { m1: own }).openReview).toBe(
+      reviewOfOther,
+    )
+  })
+
+  it('stops showing a recorded review once the row shows another version', () => {
+    const own = { subject: { ...subject, latestMessageId: '13' }, review: reviewOfOther }
+    const evidence = evidenceIn({ ...listed, reviews: {} }, 'm1', idleBody, { m1: own })
+
+    expect(evidence.openReview).toBeUndefined()
+    expect(evidence.reviewOf('m1')).toBeUndefined()
+    // Nor does it reach a row it never named.
+    expect(
+      evidenceIn({ ...listed, reviews: {} }, 'm1', idleBody, { m2: own }).reviewOf('m2'),
+    ).toBeUndefined()
+  })
+
+  it('lets the later of a recorded and a listed review decide, as the store would', () => {
+    const older = { subject, review: { ...corrected, reviewedAt: '2026-09-22T08:00:00.000Z' } }
+    const newer = { subject, review: reviewOfOther }
+
+    // `corrected` is the listed one, at 2026-09-23T08:30.
+    expect(evidenceIn(listed, 'm1', idleBody, { m1: older }).openReview).toBe(corrected)
+    expect(evidenceIn(listed, 'm1', idleBody, { m1: newer }).openReview).toBe(reviewOfOther)
+  })
+
   it('has nothing to show without a reading, an open row or any reviews', () => {
     expect(evidenceIn(undefined, 'm1', idleBody).openReview).toBeUndefined()
     expect(evidenceIn(listed, undefined, idleBody).openReview).toBeUndefined()

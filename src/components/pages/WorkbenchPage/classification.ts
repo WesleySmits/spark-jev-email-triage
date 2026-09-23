@@ -22,9 +22,11 @@
 import type { RowReview } from '../../../app/desk-review'
 import type { MailboxCopyRef } from '../../../domain/mailbox-copy'
 import { mailboxCopyId } from '../../../domain/mailbox-copy'
+import { sameSubject } from '../../../domain/review'
 import type { BodyState } from './body'
 import type {
   ClassificationLabels,
+  JudgedSubject,
   StoredClassification,
 } from '../../../domain/stored-classification'
 import type { Badge } from '../../atoms/Badge/Badge'
@@ -93,6 +95,28 @@ export type ListedEvidence = Readonly<{
   reviews?: Readonly<Record<string, RowReview>> | undefined
 }>
 
+/**
+ * A review recorded from this page since the reading, and the version it
+ * named. The store answered the save with it, so it is the store's own
+ * projection of that row: nothing here invents a reviewer or a time.
+ *
+ * It lets a row show what was just decided without the mailbox being listed
+ * again, and it is scoped like every other answer: it decides a row only
+ * while that row is still showing the version it named.
+ */
+export type RecordedReview = Readonly<{ subject: JudgedSubject; review: RowReview }>
+
+/** Every review recorded from this page since the reading, by the row's id. */
+export type RecordedReviews = Readonly<Record<string, RecordedReview>>
+
+/** Whether a recorded review names the version a row is showing. */
+const namesShown = (recorded: RecordedReview, shown: StoredClassification | undefined) =>
+  shown !== undefined && 'subject' in shown && sameSubject(recorded.subject, shown.subject)
+
+/** The later of two answers about one row, by when each was decided. */
+const later = (a: RowReview, b: RowReview) =>
+  Date.parse(a.reviewedAt) >= Date.parse(b.reviewedAt) ? a : b
+
 /** What applies to each row of one reading. */
 export type Evidence = Readonly<{
   /** What applies to the open row, including what its own body read proved. */
@@ -126,6 +150,7 @@ export function evidenceIn(
   listed: ListedEvidence | undefined,
   openId: string | undefined,
   body: BodyState,
+  recorded: RecordedReviews = {},
 ): Evidence {
   const stored = (id: string) => listed?.states[id]
   const reviewed = (id: string) => listed?.reviews?.[id]
@@ -151,12 +176,23 @@ export function evidenceIn(
   // loader that carries no reviews at all, as fixtures do, is the same case.
   const answering =
     read?.classification !== undefined && read.classification === open ? read : undefined
-  const openReview = openId === undefined ? undefined : (answering?.review ?? reviewed(openId))
+  // A review this page recorded is the store's own answer to that save, so
+  // it counts wherever the row is still showing the version it named, open
+  // or not: the queue and the reader say what was decided at once, without
+  // the mailbox being listed again. Where a reading carries an answer too,
+  // the later of the two decides, as the store itself would.
+  const withRecorded = (id: string, shown: StoredClassification | undefined) => {
+    const found = id === openId ? (answering?.review ?? reviewed(id)) : reviewed(id)
+    const own = recorded[id]
+    if (own === undefined || !namesShown(own, shown)) return found
+    return found === undefined ? own.review : later(found, own.review)
+  }
+  const openReview = openId === undefined ? undefined : withRecorded(openId, open)
   return {
     open,
     openReview,
     of: (id) => (id === openId ? open : stored(id)),
-    reviewOf: (id) => (id === openId ? openReview : reviewed(id)),
+    reviewOf: (id) => (id === openId ? openReview : withRecorded(id, stored(id))),
   }
 }
 

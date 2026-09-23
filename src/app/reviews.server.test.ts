@@ -100,8 +100,19 @@ describe('storeReview', () => {
   it('appends a confirmation beside the judgment, naming this computer and this moment', () => {
     judged()
 
+    // It answers with what a reading would now project for that row, read
+    // back from the store rather than assembled from what was just written.
     expect(storeReview(confirm(), env, at('2026-09-23T08:30:00.000Z'))).toEqual({
       status: 'recorded',
+      review: {
+        decidedBy: 'reviewer',
+        decision: 'confirmed',
+        // A confirmation carries no labels of its own, so these are the
+        // classifier's, exactly as the row already showed them.
+        labels: { category: 'personal', priority: 'high' },
+        reviewer: localReviewer(),
+        reviewedAt: '2026-09-23T08:30:00.000Z',
+      },
     })
     expect(stored()).toEqual([
       {
@@ -117,8 +128,9 @@ describe('storeReview', () => {
     judged()
 
     storeReview(confirm(), env, at('2026-09-23T08:30:00.000Z'))
-    expect(storeReview(correct, env, at('2026-09-23T09:00:00.000Z'))).toEqual({
+    expect(storeReview(correct, env, at('2026-09-23T09:00:00.000Z'))).toMatchObject({
       status: 'recorded',
+      review: { decision: 'corrected', labels: { category: 'suspicious', priority: 'urgent' } },
     })
 
     expect(stored().map((review) => review.verdict.decision)).toEqual(['corrected', 'confirmed'])

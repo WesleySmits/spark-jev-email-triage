@@ -24,7 +24,12 @@ export type DeskReviewRequest = z.infer<typeof deskReviewRequestSchema>
 
 /**
  * What came of one review:
- * - `recorded`: it was appended beside the classification it reviews.
+ * - `recorded`: it was appended beside the classification it reviews, and
+ *   `review` is what a reading of the store would now project for that row,
+ *   answered by the store rather than made up by whatever asked. It is left
+ *   out only where the store has already moved past the version just
+ *   reviewed, which decides that row no longer; the review is stored either
+ *   way, so this stays `recorded`.
  * - `refused`: the store would not take it, and says why in a content-free
  *   code. See `ReviewRefusal`; `stale_subject` is the one a person meets.
  * - `failed`: nothing was stored, and it is not a refusal: the store could
@@ -32,7 +37,7 @@ export type DeskReviewRequest = z.infer<typeof deskReviewRequestSchema>
  *   subject, address or body, so it may be shown and logged as it is.
  */
 export type DeskReviewOutcome =
-  | Readonly<{ status: 'recorded' }>
+  | Readonly<{ status: 'recorded'; review?: RowReview | undefined }>
   | Readonly<{ status: 'refused'; reason: ReviewRefusal }>
   | Readonly<{ status: 'failed' }>
 
