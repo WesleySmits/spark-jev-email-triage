@@ -4,8 +4,9 @@
  *
  * Stored data is limited to what review needs: mailbox, thread, and message
  * ids; scrubbed and truncated display fields; judgment values, probabilities,
- * and versions; run status and counts; provider error codes; and, later,
- * human corrections. Never bodies, attachment contents, or credentials.
+ * and versions; run status and counts; provider error codes; and the human
+ * reviews of stored classifications. Never bodies, attachment contents, or
+ * credentials.
  *
  * Migrations are append-only. Each runs in one transaction with its version
  * bump, so a failed migration leaves the previous version intact.
@@ -15,8 +16,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod'
 
 const migrations: readonly string[] = [
-  // 1: runs, threads, judgments, the messages each judgment covered, and
-  //    human corrections.
+  // 1: runs, threads, judgments, the messages each judgment covered, and a
+  //    placeholder for human corrections.
   `
   CREATE TABLE runs (
     id INTEGER PRIMARY KEY,
@@ -101,6 +102,48 @@ const migrations: readonly string[] = [
     priority TEXT NOT NULL,
     corrected_at TEXT NOT NULL
   ) STRICT;
+  `,
+  // 2: human reviews, which replace the placeholder above. A review names
+  //    one judgment and the exact subject version its reviewer was shown,
+  //    so the row keeps saying what was reviewed whatever is judged later.
+  //    Corrections carry the labels a person chose; confirmations carry
+  //    none, so a confirmation cannot read as having proposed any. The
+  //    triggers make the table append-only in the database itself: a review
+  //    is history, and history is neither edited nor dropped. Nothing
+  //    touches `judgments`, so a review never overwrites what it reviews.
+  //
+  //    `corrections` goes. Nothing ever wrote a row to it, and leaving a
+  //    second, unreachable place for a human decision beside `reviews`
+  //    would only invite writing to the wrong one.
+  `
+  CREATE TABLE reviews (
+    id INTEGER PRIMARY KEY,
+    judgment_id INTEGER NOT NULL REFERENCES judgments (id),
+    mailbox_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    thread_id TEXT NOT NULL,
+    latest_message_id TEXT NOT NULL,
+    rubric TEXT NOT NULL,
+    classifier_version TEXT NOT NULL,
+    decision TEXT NOT NULL CHECK (decision IN ('confirmed', 'corrected')),
+    category TEXT,
+    priority TEXT,
+    reviewer TEXT NOT NULL,
+    reviewed_at TEXT NOT NULL,
+    CHECK ((decision = 'corrected') = (category IS NOT NULL AND priority IS NOT NULL))
+  ) STRICT;
+
+  CREATE INDEX reviews_by_copy ON reviews (mailbox_id, message_id, reviewed_at);
+
+  CREATE TRIGGER reviews_are_never_changed BEFORE UPDATE ON reviews BEGIN
+    SELECT RAISE(ABORT, 'A stored review is history and cannot be changed');
+  END;
+
+  CREATE TRIGGER reviews_are_never_removed BEFORE DELETE ON reviews BEGIN
+    SELECT RAISE(ABORT, 'A stored review is history and cannot be removed');
+  END;
+
+  DROP TABLE corrections;
   `,
 ]
 

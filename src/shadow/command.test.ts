@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { exitCodes, formatSummary, main } from './command'
+import { schemaVersion } from './database'
 import type { ShadowSummary } from './pipeline'
 
 const run = async (args: string[], env: NodeJS.ProcessEnv = {}) => {
@@ -12,7 +13,7 @@ describe('shadow command', () => {
   it('runs the migration preflight on a disposable database', async () => {
     expect(await run(['--preflight'])).toEqual({
       code: exitCodes.ok,
-      lines: ['preflight ok: schema 1'],
+      lines: [`preflight ok: schema ${String(schemaVersion)}`],
     })
   })
 

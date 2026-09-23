@@ -18,8 +18,9 @@
  */
 import type { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod'
-import { mailboxCopyId, type MailboxCopyRef } from '../domain/mailbox-copy'
+import type { MailboxCopyRef } from '../domain/mailbox-copy'
 import { storedJudgmentSchema, type StoredJudgment } from '../domain/stored-classification'
+import { readByCopy } from './by-copy'
 
 /** Every judgment that covered one mailbox copy, newest first. */
 const query = `
@@ -89,21 +90,11 @@ const judgmentOf = (copy: MailboxCopyRef, row: Row) =>
  * The stored judgments of each named copy, newest first, by copy id. A copy
  * without a readable judgment is absent, which is not an error: it has none.
  */
-export function readJudgments(
+export const readJudgments = (
   db: DatabaseSync,
   copies: readonly MailboxCopyRef[],
-): ReadonlyMap<string, readonly StoredJudgment[]> {
-  const statement = db.prepare(query)
-  const byCopy = new Map<string, readonly StoredJudgment[]>()
-  for (const copy of copies) {
-    const rows = rowsSchema.parse(
-      statement.all({ mailboxId: copy.mailboxId, messageId: copy.messageId }),
-    )
-    const judgments = rows.flatMap((row) => {
-      const parsed = judgmentOf(copy, row)
-      return parsed.success ? [parsed.data] : []
-    })
-    if (judgments.length > 0) byCopy.set(mailboxCopyId(copy), judgments)
-  }
-  return byCopy
-}
+): ReadonlyMap<string, readonly StoredJudgment[]> =>
+  readByCopy(db, query, rowsSchema, copies, (copy, row) => {
+    const parsed = judgmentOf(copy, row)
+    return parsed.success ? [parsed.data] : []
+  })
