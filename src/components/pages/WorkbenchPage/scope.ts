@@ -1,4 +1,8 @@
-import { maxInboxPages } from '../../../app/live-inbox'
+import {
+  maxInboxPages,
+  type MailboxFailure as LiveMailboxFailure,
+  type MailboxScope as LiveMailboxScope,
+} from '../../../app/live-inbox'
 
 /**
  * What the page says about its own reach. The queue holds a bounded reading
@@ -15,39 +19,19 @@ import { maxInboxPages } from '../../../app/live-inbox'
  * mail behind by accident, and only one of the two is worth retrying.
  */
 
-/** How much of one mailbox the page holds. */
-export type MailboxScope = Readonly<{
-  id: string
-  /** The mailbox as the rail names it, e.g. its address. */
-  label: string
-  /** Rows the page holds for it. */
-  loaded: number
-  /** Whether the per-mailbox bound may have cut it. */
-  bounded: boolean
-}>
-
-/** One mailbox the reading could not read. It names no mail, only the mailbox. */
-export type MailboxFailure = Readonly<{
-  id: string
-  /** The mailbox as the rail names it, e.g. its address. */
-  label: string
-  /** Why it could not be read, coarsely. */
-  reason: 'missing' | 'failed' | 'malformed'
-}>
-
 /** What the page holds, what bounded it and what failed. The route counts these. */
 export type QueueScope = Readonly<{
   view?: 'unread' | 'other'
   pages?: number
   /** Every mailbox the reading listed, failed ones included. */
-  mailboxes: readonly MailboxScope[]
+  mailboxes: readonly LiveMailboxScope[]
   /**
    * The listed mailboxes that could not be read. Each holds 0 rows here
    * because nothing could be read from it, never because it is empty.
    */
-  failed: readonly MailboxFailure[]
+  failed: readonly LiveMailboxFailure[]
   /** Earlier pages are shown, but a later page could not be read. */
-  incomplete?: readonly MailboxFailure[]
+  incomplete?: readonly LiveMailboxFailure[]
   /** Readable mailboxes the provider offered, before the mailbox bound. */
   readable: number
   /** At most this many mailboxes are loaded. */
