@@ -304,9 +304,9 @@ describe('createLiveInbox list with a mailbox that fails', () => {
     // failed is still there to return to.
     expect(result.mailboxes.map((mailbox) => mailbox.id)).toEqual([one, two, three])
     expect(result.scope.mailboxes).toEqual([
-      { id: one, label: one, loaded: 1, bounded: false },
-      { id: two, label: two, loaded: 0, bounded: false },
-      { id: three, label: three, loaded: 1, bounded: false },
+      { id: one, label: one, loaded: 1, pages: 1, bounded: false },
+      { id: two, label: two, loaded: 0, pages: 0, bounded: false },
+      { id: three, label: three, loaded: 1, pages: 1, bounded: false },
     ])
   })
 
@@ -338,6 +338,7 @@ describe('createLiveInbox list with a mailbox that fails', () => {
       id: two,
       label: two,
       loaded: 0,
+      pages: 1,
       bounded: false,
     })
   })
@@ -604,8 +605,8 @@ describe('createLiveInbox alias copies', () => {
 
     expect(result.scope.loaded).toBe(2)
     expect(result.scope.mailboxes).toEqual([
-      { id: one, label: one, loaded: 1, bounded: false },
-      { id: two, label: two, loaded: 1, bounded: false },
+      { id: one, label: one, loaded: 1, pages: 1, bounded: false },
+      { id: two, label: two, loaded: 1, pages: 1, bounded: false },
     ])
     // The copies are never merged on message id, subject or contents.
     expect(result.scope.loaded).toBe(result.messages.length)
@@ -863,6 +864,187 @@ describe('createLiveInbox scope', () => {
     expect(result.scope.mailboxes.every((mailbox) => !mailbox.bounded)).toBe(true)
     expect(result.scope.loaded).toBe(7)
     expect(result.scope.readable - result.scope.mailboxes.length).toBe(0)
+  })
+})
+
+describe('createLiveInbox incremental refresh', () => {
+  const pageOf = (mailboxId: string, page: number) =>
+    Array.from({ length: perMailbox }, (_, index) =>
+      listing(mailboxId, String(page * 100 + index + 1), '2026-09-22T09:00:00.000Z'),
+    )
+
+  it('re-reads only the loaded depth and reports shifts, removals and updates once', async () => {
+    const pages: number[] = []
+    let refreshing = false
+    let instant = new Date('2026-09-22T10:00:00.000Z')
+    const shifted = listing(one, '110', '2026-09-22T09:00:00.000Z')
+    const reader: MailReader = {
+      listMailboxes: () => Promise.resolve([access(one)]),
+      listRecentEmails: ({ page = 1 }) => {
+        pages.push(page)
+        if (!refreshing) {
+          return Promise.resolve(page === 1 ? pageOf(one, 1) : [listing(one, '201', null)])
+        }
+        if (page === 1) {
+          return Promise.resolve([
+            listing(one, '900', '2026-09-22T09:30:00.000Z'),
+            ...pageOf(one, 1)
+              .slice(0, perMailbox - 1)
+              .map((row) =>
+                row.messageId === '108'
+                  ? { ...row, subject: { text: 'Updated subject', cut: false } }
+                  : row,
+              ),
+          ])
+        }
+        return Promise.resolve([shifted])
+      },
+      readThread: () => Promise.resolve(thread([])),
+    }
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now: () => instant })
+    const first = await live.list()
+    if (first.status !== 'ready') throw new Error('Expected first page')
+    const loaded = await live.list(undefined, { view: 'unread', cursor: first.scope.cursor })
+    if (loaded.status !== 'ready') throw new Error('Expected loaded window')
+    const selectedCopy = loaded.messages.find((message) => message.messageId === '105')?.id
+    pages.length = 0
+    refreshing = true
+    instant = new Date('2026-09-22T10:05:00.000Z')
+
+    const result = await live.refresh({ view: 'unread' })
+    if (result.status !== 'ready') throw new Error('Expected refresh')
+
+    expect(pages).toEqual([1, 2])
+    expect(result.messages.map((message) => message.messageId)).toEqual([
+      '900',
+      '101',
+      '102',
+      '103',
+      '104',
+      '105',
+      '106',
+      '107',
+      '108',
+      '109',
+      '110',
+    ])
+    expect(selectedCopy).toBeDefined()
+    expect(result.messages.some((message) => message.id === selectedCopy)).toBe(true)
+    expect(result.refresh).toMatchObject({
+      added: 1,
+      removed: 1,
+      updated: 1,
+      previousReadAt: '2026-09-22T10:00:00.000Z',
+      readAt: '12:05',
+      refreshedAt: '2026-09-22T10:05:00.000Z',
+      mailboxes: [
+        {
+          id: one,
+          pages: 2,
+          added: 1,
+          removed: 1,
+          updated: 1,
+          status: 'refreshed',
+          readAt: '12:05',
+          refreshedAt: '2026-09-22T10:05:00.000Z',
+        },
+      ],
+    })
+  })
+
+  it('isolates one mailbox refresh failure and keeps the other mailbox current', async () => {
+    let refreshing = false
+    const reader: MailReader = {
+      listMailboxes: () => Promise.resolve([access(one), access(two)]),
+      listRecentEmails: ({ mailboxId }) => {
+        if (refreshing && mailboxId === one) return Promise.reject(new SparkError('timeout'))
+        return Promise.resolve(pageOf(mailboxId, 1))
+      },
+      readThread: () => Promise.resolve(thread([])),
+    }
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+    await live.list()
+    refreshing = true
+
+    const result = await live.refresh({ view: 'unread' })
+    if (result.status !== 'ready') throw new Error('Expected partial refresh')
+
+    expect(result.messages).toHaveLength(perMailbox)
+    expect(result.messages.every((message) => message.mailbox === two)).toBe(true)
+    expect(result.scope.failed).toEqual([{ id: one, label: one, reason: 'failed' }])
+    expect(result.refresh.mailboxes).toEqual([
+      {
+        id: one,
+        label: one,
+        pages: 0,
+        added: 0,
+        removed: 0,
+        updated: 0,
+        status: 'failed',
+        reason: 'failed',
+      },
+      {
+        id: two,
+        label: two,
+        pages: 1,
+        added: 0,
+        removed: 0,
+        updated: 0,
+        status: 'refreshed',
+        readAt: '12:00',
+        refreshedAt: '2026-09-22T10:00:00.000Z',
+      },
+    ])
+    expect(result.refresh.mailboxes.find((mailbox) => mailbox.id === one)).not.toHaveProperty(
+      'readAt',
+    )
+    expect(result.refresh.mailboxes.find((mailbox) => mailbox.id === two)).toHaveProperty(
+      'readAt',
+      '12:00',
+    )
+  })
+
+  it('keeps a completed first page when a later refresh page fails without guessing changes', async () => {
+    let refreshing = false
+    const reader: MailReader = {
+      listMailboxes: () => Promise.resolve([access(one)]),
+      listRecentEmails: ({ page = 1 }) => {
+        if (refreshing && page === 2) return Promise.reject(new SparkError('timeout'))
+        return Promise.resolve(page === 1 ? pageOf(one, 1) : [listing(one, '201', null)])
+      },
+      readThread: () => Promise.resolve(thread([])),
+    }
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+    const first = await live.list()
+    if (first.status !== 'ready') throw new Error('Expected first page')
+    await live.list(undefined, { view: 'unread', cursor: first.scope.cursor })
+    refreshing = true
+
+    const result = await live.refresh({ view: 'unread' })
+    if (result.status !== 'ready') throw new Error('Expected partial refresh')
+
+    expect(result.messages).toHaveLength(perMailbox)
+    expect(result.scope.incomplete).toEqual([{ id: one, label: one, reason: 'failed' }])
+    expect(result.scope.mailboxes).toEqual([
+      { id: one, label: one, loaded: perMailbox, pages: 1, bounded: true },
+    ])
+    expect(result.refresh).toMatchObject({
+      added: 0,
+      removed: 0,
+      updated: 0,
+      mailboxes: [
+        {
+          id: one,
+          pages: 1,
+          added: 0,
+          removed: 0,
+          updated: 0,
+          status: 'incomplete',
+          reason: 'failed',
+          readAt: '12:00',
+        },
+      ],
+    })
   })
 })
 

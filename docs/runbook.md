@@ -117,7 +117,11 @@ pages and can add one page per still-bounded mailbox for each explicit
 continuation. It reports that limited reach and that Spark may truncate listed
 values; it does not read bodies for search. A first-page failure costs only
 that mailbox; completed pages remain visible if a later page fails.
-Opening a row lazily reads its body/thread. Refreshing does not classify.
+The incremental refresh contract re-reads exactly the pages already loaded,
+never older pages on its own. It reports changes only for mailboxes whose full
+loaded window answered; a failed or incomplete mailbox gets a coarse error,
+not guessed removals. Opening a row lazily reads its body/thread. Refreshing
+does not classify or mutate mail.
 
 Classification is the explicit `pnpm shadow --mailbox <mailbox> --apply`
 workflow (see [README](../README.md#shadow-triage) for limits and exit codes).

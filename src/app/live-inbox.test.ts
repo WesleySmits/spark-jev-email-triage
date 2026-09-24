@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { InboxSummary } from './inbox'
-import { bodyRequestSchema, inboxDiscoveryRequestSchema, liveBodyLoader } from './live-inbox'
+import {
+  bodyRequestSchema,
+  inboxDiscoveryRequestSchema,
+  inboxRefreshRequestSchema,
+  liveBodyLoader,
+} from './live-inbox'
 
 const summary = (messageId: string, mailbox: string): InboxSummary => ({
   id: `${mailbox} copy of ${messageId}`,
@@ -52,6 +57,14 @@ describe('inboxDiscoveryRequestSchema', () => {
     { view: 'unread', query: 'invoice', extra: 'private' },
   ])('rejects %j', (request) => {
     expect(inboxDiscoveryRequestSchema.safeParse(request).success).toBe(false)
+  })
+})
+
+describe('inboxRefreshRequestSchema', () => {
+  it('accepts one known view and nothing else', () => {
+    expect(inboxRefreshRequestSchema.parse({ view: 'unread' })).toEqual({ view: 'unread' })
+    expect(inboxRefreshRequestSchema.safeParse({ view: 'all' }).success).toBe(false)
+    expect(inboxRefreshRequestSchema.safeParse({ view: 'unread', pages: 99 }).success).toBe(false)
   })
 })
 

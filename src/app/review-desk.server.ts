@@ -17,8 +17,10 @@ import type { ReadOptions } from '../domain/mail-reader'
 import type {
   ClassifiedDiscovery,
   ClassifiedInbox,
+  ClassifiedRefresh,
   InboxDiscoveryRequest,
   InboxListRequest,
+  InboxRefreshRequest,
 } from './live-inbox'
 import { sparkInbox } from './spark-inbox.server'
 import { storedRowsFor } from './stored-classifications.server'
@@ -67,6 +69,16 @@ export async function deskDiscovery(
   options?: ReadOptions,
 ): Promise<ClassifiedDiscovery> {
   const inbox = await sparkInbox().search(request, options)
+  if (inbox.status !== 'ready') return inbox
+  return { ...inbox, reading: randomUUID(), ...storedRowsFor(inbox.messages) }
+}
+
+/** Re-reads the loaded view and joins its rows to locally stored state. */
+export async function deskRefresh(
+  request: InboxRefreshRequest,
+  options?: ReadOptions,
+): Promise<ClassifiedRefresh> {
+  const inbox = await sparkInbox().refresh(request, options)
   if (inbox.status !== 'ready') return inbox
   return { ...inbox, reading: randomUUID(), ...storedRowsFor(inbox.messages) }
 }

@@ -22,10 +22,17 @@ import {
   liveWorkflows,
   type ClassifiedDiscovery,
   type ClassifiedInbox,
+  type ClassifiedRefresh,
   type InboxDiscoveryRequest,
   type InboxListRequest,
+  type InboxRefreshRequest,
 } from './live-inbox'
-import { getLiveBody, getLiveInbox, searchLiveInbox } from './live-inbox.functions'
+import {
+  getLiveBody,
+  getLiveInbox,
+  refreshLiveInbox,
+  searchLiveInbox,
+} from './live-inbox.functions'
 import type { ConnectionReason } from './reconnect'
 import { checkReview, saveReview } from './review.functions'
 import type { SparkReadiness } from './spark-readiness'
@@ -59,6 +66,7 @@ export type DeskReason = ConnectionReason
 export type DeskView = ClassifiedInbox | Readonly<{ status: 'unavailable'; reason: 'unreachable' }>
 type DeskDiscovery =
   ClassifiedDiscovery | Readonly<{ status: 'unavailable'; reason: 'unreachable' }>
+type DeskRefresh = ClassifiedRefresh | Readonly<{ status: 'unavailable'; reason: 'unreachable' }>
 
 /** No rows to focus in: an unavailable desk lists nothing, sample or otherwise. */
 const rowsOf = (view: DeskView) => (view.status === 'ready' ? view.messages : [])
@@ -90,6 +98,12 @@ export const ReviewDesk = {
    */
   search: (request: InboxDiscoveryRequest): Promise<DeskDiscovery> =>
     searchLiveInbox({ data: request }).catch(
+      () => ({ status: 'unavailable', reason: 'unreachable' }) as const,
+    ),
+
+  /** Re-reads the loaded window without extending its page depth. */
+  refresh: (request: InboxRefreshRequest): Promise<DeskRefresh> =>
+    refreshLiveInbox({ data: request }).catch(
       () => ({ status: 'unavailable', reason: 'unreachable' }) as const,
     ),
 

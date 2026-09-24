@@ -18,6 +18,10 @@ export type InboxView = 'unread' | 'other'
 /** No cursor starts a fresh reading; its returned cursor advances it one page per mailbox. */
 export type InboxListRequest = Readonly<{ view: InboxView; cursor?: string | undefined }>
 
+/** Re-reads exactly the loaded window for one Inbox view. */
+export const inboxRefreshRequestSchema = z.strictObject({ view: z.enum(['unread', 'other']) })
+export type InboxRefreshRequest = z.infer<typeof inboxRefreshRequestSchema>
+
 /**
  * A metadata search through one Inbox view. The query is deliberately sent in
  * a POST body by the server boundary: search text may itself be private and
@@ -43,6 +47,8 @@ export type MailboxScope = Readonly<{
   label: string
   /** Rows this reading holds for that mailbox. */
   loaded: number
+  /** Completed provider pages retained for this mailbox, when reported by the reader. */
+  pages?: number | undefined
   /**
    * Whether the per-mailbox bound may have cut it: the provider returned as
    * many messages as were asked for, so there may be more it was never
@@ -170,6 +176,38 @@ export type InboxDiscovery =
     }>
   | Extract<LiveInbox, { status: 'unavailable' }>
 
+export type MailboxRefresh = Readonly<{
+  id: string
+  label: string
+  pages: number
+  added: number
+  removed: number
+  updated: number
+  status: 'refreshed' | 'failed' | 'incomplete'
+  reason?: MailboxFailure['reason'] | undefined
+  /** Last successful metadata read for this mailbox in this refresh. */
+  readAt?: string | undefined
+  refreshedAt?: string | undefined
+}>
+
+/** What changed while the already-loaded window was read again. */
+export type InboxRefreshSummary = Readonly<{
+  mailboxes: readonly MailboxRefresh[]
+  added: number
+  /** Copies that left this view, for example because they became read or Done. */
+  removed: number
+  /** Copies whose listed sender, subject or date changed in place. */
+  updated: number
+  /** The preceding successful list read, when this process had one. */
+  previousReadAt?: string | undefined
+  readAt: string
+  refreshedAt: string
+}>
+
+export type InboxRefresh =
+  | (Extract<LiveInbox, { status: 'ready' }> & Readonly<{ refresh: InboxRefreshSummary }>)
+  | Extract<LiveInbox, { status: 'unavailable' }>
+
 /**
  * The initial page data: summaries without bodies, or why there are none.
  * `unavailable` never comes with messages, sample or otherwise.
@@ -236,6 +274,15 @@ export type ClassifiedDiscovery =
         reviews: ListedReviews
       }>)
   | Extract<InboxDiscovery, { status: 'unavailable' }>
+
+export type ClassifiedRefresh =
+  | (Extract<InboxRefresh, { status: 'ready' }> &
+      Readonly<{
+        reading: string
+        classifications: ListedClassifications
+        reviews: ListedReviews
+      }>)
+  | Extract<InboxRefresh, { status: 'unavailable' }>
 
 /** One body request: a mailbox copy the server listed, by its mailbox and message id. */
 export const bodyRequestSchema = z.strictObject({

@@ -19,9 +19,11 @@ messages Spark reports as read. Search and mailbox filtering operate on the
 selected view's loaded rows in the current UI. A separate `ReviewDesk.search`
 contract can search listed sender and subject metadata in those rows and, on
 each opaque continuation, add at most one page per still-bounded mailbox. Its
-UI is deliberately not connected until the static direction is selected. A
-failure is isolated to the mailbox and page it
-happened in: mailboxes that answered are still delivered, and completed pages
+selected static direction is Variant C: reach and mailbox failures belong in
+the mailbox rail while the queue stays compact. The isolated rail component is
+ready, but route integration waits for the parallel workbench change to merge.
+A failure is isolated to the mailbox and page it happened in: mailboxes that
+answered are still delivered, and completed pages
 remain visible if a later page fails. Only discovering the mailboxes at all
 makes the whole inbox unavailable. Copies in different mailboxes remain
 distinct even when message ids, subjects or contents match.
@@ -270,6 +272,15 @@ pnpm readback:spark                      # whether Spark answers on this host
   per-mailbox page depth, unique copies scanned and matched, bounds, coarse
   failures, and search completion time. Spark call logs receive only command,
   outcome, duration and item count, never the query or mail data.
+- `ReviewDesk.refresh` uses a separate POST server function to rediscover the
+  mailboxes and re-read exactly the page depth already loaded for the selected
+  view. It never extends that window. Shifting page boundaries are deduplicated
+  by mailbox-copy id; complete reads report added, removed and updated copies,
+  including rows that left unread/Inbox after being read or marked Done. A
+  mailbox or later-page failure stays local and does not invent removals from
+  unknown data. Each mailbox reports its completed depth, coarse status and
+  last successful read time. Refresh reads no thread, calls no classifier and
+  performs no mailbox mutation.
 - `ReviewDesk.open` also carries the judgment shadow triage last stored
   about each listed row, read through `src/app/stored-classifications.server.ts`
   from the local shadow database, opened read-only. Loading or refreshing
