@@ -30,7 +30,7 @@ import { Sidebar, type SidebarItem } from '../../organisms/Sidebar/Sidebar'
 import { TopBar } from '../../organisms/TopBar/TopBar'
 import { WorkbenchTemplate } from '../../templates/WorkbenchTemplate/WorkbenchTemplate'
 import { ActionProposalAction } from './ActionProposalAction'
-import { observationIn, proposableIn, type LabelOf } from './action'
+import { observationIn, proposableIn, threadReadIn, type LabelOf } from './action'
 import type { BodyState } from './body'
 import {
   classificationView,
@@ -761,15 +761,18 @@ function readerReview(
 function readerProposal(
   proposals: WorkbenchProposals | undefined,
   evidence: Evidence,
-  openId: string | undefined,
+  open: WorkbenchMessage | undefined,
+  listed: ListedEvidence | undefined,
+  body: BodyState,
   labelOf: LabelOf,
 ) {
-  if (proposals?.mode !== 'enabled' || openId === undefined) return undefined
+  if (proposals?.mode !== 'enabled' || open === undefined) return undefined
+  const read = threadReadIn(open, listed, body)
   return (
     <ActionProposalAction
-      key={openId}
-      proposable={proposableIn(evidence.open)}
-      observation={observationIn(evidence.open)}
+      key={open.id}
+      proposable={proposableIn(evidence.open, read)}
+      observation={observationIn(evidence.open, read)}
       approver={proposals.approver}
       labelOf={labelOf}
       onApprove={proposals.onApprove}
@@ -982,7 +985,9 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             proposal={readerProposal(
               props.proposals,
               evidence,
-              state.open?.id,
+              state.open,
+              props.classifications,
+              body,
               mailboxNames(props.messages),
             )}
             guardedDone={

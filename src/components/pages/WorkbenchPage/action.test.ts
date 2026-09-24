@@ -15,6 +15,7 @@ import {
   observationIn,
   proposableIn,
   standingOf,
+  threadReadIn,
   type HeldProposal,
 } from './action'
 
@@ -133,6 +134,65 @@ describe('proposableIn', () => {
     )
 
     expect(standing?.stage).toBe('proposed')
+  })
+
+  it('proposes an untriaged selected row from a fresh body read without a Jev basis', () => {
+    const row = { id: JSON.stringify([studio, '11']), messageId: '11', mailbox: studio } as const
+    const selected = {
+      ...row,
+      workflow: 'inbox',
+      sender: 'Sender',
+      subject: 'Subject',
+      snippet: '',
+      time: '09:00',
+      account: { marker: 'studio', label: 'Studio' },
+      status: { label: 'Not triaged', tone: 'neutral' },
+    } as const
+    const listed = { reading: 'r1', states: { [row.id]: { state: 'none' } as const } }
+    const body = {
+      status: 'ready',
+      id: row.id,
+      request: 1,
+      text: 'Hello',
+      reading: 'r1',
+      thread: { threadId: 't-11', latestMessageId: '11' },
+    } as const
+    const read = threadReadIn(selected, listed, body)
+    if (read === undefined) throw new Error('Expected a matching thread read')
+    expect(proposableIn({ state: 'none' }, read)).toEqual({ target: targetOf(studio), basis: null })
+    expect(observationIn({ state: 'none' }, read)).toMatchObject({
+      observed: 'named',
+      proven: true,
+    })
+
+    const proposal = proposeMailboxAction({ ...held().proposal, basis: null })
+    const live = { proposal, approval: null }
+    expect(standingOf(live, [read])?.stage).toBe('proposed')
+    const later = { ...read, latestMessageId: '12' }
+    expect(standingOf(live, [later])).toMatchObject({
+      stage: 'invalidated',
+      reason: 'newer_message',
+    })
+
+    expect(threadReadIn(selected, { ...listed, reading: 'r2' }, body)).toBeUndefined()
+    expect(threadReadIn({ ...selected, id: 'other' }, listed, body)).toBeUndefined()
+    expect(threadReadIn({ ...selected, messageId: '12' }, listed, body)).toBeUndefined()
+    expect(threadReadIn(selected, { reading: 'r1', states: {} }, body)).toBeUndefined()
+  })
+
+  it('keeps a matching classification basis and discards one for an observed newer version', () => {
+    const read = {
+      copy: targetOf(studio).copy,
+      observed: 'named',
+      threadId: 't-11',
+      latestMessageId: '11',
+      proven: true,
+    } as const
+    expect(proposableIn(current, read)?.basis).toEqual({ classification: subjectOf(studio) })
+    expect(proposableIn(unverified, { ...read, latestMessageId: '12' })).toEqual({
+      target: { ...targetOf(studio), latestMessageId: '12' },
+      basis: null,
+    })
   })
 })
 

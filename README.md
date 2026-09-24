@@ -238,7 +238,10 @@ pnpm readback:spark                      # whether Spark answers on this host
 - The page keeps its legacy Complete button and `E` shortcut off. The sync
   button only reads the inbox. The separate guarded Done panel can archive
   one selected message after a person proposes it, approves it and confirms
-  execution. Classification and review never start a mailbox action.
+  execution. A fresh body/thread read also allows an untriaged message to be
+  proposed with no classification basis; Jev is not required. Classification
+  and review never start a mailbox action. If the provider returns no body
+  result, this untriaged path remains unavailable.
 - Spark's `markAsDone` command takes a message ID, without a mailbox selector
   or conditional version argument. The selected mailbox is context for the
   person, preflight and readback; another visible copy may also change. A new

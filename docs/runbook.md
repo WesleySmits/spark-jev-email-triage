@@ -136,7 +136,11 @@ classification.
 
 The separate Spark Done panel can archive one selected message ID only after
 proposal, server-owned approval and a second confirmation. It is disabled by
-default. To enable it for a local session, set
+default. A selected untriaged message can be proposed after its plain-text
+body/thread is freshly read; no Jev classification is required. The server
+still checks Inbox presence and the exact thread version before approval and
+execution. If the provider returns no body result, this untriaged path is unavailable.
+To enable it for a local session, set
 `SPARK_DONE_ACTIONS_ENABLED=1` on the app server. The private, durable action
 journal path is `SPARK_DONE_ACTION_DB_PATH` (default:
 `.data/done-actions.sqlite`), separate from the shadow triage database. An

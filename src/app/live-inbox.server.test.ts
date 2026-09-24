@@ -299,6 +299,7 @@ describe('createLiveInbox body', () => {
     await expect(live.body({ mailbox: one, id: '11' })).resolves.toEqual({
       id: copy(one, '11'),
       text: 'The requested message',
+      thread: { threadId: '10', latestMessageId: '11' },
     })
     expect(calls.at(-1)).toBe(`thread ${one} 11`)
   })
@@ -431,10 +432,12 @@ describe('createLiveInbox alias copies', () => {
     await expect(live.body({ mailbox: two, id: '11' })).resolves.toEqual({
       id: copy(two, '11'),
       text: 'The copy in two',
+      thread: { threadId: '11', latestMessageId: '11' },
     })
     await expect(live.body({ mailbox: one, id: '11' })).resolves.toEqual({
       id: copy(one, '11'),
       text: 'The copy in one',
+      thread: { threadId: '11', latestMessageId: '11' },
     })
     expect(calls.filter((call) => call.startsWith('thread'))).toEqual([
       `thread ${two} 11`,
@@ -631,7 +634,11 @@ describe('createLiveInbox over the Spark reader', () => {
       { messageId: '4001', mailbox: 'other@example.net' },
     ])
     expect(new Set(result.messages.map((message) => message.id)).size).toBe(4)
-    expect(body).toEqual({ id: copy('Ops@Example.com', '4001'), text: 'Hello' })
+    expect(body).toEqual({
+      id: copy('Ops@Example.com', '4001'),
+      text: 'Hello',
+      thread: { threadId: '4001', latestMessageId: '4001' },
+    })
     expect(commands.map((command) => sparkArguments(command)[0])).toEqual([
       'accounts',
       'emails',

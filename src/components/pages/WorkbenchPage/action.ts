@@ -33,6 +33,9 @@ import {
 } from '../../../domain/mailbox-action'
 import { mailboxCopyId, type MailboxCopyRef } from '../../../domain/mailbox-copy'
 import type { StoredClassification } from '../../../domain/stored-classification'
+import type { BodyState } from './body'
+import type { ListedEvidence } from './classification'
+import type { WorkbenchMessage } from './workbench'
 import type {
   ActionStage,
   ActionTargetView,
@@ -56,26 +59,56 @@ export type Proposable = Readonly<{
 /**
  * What of one row a proposal may name, or nothing at all.
  *
- * A target carries the thread version it is proposed against, so only a row
- * whose stored judgment still names a version can be one: a judgment a
- * reading proved current, or one the store alone holds and contradicts in no
- * way. An outdated judgment, a failed attempt, an untriaged row and a store
- * that could not be read name no version anyone could propose against.
- *
- * The judgment is named as the proposal's basis, which explains it and
- * authorizes nothing: the proposal still waits for a person, and execution
- * still requires separate approval and execution whatever the classifier said.
+ * A fresh thread read can name a version without a judgment. Its proposal
+ * has no classification basis. A matching judgment stays as the explanatory
+ * basis; approval and execution remain separate.
  */
 export function proposableIn(
   classification: StoredClassification | undefined,
+  read?: TargetObservation,
 ): Proposable | undefined {
-  if (classification === undefined) return undefined
-  if (classification.state !== 'current' && classification.state !== 'unverified') return undefined
+  if (read?.observed === 'named' && read.proven) {
+    const judged = proposableIn(classification)
+    if (
+      judged?.target.copy.mailboxId === read.copy.mailboxId &&
+      judged.target.copy.messageId === read.copy.messageId &&
+      judged.target.threadId === read.threadId &&
+      judged.target.latestMessageId === read.latestMessageId
+    )
+      return judged
+    return {
+      target: { copy: read.copy, threadId: read.threadId, latestMessageId: read.latestMessageId },
+      basis: null,
+    }
+  }
+  if (classification?.state !== 'current' && classification?.state !== 'unverified')
+    return undefined
   const { copy, threadId, latestMessageId } = classification.subject
   return {
     target: { copy, threadId, latestMessageId },
     basis: { classification: classification.subject },
   }
+}
+
+/** Only the selected row in the same listed reading may use a thread response. */
+export function threadReadIn(
+  row: WorkbenchMessage | undefined,
+  listed: ListedEvidence | undefined,
+  body: BodyState,
+): TargetObservation | undefined {
+  if (
+    row?.messageId === undefined ||
+    listed === undefined ||
+    !Object.hasOwn(listed.states, row.id) ||
+    body.status !== 'ready' ||
+    body.id !== row.id ||
+    body.reading !== listed.reading ||
+    body.thread === undefined
+  )
+    return undefined
+  const copy = { mailboxId: row.mailbox, messageId: row.messageId }
+  if (mailboxCopyId(copy) !== row.id) return undefined
+  return { copy, observed: 'named', ...body.thread, proven: true }
 }
 
 type StaleReason = Extract<StoredClassification, { state: 'stale' }>['reason']
@@ -101,7 +134,9 @@ const movedBy: Partial<Record<StaleReason, TargetBreak>> = {
  */
 export function observationIn(
   classification: StoredClassification | undefined,
+  read?: TargetObservation,
 ): TargetObservation | undefined {
+  if (read !== undefined) return read
   if (classification === undefined || !('subject' in classification)) return undefined
   const { copy, threadId, latestMessageId } = classification.subject
   const moved = classification.state === 'stale' ? movedBy[classification.reason] : undefined
