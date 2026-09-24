@@ -12,10 +12,12 @@ export type MailboxReachItem = Readonly<{
   lastRead?: Readonly<{ label: string; dateTime: string }> | undefined
 }>
 
-type MailboxReachProps = Readonly<{
+export type MailboxReachProps = Readonly<{
   items: readonly MailboxReachItem[]
   selectedId?: string | null | undefined
-  onSelect: (id: string) => void
+  /** `null` selects every readable mailbox. */
+  onSelect: (id: string | null) => void
+  allLabel?: string | undefined
   onRetry?: ((id: string) => void) | undefined
   retryingIds?: ReadonlySet<string> | undefined
   className?: string | undefined
@@ -35,6 +37,7 @@ export function MailboxReach({
   items,
   selectedId,
   onSelect,
+  allLabel,
   onRetry,
   retryingIds = new Set(),
   className,
@@ -46,6 +49,18 @@ export function MailboxReach({
       <h2 id={titleId} className="mailbox-reach__title">
         Mailbox reach
       </h2>
+      {allLabel && (
+        <button
+          type="button"
+          className="mailbox-reach__all"
+          aria-pressed={selectedId == null}
+          onClick={() => {
+            onSelect(null)
+          }}
+        >
+          {allLabel}
+        </button>
+      )}
       <ul className="mailbox-reach__list" role="list">
         {items.map((item) => {
           const failed = item.state === 'failed' || item.state === 'incomplete'

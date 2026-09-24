@@ -26,10 +26,10 @@ its completed pages. Only failing to discover the mailboxes makes a reading
 unavailable.
 
 `ReviewDesk.search` is a browser-safe discovery contract behind a POST server
-boundary; the root route does not use it until the parallel workbench UI has
-merged. Wesley selected Variant C: mailbox reach and failures live in the rail
-and the queue remains compact. The isolated rail component follows that
-direction. Search
+boundary. Wesley selected Variant C: mailbox reach and failures live in the
+rail and the queue remains compact. The root route uses that direction in both
+the desktop rail and compact filters sheet while retaining Feature 2's Jev run
+control. Search
 matches only sender and subject metadata from the loaded Spark `emails` pages.
 One opaque continuation adds at most one page per still-bounded mailbox. Its
 scope exposes per-mailbox page depth, unique mailbox copies scanned and
@@ -43,6 +43,9 @@ mailboxes report added, removed and updated copies; failed or incomplete
 mailboxes report a coarse error without guessing changes from unread data.
 Per-mailbox completed depth and last successful read time remain explicit. It
 reads no body, calls no classifier and changes no mailbox.
+The route uses this contract for Refresh, keeps the page mounted within one
+view so stable mailbox-copy selections survive, and shows only changes proved
+by complete per-mailbox reads.
 
 The workflow and mailbox filters move into a modal sheet from the top bar
 at 900px and below, so they remain reachable on narrow screens.

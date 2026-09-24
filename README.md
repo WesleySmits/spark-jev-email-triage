@@ -15,13 +15,13 @@ The inbox starts with the ten newest unread messages from every readable
 mailbox, sorted newest first. "Load older" adds another ten-message page per
 mailbox that still has more, with no application page ceiling. Completed pages
 are retained rather than requested again. "Other Inbox" reads the same bounded set for
-messages Spark reports as read. Search and mailbox filtering operate on the
-selected view's loaded rows in the current UI. A separate `ReviewDesk.search`
-contract can search listed sender and subject metadata in those rows and, on
+messages Spark reports as read. Mailbox filtering operates on the selected
+view's loaded rows. Search uses the separate `ReviewDesk.search` contract to
+scan listed sender and subject metadata in those rows and, on
 each opaque continuation, add at most one page per still-bounded mailbox. Its
 selected static direction is Variant C: reach and mailbox failures belong in
-the mailbox rail while the queue stays compact. The isolated rail component is
-ready, but route integration waits for the parallel workbench change to merge.
+the mailbox rail while the queue stays compact. The route uses that rail in
+both the desktop workbench and compact filters sheet.
 A failure is isolated to the mailbox and page it happened in: mailboxes that
 answered are still delivered, and completed pages
 remain visible if a later page fails. Only discovering the mailboxes at all
@@ -36,9 +36,10 @@ title in both the desktop and the mobile queue pane, marked when another page
 may exist. The figures are counted from the rows that were kept, never
 estimated: a mailbox whose last listing page came back full is reported as
 possibly cut, because a full page only proves more was never asked for. The
-mailbox filter is named "All mailboxes", the search says it searches loaded mail,
-and a reading that loaded nothing reads differently from a filter that matched
-nothing. Neither an empty unread view nor an empty read view claims Inbox Zero.
+mailbox filter is named "All readable mailboxes"; search states that it matches
+listed sender and subject values and reports the copies it scanned. A reading
+that loaded nothing reads differently from a filter that matched nothing.
+Neither an empty unread view nor an empty read view claims Inbox Zero.
 
 The scope also names the mailboxes the reading could not read, so a partial
 failure is visible rather than silent. A first-page failure contributes no
@@ -281,6 +282,11 @@ pnpm readback:spark                      # whether Spark answers on this host
   unknown data. Each mailbox reports its completed depth, coarse status and
   last successful read time. Refresh reads no thread, calls no classifier and
   performs no mailbox mutation.
+- The root route uses that refresh contract for its Refresh control and keeps
+  the workbench mounted for the same view, so a selected mailbox copy remains
+  selected while it still exists. It shows proved new, read/Done-removed and
+  updated row counts, and keeps Feature 2's bounded Jev run control in the
+  existing queue header.
 - `ReviewDesk.open` also carries the judgment shadow triage last stored
   about each listed row, read through `src/app/stored-classifications.server.ts`
   from the local shadow database, opened read-only. Loading or refreshing

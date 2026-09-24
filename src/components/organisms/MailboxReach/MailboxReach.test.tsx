@@ -87,6 +87,20 @@ describe('MailboxReach', () => {
     expect(onSelect).toHaveBeenCalledExactlyOnceWith('atelier@mail.example')
   })
 
+  it('offers every readable mailbox without inventing an account marker', () => {
+    const onSelect = vi.fn()
+    const { all } = render({ selectedId: null, allLabel: 'All readable mailboxes', onSelect })
+    const [allMailboxes] = all('button')
+
+    expect(allMailboxes?.props).toMatchObject({
+      className: 'mailbox-reach__all',
+      'aria-pressed': true,
+      children: 'All readable mailboxes',
+    })
+    ;(allMailboxes?.props['onClick'] as () => void)()
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(null)
+  })
+
   it('exposes a machine-readable last read time', () => {
     const [time] = render().all('time')
 

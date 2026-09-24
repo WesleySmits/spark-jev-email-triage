@@ -151,7 +151,10 @@ function cutBy(scope: QueueScope) {
  * shown was read then, so a reading that lost a mailbox still says when the
  * mail beside it arrived, and nothing older is shown as fresh.
  */
-export function scopeText(scope: QueueScope): ScopeText {
+export function scopeText(scope: QueueScope, discovery = false): ScopeText {
+  const searchReach = discovery
+    ? 'Filters cover only loaded mail; sender and subject search reports its own scanned reach.'
+    : 'Search and filters cover only loaded mail.'
   if (scope.view) {
     const kind = scope.view === 'unread' ? 'unread' : 'other Inbox'
     const unread = unreadBy(scope)
@@ -165,8 +168,11 @@ export function scopeText(scope: QueueScope): ScopeText {
     return {
       summary: `Loaded: ${plural(scope.loaded, `${kind} message`)} from ${mailboxCount(scope)}`,
       detail:
-        `${possible} Search and filters cover only loaded ${kind} messages. ` +
-        'Read messages still in the Inbox count toward Inbox Zero.',
+        `${possible} ${
+          discovery
+            ? 'Filters cover only loaded messages; sender and subject search reports its own scanned reach.'
+            : `Search and filters cover only loaded ${kind} messages.`
+        } ` + 'Read messages still in the Inbox count toward Inbox Zero.',
       ...(notices.length > 0 && { unread: notices.join(' ') }),
       refreshed: { label: `Last refreshed ${scope.readAt}.`, dateTime: scope.refreshedAt },
       bounded: scope.bounded,
@@ -176,7 +182,7 @@ export function scopeText(scope: QueueScope): ScopeText {
   const unread = unreadBy(scope)
   return {
     summary: `Loaded: ${loaded} from ${mailboxCount(scope)}`,
-    detail: [...cutBy(scope), 'Search and filters cover only loaded mail.'].join(' '),
+    detail: [...cutBy(scope), searchReach].join(' '),
     ...(unread !== undefined && { unread }),
     refreshed: { label: `Last refreshed ${scope.readAt}.`, dateTime: scope.refreshedAt },
     bounded: scope.bounded,
