@@ -6,7 +6,8 @@
 export type CoverageView = 'unread' | 'other'
 export type CoverageResult = 'complete' | 'incomplete' | 'failed'
 export type ZeroResult = 'confirmed' | 'not-confirmed' | 'unknown'
-export type CoverageReason = 'not-scanned' | 'more-pages' | 'mailbox-errors' | 'provider-failure'
+export type CoverageReason =
+  'not-scanned' | 'more-pages' | 'mailbox-errors' | 'count-mismatch' | 'provider-failure'
 
 export interface CoverageFailure {
   id: string
@@ -91,6 +92,11 @@ export function failedCoverage(
   }
 }
 
+function aggregateResult(mailboxes: readonly MailboxCoverage[], incomplete: boolean) {
+  if (mailboxes.length > 0 && mailboxes.every(({ result }) => result === 'failed')) return 'failed'
+  return incomplete ? 'incomplete' : 'complete'
+}
+
 /** Turn one selected-view reading into an explicit, per-mailbox result. */
 export function viewCoverage(scope: CoverageScopeInput): InboxViewCoverage {
   const failed = new Set(scope.failed.map(({ id }) => id))
@@ -105,12 +111,15 @@ export function viewCoverage(scope: CoverageScopeInput): InboxViewCoverage {
         ? ('incomplete' as const)
         : ('complete' as const),
   }))
-  const allFailed = mailboxes.length > 0 && mailboxes.every(({ result }) => result === 'failed')
   const hasErrors = scope.failed.length > 0 || (scope.incomplete?.length ?? 0) > 0
-  const result = allFailed ? 'failed' : hasErrors || scope.bounded ? 'incomplete' : 'complete'
+  const hasMorePages = scope.bounded || scope.mailboxes.some(({ bounded }) => bounded)
+  const mailboxLoaded = scope.mailboxes.reduce((total, mailbox) => total + mailbox.loaded, 0)
+  const countMismatch = mailboxLoaded !== scope.loaded
+  const result = aggregateResult(mailboxes, hasErrors || hasMorePages || countMismatch)
   const reasons = [
-    ...(scope.bounded ? (['more-pages'] as const) : []),
+    ...(hasMorePages ? (['more-pages'] as const) : []),
     ...(hasErrors ? (['mailbox-errors'] as const) : []),
+    ...(countMismatch ? (['count-mismatch'] as const) : []),
   ]
   return {
     view: scope.view,
@@ -126,6 +135,45 @@ export function viewCoverage(scope: CoverageScopeInput): InboxViewCoverage {
   }
 }
 
+function completeMailboxScope({ mailboxes, readable }: InboxViewCoverage) {
+  if (
+    readable === null ||
+    readable <= 0 ||
+    mailboxes.length !== readable ||
+    mailboxes.some(({ result }) => result !== 'complete')
+  )
+    return null
+  const ids = new Set(mailboxes.map(({ id }) => id))
+  return ids.size === readable ? [...ids].sort() : null
+}
+
+function sameCompleteMailboxScope(unread: InboxViewCoverage, read: InboxViewCoverage) {
+  const unreadScope = completeMailboxScope(unread)
+  const readScope = completeMailboxScope(read)
+  return (
+    unreadScope !== null &&
+    readScope !== null &&
+    unreadScope.length === readScope.length &&
+    unreadScope.every((id, index) => id === readScope[index])
+  )
+}
+
+function zeroResult(unread: InboxViewCoverage, read: InboxViewCoverage): ZeroResult {
+  const views = [unread, read]
+  const mailboxLoaded = views.map(({ mailboxes }) =>
+    mailboxes.reduce((total, mailbox) => total + mailbox.loaded, 0),
+  )
+  const anyMessages = views.some(
+    ({ loaded }, index) => loaded > 0 || (mailboxLoaded[index] ?? 0) > 0,
+  )
+  if (anyMessages) return 'not-confirmed'
+  const bothComplete = views.every(({ result }) => result === 'complete')
+  const countsAgree = views.every(({ loaded }, index) => loaded === mailboxLoaded[index])
+  return bothComplete && countsAgree && sameCompleteMailboxScope(unread, read)
+    ? 'confirmed'
+    : 'unknown'
+}
+
 export function inboxCoverage(
   previous: InboxCoverage | undefined,
   update: InboxViewCoverage,
@@ -134,21 +182,12 @@ export function inboxCoverage(
     update.view === 'unread' ? update : (previous?.unread ?? unscannedCoverage('unread'))
   const read = update.view === 'other' ? update : (previous?.read ?? unscannedCoverage('other'))
   const views = [unread, read]
-  const bothComplete = views.every(({ result }) => result === 'complete')
-  const anyMessages = views.some(({ loaded }) => loaded > 0)
-  const hasReadableScope = views.every(({ readable }) => readable !== null && readable > 0)
-  const zero: ZeroResult =
-    bothComplete && hasReadableScope && !anyMessages
-      ? 'confirmed'
-      : anyMessages
-        ? 'not-confirmed'
-        : 'unknown'
   const starts = views.flatMap(({ startedAt }) => (startedAt === null ? [] : [startedAt]))
   const finishes = views.flatMap(({ finishedAt }) => (finishedAt === null ? [] : [finishedAt]))
   return {
     unread,
     read,
-    zero,
+    zero: zeroResult(unread, read),
     nonAtomic: true,
     startedAt: starts.sort().at(0) ?? null,
     finishedAt: finishes.sort().at(-1) ?? null,

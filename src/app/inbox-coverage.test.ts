@@ -43,6 +43,13 @@ describe('viewCoverage', () => {
     ).toMatchObject({ result: 'incomplete', reasons: ['more-pages'] })
   })
 
+  it('is incomplete when a mailbox is bounded despite an unbounded aggregate', () => {
+    expect(viewCoverage(scope({ mailboxes: [mailbox({ bounded: true })] }))).toMatchObject({
+      result: 'incomplete',
+      reasons: ['more-pages'],
+    })
+  })
+
   it('keeps partial rows and distinguishes failed from incomplete mailboxes', () => {
     const failure = { id: 'one@mail.example', label: 'one@mail.example', reason: 'failed' as const }
     const later = {
@@ -113,6 +120,28 @@ describe('inboxCoverage', () => {
       startedAt: '2026-09-24T09:42:00.000Z',
       finishedAt: '2026-09-24T09:45:00.000Z',
     })
+  })
+
+  it('does not confirm zero for disjoint complete mailbox scopes', () => {
+    const unread = inboxCoverage(undefined, viewCoverage(scope()))
+    const read = viewCoverage(
+      scope({
+        view: 'other',
+        mailboxes: [mailbox({ id: 'two@mail.example', label: 'two@mail.example' })],
+      }),
+    )
+
+    expect(inboxCoverage(unread, read).zero).toBe('unknown')
+  })
+
+  it('fails closed when mailbox and aggregate loaded counts disagree', () => {
+    const unread = inboxCoverage(undefined, viewCoverage(scope()))
+    const read = viewCoverage(
+      scope({ view: 'other', mailboxes: [mailbox({ loaded: 1 })], loaded: 0 }),
+    )
+
+    expect(read).toMatchObject({ result: 'incomplete', reasons: ['count-mismatch'] })
+    expect(inboxCoverage(unread, read).zero).toBe('not-confirmed')
   })
 
   it('says not confirmed when either view contains a retained mailbox copy', () => {
