@@ -56,9 +56,12 @@ as they were.
 Supported: reading mail, refreshing, opening one body, viewing stored triage,
 and confirming or correcting its category locally. The guarded Done panel
 can archive a selected message when explicitly enabled. Classification starts
-through `pnpm shadow --mailbox <mailbox> --apply`, not from the UI; it sends
-minimized thread content to Jev and requires `TYPESAFE_API_KEY`. Loading,
-refreshing and reviewing in the app make no model calls. There is no UI
+through `pnpm shadow --mailbox <mailbox> --apply`, not from the UI. A
+default-off local server contract supports an explicit bounded Start,
+readback, cooperative Stop and idempotent Restart, but no component invokes it
+yet. A run sends minimized thread content to Jev and requires
+`TYPESAFE_API_KEY`. Loading, refreshing and reviewing in the app make no model
+calls. There is no UI
 triage-run control, priority/reply/deadline editor, persisted completion or Undo.
 
 The workbench's single-key shortcuts (K, J, E and `/`) can be turned off in
@@ -147,11 +150,16 @@ pnpm shadow --mailbox you@example.com --apply        # classify with Jev and sto
   `--db` (default `.data/shadow-triage.sqlite`, which Git ignores).
 - `--apply` needs `TYPESAFE_API_KEY`; without it the command reports itself
   blocked.
-- `--migrate` requires an existing `--db` path. It upgrades schema 1 or 2 to 3
+- `--migrate` requires an existing `--db` path. It upgrades schema 1, 2 or 3 to 4
   without Spark, Jev, or a TypeSafe key. Back up the file first using the
   procedure in `docs/runbook.md`.
 - `SHADOW_DATABASE_PATH` points the app at a database a run wrote elsewhere
   with `--db`. The app reads classifications from it and appends human reviews to it.
+- `JEV_MANUAL_RUNS_ENABLED=1` enables the loopback-only manual-run server
+  contract. It still needs `TYPESAFE_API_KEY`; page loads, inbox refreshes,
+  body reads and run readback never invoke Jev. The hard ceilings are 100
+  messages and 100 Jev calls. Readback reports token use but no monetary
+  estimate because no price table is configured.
 - Output is status and counts only. The exit code is `0` for completed or
   dry runs, `1` for failed, `2` for partial, `3` for blocked, and `64` for
   invalid options.
@@ -346,8 +354,9 @@ pnpm readback:spark                      # whether Spark answers on this host
   loader. A late response for a message that is no longer open is dropped.
 - `src/app/demo.ts` keeps fictional sample data for tests; the app no
   longer shows it.
-- Classifications and reviews persist in the local shadow-triage SQLite
-  file (Node's built-in `node:sqlite`, schema 3 via `PRAGMA user_version`).
+- Classifications, reviews and manual-run control state persist in the local
+  shadow-triage SQLite file (Node's built-in `node:sqlite`, schema 4 via
+  `PRAGMA user_version`).
   Evaluation snapshots are separate local JSON files under `.data/`.
 - A `current` or `unverified` classification offers a category review;
   stale, failed, absent or unreadable classifications do not. The save

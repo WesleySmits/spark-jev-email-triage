@@ -23,6 +23,7 @@ import {
   ShadowMigrationError,
 } from './database'
 import { runShadowTriage, type ShadowSummary } from './pipeline'
+import { isProcessAlive } from './process-liveness'
 
 export const exitCodes = { ok: 0, failed: 1, partial: 2, blocked: 3, usage: 64 } as const
 
@@ -153,18 +154,6 @@ const isParseArgsError = (error: unknown) =>
   'code' in error &&
   typeof error.code === 'string' &&
   error.code.startsWith('ERR_PARSE_ARGS_')
-
-/** Signal 0 only checks: `ESRCH` means gone, `EPERM` means alive under another user. */
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ESRCH') return false
-    if (error instanceof Error && 'code' in error && error.code === 'EPERM') return true
-    throw error
-  }
-}
 
 export function formatSummary(summary: ShadowSummary): string[] {
   const { mode, status, runId, errorCode, ...counts } = summary

@@ -167,6 +167,49 @@ const migrations: readonly string[] = [
     SELECT RAISE(ABORT, 'A review request result cannot be removed');
   END;
   `,
+  // 4: explicit manual runs started by the local app. The run owns only
+  //    provider identifiers, bounds and content-free status. Classifications
+  //    remain in the existing versioned judgment tables and are linked via
+  //    the shadow run that produced them.
+  `
+  CREATE TABLE manual_runs (
+    id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL UNIQUE,
+    request_payload TEXT NOT NULL,
+    source_run_id TEXT REFERENCES manual_runs (id),
+    scope_kind TEXT NOT NULL CHECK (scope_kind IN ('worklist', 'mailbox', 'restart')),
+    scope_label TEXT NOT NULL,
+    status TEXT NOT NULL
+      CHECK (status IN (
+        'queued', 'running', 'stopping', 'stopped',
+        'completed', 'partial', 'failed', 'interrupted'
+      )),
+    pid INTEGER NOT NULL,
+    max_messages INTEGER NOT NULL CHECK (max_messages BETWEEN 1 AND 100),
+    max_jev_calls INTEGER NOT NULL CHECK (max_jev_calls BETWEEN 1 AND 100),
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    error_codes TEXT NOT NULL DEFAULT '[]'
+  ) STRICT;
+
+  CREATE TABLE manual_run_items (
+    manual_run_id TEXT NOT NULL REFERENCES manual_runs (id),
+    position INTEGER NOT NULL CHECK (position >= 0),
+    mailbox_id TEXT NOT NULL,
+    mailbox_address TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    status TEXT NOT NULL
+      CHECK (status IN (
+        'queued', 'already_current', 'duplicate', 'classified',
+        'provider_failure', 'read_error', 'store_error', 'deferred'
+      )),
+    shadow_run_id INTEGER REFERENCES runs (id),
+    PRIMARY KEY (manual_run_id, position),
+    UNIQUE (manual_run_id, mailbox_id, message_id)
+  ) STRICT;
+
+  CREATE INDEX manual_run_items_by_shadow_run ON manual_run_items (shadow_run_id);
+  `,
 ]
 
 export const schemaVersion = migrations.length
@@ -260,7 +303,7 @@ function applyMigration(db: DatabaseSync, sql: string, version: number): void {
   db.exec(`PRAGMA user_version = ${String(version)}`)
 }
 
-/** Upgrade an existing, healthy schema-1 or schema-2 file. Never creates one. */
+/** Upgrade an existing healthy older file. Never creates one. */
 export function migrateExistingDatabase(path: string): 'migrated' | 'current' {
   if (!existsSync(path)) throw new ShadowMigrationError('missing_database')
   const db = new DatabaseSync(path)
@@ -271,7 +314,9 @@ export function migrateExistingDatabase(path: string): 'migrated' | 'current' {
       if (checkDatabase(db).length > 0) throw new ShadowMigrationError('unhealthy_database')
       return 'current'
     }
-    if (version !== 1 && version !== 2) throw new ShadowMigrationError('unsupported_source')
+    if (version < 1 || version >= schemaVersion) {
+      throw new ShadowMigrationError('unsupported_source')
+    }
     transaction(db, () => {
       if (checkDatabaseHealth(db).length > 0) throw new ShadowMigrationError('unhealthy_database')
 
