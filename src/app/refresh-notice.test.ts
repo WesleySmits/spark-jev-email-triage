@@ -13,9 +13,9 @@ const summary = (change: Partial<InboxRefreshSummary> = {}): InboxRefreshSummary
 })
 
 describe('refreshNotice', () => {
-  it('names additions, read/Done removals and metadata updates separately', () => {
+  it('names additions, rows leaving the view and metadata updates separately', () => {
     expect(refreshNotice(summary({ added: 2, removed: 1, updated: 3 }))).toEqual({
-      title: '2 new rows · 1 read/Done row removed · 3 rows updated',
+      title: '2 new rows · 1 row left the view · 3 rows updated',
       detail: 'Loaded window read at 14:35',
     })
   })

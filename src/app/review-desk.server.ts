@@ -30,16 +30,9 @@ import type { ManualRunSelection } from '../shadow/manual-runs'
 const worklists = new Map<string, readonly ManualRunSelection[]>()
 const retainedWorklists = 20
 
-export async function deskReading(
-  options?: ReadOptions,
-  request?: InboxListRequest,
-): Promise<ClassifiedInbox> {
-  const inbox = await sparkInbox().list(options, request)
-  if (inbox.status !== 'ready') return inbox
-  // One id per reading, minted here because this is where a listing and the
-  // judgments stored for it become one reading. It lets a browser tell a
-  // proof that belongs to this reading from one an earlier reading made.
-  const reading = randomUUID()
+type WorklistSource = Pick<Extract<ClassifiedInbox, { status: 'ready' }>, 'scope' | 'messages'>
+
+function registerWorklist(reading: string, inbox: WorklistSource) {
   const addresses = new Map(inbox.scope.mailboxes.map((mailbox) => [mailbox.id, mailbox.label]))
   worklists.set(
     reading,
@@ -55,6 +48,19 @@ export async function deskReading(
     if (oldest === undefined) break
     worklists.delete(oldest)
   }
+}
+
+export async function deskReading(
+  options?: ReadOptions,
+  request?: InboxListRequest,
+): Promise<ClassifiedInbox> {
+  const inbox = await sparkInbox().list(options, request)
+  if (inbox.status !== 'ready') return inbox
+  // One id per reading, minted here because this is where a listing and the
+  // judgments stored for it become one reading. It lets a browser tell a
+  // proof that belongs to this reading from one an earlier reading made.
+  const reading = randomUUID()
+  registerWorklist(reading, inbox)
   return { ...inbox, reading, ...storedRowsFor(inbox.messages) }
 }
 
@@ -80,5 +86,7 @@ export async function deskRefresh(
 ): Promise<ClassifiedRefresh> {
   const inbox = await sparkInbox().refresh(request, options)
   if (inbox.status !== 'ready') return inbox
-  return { ...inbox, reading: randomUUID(), ...storedRowsFor(inbox.messages) }
+  const reading = randomUUID()
+  registerWorklist(reading, inbox)
+  return { ...inbox, reading, ...storedRowsFor(inbox.messages) }
 }
