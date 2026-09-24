@@ -129,10 +129,13 @@ describe('MailboxReach', () => {
   })
 
   it('does not imply a retry action when none was provided', () => {
+    const view = render()
     expect(
-      render()
-        .all('button')
-        .filter((button) => button.props['className'] === 'mailbox-reach__retry'),
+      view.all('button').filter((button) => button.props['className'] === 'mailbox-reach__retry'),
     ).toHaveLength(0)
+    const failed = view.elements.find((element) =>
+      String(element.props['className']).includes('mailbox-reach__state--failed'),
+    )
+    expect(failed?.props['children']).toEqual([' · ', 'could not be read'])
   })
 })

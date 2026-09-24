@@ -873,6 +873,47 @@ describe('createLiveInbox incremental refresh', () => {
       listing(mailboxId, String(page * 100 + index + 1), '2026-09-22T09:00:00.000Z'),
     )
 
+  it('reports no known changes when refresh has no prior same-view baseline', async () => {
+    const { live } = inbox({
+      mailboxes: [access(one)],
+      listings: { [one]: [listing(one, '101', null)] },
+    })
+
+    const result = await live.refresh({ view: 'unread' })
+    if (result.status !== 'ready') throw new Error('Expected refresh')
+
+    expect(result.refresh).toMatchObject({ added: 0, removed: 0, updated: 0 })
+    expect(result.refresh.mailboxes).toMatchObject([{ added: 0, removed: 0, updated: 0 }])
+    expect(result.refresh).not.toHaveProperty('previousReadAt')
+  })
+
+  it('does not call an older copy removed when a new row shifts it past a full window', async () => {
+    let refreshing = false
+    const reader: MailReader = {
+      listMailboxes: () => Promise.resolve([access(one)]),
+      listRecentEmails: () =>
+        Promise.resolve(
+          refreshing
+            ? [listing(one, '900', '2026-09-22T09:30:00.000Z'), ...pageOf(one, 1).slice(0, -1)]
+            : pageOf(one, 1),
+        ),
+      readThread: () => Promise.resolve(thread([])),
+    }
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+    const first = await live.list()
+    if (first.status !== 'ready') throw new Error('Expected list')
+    refreshing = true
+
+    const result = await live.refresh({ view: 'unread' })
+    if (result.status !== 'ready') throw new Error('Expected refresh')
+
+    expect(result.scope.bounded).toBe(true)
+    expect(result.refresh).toMatchObject({ added: 1, removed: 0, updated: 0 })
+    expect(result.refresh.mailboxes).toMatchObject([
+      { added: 1, removed: 0, updated: 0, status: 'refreshed' },
+    ])
+  })
+
   it('re-reads only the loaded depth and reports shifts, removals and updates once', async () => {
     const pages: number[] = []
     let refreshing = false

@@ -348,7 +348,8 @@ pnpm readback:spark                      # whether Spark answers on this host
   of the client build; ESLint also keeps components and stories from
   importing `*.server`, `*.functions`, `src/spark` and Node built-ins, and
   keeps routes from importing that server-only code at all.
-- Classification cannot be started in the app, so every message is in one "Recent
+- Classification starts only from the shadow CLI or the explicit, default-off,
+  loopback-only **Start Jev triage** control, so every message is in one "Recent
   mail" workflow. Each row shows what shadow triage last stored about it
   instead: "Triage current", "Triage from earlier", "Triage outdated",
   "Triage failed", "Not triaged" or "Triage unreadable", always as words
@@ -445,7 +446,8 @@ pnpm readback:spark                      # whether Spark answers on this host
   from model uncertainty. Policy in ordinary code sends an ambiguous or
   low-confidence category to review and reports an uncertain priority
   without forcing review. Suspicion only raises review priority. Nothing
-  authorizes a mailbox action, and only the shadow command calls it.
+  authorizes a mailbox action. Only the shadow command and the explicit manual
+  run server call it.
 - `src/eval/reviewed-set.ts` is the reviewed evaluation set: the invented,
   sanitized threads triage is measured against, each with the category,
   priority, handling and the argument for them that a named reviewer settled on

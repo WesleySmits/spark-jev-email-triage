@@ -353,11 +353,17 @@ async function refreshReading(
 const listedId = ({ listing, mailbox }: Listed) =>
   mailboxCopyId({ mailboxId: mailbox.id, messageId: listing.messageId })
 
-function changesBetween(before: readonly Listed[], after: readonly Listed[]) {
+const listedTime = ({ listing }: Listed) =>
+  listing.date === null ? Number.MIN_SAFE_INTEGER : Date.parse(listing.date)
+
+function changesBetween(before: readonly Listed[], after: readonly Listed[], bounded: boolean) {
   const previous = new Map(before.map((row) => [listedId(row), row.listing]))
   const current = new Map(after.map((row) => [listedId(row), row.listing]))
+  const oldestRefreshed = Math.min(...after.map(listedTime))
   const added = [...current.keys()].filter((id) => !previous.has(id)).length
-  const removed = [...previous.keys()].filter((id) => !current.has(id)).length
+  const removed = before.filter(
+    (row) => !current.has(listedId(row)) && !(bounded && listedTime(row) <= oldestRefreshed),
+  ).length
   const updated = [...current].filter(([id, listing]) => {
     const old = previous.get(id)
     return old !== undefined && JSON.stringify(old) !== JSON.stringify(listing)
@@ -376,22 +382,36 @@ function refreshStatus(progress: MailboxProgress | undefined): MailboxRefresh['s
 function knownMailboxChanges(
   id: string,
   reason: MailboxFailure['reason'] | undefined,
-  previous: readonly Listed[],
+  previous: readonly Listed[] | undefined,
   refreshed: readonly Listed[],
+  bounded: boolean,
 ) {
   // A partial or failed read cannot prove that an absent row left the
   // mailbox. Only a completely refreshed window contributes change counts.
-  if (reason) return noKnownChanges
+  if (reason || previous === undefined) return noKnownChanges
   return changesBetween(
     previous.filter((row) => row.mailbox.id === id),
     refreshed.filter((row) => row.mailbox.id === id),
+    bounded,
   )
+}
+
+const refreshedPageDepth = (progress: MailboxProgress | undefined) =>
+  Math.max(0, (progress?.nextPage ?? 1) - 1)
+
+function successfulReadTime(
+  progress: MailboxProgress | undefined,
+  at: Date,
+  format: ReturnType<typeof timeFormats>,
+) {
+  if (progress?.failed) return {}
+  return { readAt: format.clock(at), refreshedAt: at.toISOString() }
 }
 
 function mailboxRefresh(
   mailbox: ShownMailbox,
   progress: MailboxProgress | undefined,
-  previous: readonly Listed[],
+  previous: readonly Listed[] | undefined,
   refreshed: readonly Listed[],
   at: Date,
   format: ReturnType<typeof timeFormats>,
@@ -400,11 +420,11 @@ function mailboxRefresh(
   return {
     id: mailbox.id,
     label: mailbox.label,
-    pages: Math.max(0, (progress?.nextPage ?? 1) - 1),
-    ...knownMailboxChanges(mailbox.id, reason, previous, refreshed),
+    pages: refreshedPageDepth(progress),
+    ...knownMailboxChanges(mailbox.id, reason, previous, refreshed, progress?.bounded ?? false),
     status: refreshStatus(progress),
     ...(reason && { reason }),
-    ...(!progress?.failed && { readAt: format.clock(at), refreshedAt: at.toISOString() }),
+    ...successfulReadTime(progress, at, format),
   }
 }
 
@@ -414,7 +434,7 @@ function refreshSummary(
   at: Date,
   format: ReturnType<typeof timeFormats>,
 ): InboxRefreshSummary {
-  const previous = before ? unique(listedFrom(before)) : []
+  const previous = before ? unique(listedFrom(before)) : undefined
   const refreshed = unique(listedFrom(current))
   const mailboxes = current.mailboxes.map((mailbox) =>
     mailboxRefresh(mailbox, current.progress.get(mailbox.id), previous, refreshed, at, format),

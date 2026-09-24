@@ -39,6 +39,7 @@ import { SparkError } from '../spark/errors'
 import { emailsTable, emptyEmailsOutput, threadText } from '../spark/fixtures'
 import type { DeskReviewRequest } from './desk-review'
 import { ReviewDesk, type DeskView } from './review-desk'
+import { worklistFor } from './review-desk.server'
 
 const spark = vi.hoisted(() => ({
   /** Answers one Spark command, or throws as its runner does. */
@@ -313,6 +314,10 @@ describe('ReviewDesk.refresh', () => {
 
     expect(result.refresh).toMatchObject({ added: 0, removed: 1, updated: 0 })
     expect(result.messages.map((message) => message.id)).toEqual([copy(two, '11'), copy(one, '12')])
+    expect(worklistFor(result.reading)).toEqual([
+      { mailboxId: two, mailboxAddress: two, messageId: '11' },
+      { mailboxId: one, mailboxAddress: one, messageId: '12' },
+    ])
     expect(commands().filter((command) => command === 'emails')).toHaveLength(2)
     expect(threadIds()).toEqual([])
     expect(jev.createSdkTransport).not.toHaveBeenCalled()

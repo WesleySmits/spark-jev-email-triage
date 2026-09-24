@@ -7,9 +7,7 @@ const counted = (count: number, one: string, many = `${one}s`) =>
 export function refreshNotice(summary: InboxRefreshSummary) {
   const changes = [
     summary.added > 0 ? counted(summary.added, 'new row') : undefined,
-    summary.removed > 0
-      ? counted(summary.removed, 'read/Done row', 'read/Done rows') + ' removed'
-      : undefined,
+    summary.removed > 0 ? counted(summary.removed, 'row', 'rows') + ' left the view' : undefined,
     summary.updated > 0 ? counted(summary.updated, 'row') + ' updated' : undefined,
   ].filter((part): part is string => part !== undefined)
   const failures = summary.mailboxes.filter((mailbox) => mailbox.status !== 'refreshed').length
