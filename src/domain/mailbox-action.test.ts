@@ -34,7 +34,7 @@ const judged = {
 
 const proposal = (targets: ActionTarget[] = [target(studio)]) =>
   proposeMailboxAction({
-    kind: 'archive',
+    kind: 'markAsSeen',
     targets,
     basis: { classification: judged },
     proposedAt: '2026-09-22T09:15:00.000Z',
@@ -70,6 +70,24 @@ describe('proposeMailboxAction', () => {
     expect(proposal().proposedAt).toBe('2026-09-22T09:15:00.000Z')
   })
 
+  it('does not reuse approval identity for a newly minted proposal', () => {
+    const later = proposeMailboxAction({ ...proposal(), proposedAt: '2026-09-22T09:16:00.000Z' })
+    expect(proposalId(later)).not.toBe(proposalId(proposal()))
+  })
+
+  it('binds approval to the exact classification basis', () => {
+    const first = proposal()
+    const revised = proposeMailboxAction({
+      ...first,
+      basis: { classification: { ...judged, classifierVersion: 'jev-1.14.0' } },
+    })
+    expect(proposalId(revised)).not.toBe(proposalId(first))
+    expect(admitApproval(revised, approve(first), [read(studio)])).toEqual({
+      status: 'refused',
+      reason: 'other_proposal',
+    })
+  })
+
   it('refuses a proposal that names no target', () => {
     expect(() => proposal([])).toThrow()
   })
@@ -81,7 +99,7 @@ describe('proposeMailboxAction', () => {
   it('refuses a target whose thread version is missing', () => {
     expect(() =>
       proposeMailboxAction({
-        kind: 'archive',
+        kind: 'markAsSeen',
         targets: [
           { copy: { mailboxId: studio, messageId: '11' }, threadId: '', latestMessageId: '11' },
         ],

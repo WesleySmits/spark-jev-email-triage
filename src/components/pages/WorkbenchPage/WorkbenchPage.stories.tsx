@@ -2148,7 +2148,7 @@ const proposing = (states: Readonly<Record<string, StoredClassification>> = stor
  * Proposing one mailbox action, and then approving it. The three stages read
  * apart at every moment: what is proposed, what a person approved, and that
  * execution is blocked. The proposal names the open row's own mailbox copy
- * and no other, and no state ever says a message was archived: nothing here
+ * and no other, and no state ever says a message was marked as read: nothing here
  * can write to a mailbox at all.
  */
 export const ProposeMailboxAction: Story = {
@@ -2165,7 +2165,7 @@ export const ProposeMailboxAction: Story = {
       'Nothing is proposed, so nothing would change.',
     )
 
-    await press(canvasElement, 'Propose archive')
+    await press(canvasElement, 'Propose marking as read')
     await expect(actionPanel(canvasElement)).toHaveTextContent('Waiting for you')
     // Exactly the open row's copy, by the ids a provider would be given.
     // Nothing added an alias copy to it.
@@ -2178,12 +2178,12 @@ export const ProposeMailboxAction: Story = {
     // provider doing it is not known. It never says anything happened.
     await expect(expectedEffect(canvasElement)).toHaveTextContent('What it would change')
     await expect(expectedEffect(canvasElement)).toHaveTextContent(
-      'If this were ever carried out, it would ask a mail provider to archive the copy named above, and nothing else: Studio Noord (studio · message m1).',
+      'The intended effect is to mark only the copy named above as read: Studio Noord (studio · message m1).',
     )
     await expect(expectedEffect(canvasElement)).toHaveTextContent(
-      'whether it would touch anything else in the thread',
+      'effect on the rest of the thread is also unverified',
     )
-    await expect(expectedEffect(canvasElement)).toHaveTextContent('Nothing has been asked')
+    await expect(expectedEffect(canvasElement)).toHaveTextContent('No live write is connected')
 
     // Each precondition names its mailbox id too, so two mailboxes shown
     // under one name could never read as one precondition.
@@ -2197,7 +2197,7 @@ export const ProposeMailboxAction: Story = {
     await expect(actionResult(canvasElement)).toHaveTextContent('Approved, not carried out')
     await expect(actionPanel(canvasElement)).toHaveTextContent('Not connected')
     await expect(actionAnnounced(canvasElement)).toHaveTextContent('Your mailbox is unchanged')
-    await expect(actionPanel(canvasElement)).not.toHaveTextContent(/archived|completed/i)
+    await expect(actionPanel(canvasElement)).not.toHaveTextContent(/was marked as read|completed/i)
 
     // Nothing was asked of the provider: only the one body the reader opened.
     await expect(args.loadBody).toHaveBeenCalledTimes(1)
@@ -2220,7 +2220,7 @@ export const NothingToProposeAgainst: Story = {
     await waitFor(() => expect(actionPanel(canvasElement)).toHaveTextContent('Nothing proposed'))
 
     await expect(
-      within(canvasElement).getByRole('button', { name: 'Propose archive' }),
+      within(canvasElement).getByRole('button', { name: 'Propose marking as read' }),
     ).toBeDisabled()
     await expect(actionPanel(canvasElement)).toHaveTextContent('Blocked')
   },
@@ -2258,7 +2258,7 @@ export const ProposalLapsesOnNewerMessage: Story = {
   render: (args) => <WithMovingThread {...args} />,
   play: async ({ canvasElement, args }) => {
     await waitFor(() => expect(evidence(canvasElement)).toHaveTextContent('Triage current'))
-    await press(canvasElement, 'Propose archive')
+    await press(canvasElement, 'Propose marking as read')
     await press(canvasElement, 'Approve')
     await expect(actionResult(canvasElement)).toHaveTextContent('Approved, not carried out')
 

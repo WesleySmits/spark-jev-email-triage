@@ -43,12 +43,11 @@ import type {
 } from '../../organisms/ActionProposalPanel/ActionProposalPanel'
 
 /**
- * The actions this workbench may propose, as they read. `archive` is the one
- * it models, as an illustration of a proposal: proposing it asks no provider
+ * The one action this workbench may propose. Proposing it asks no provider
  * for anything and permits nothing.
  */
 const actionKindLabels = {
-  archive: 'Archive',
+  markAsSeen: 'Mark as read',
 } as const satisfies Record<MailboxActionKind, string>
 
 /** What a proposal about one row would name: one copy, and what explains it. */
@@ -257,7 +256,7 @@ const effectTitle = 'What it would change'
  * It is written so it can never be read as more than it says. It names the
  * copies asked for, and it does not claim what a provider would do with such
  * a request: whether one is enough, whether a provider touches the rest of a
- * thread, and what archiving means there are all unverified here. Nothing
+ * thread, and how it scopes a message id are all unverified here. Nothing
  * has run, and nothing can, so this is a description of a request nobody has
  * made rather than a report of anything that happened.
  */
@@ -269,7 +268,6 @@ export function actionEffect(held: HeldProposal | null, labelOf: LabelOf): Actio
       note: unchanged,
     }
   }
-  const kind = actionKindLabels[held.proposal.kind]
   const named = held.proposal.targets
     .map(
       (target) =>
@@ -279,8 +277,8 @@ export function actionEffect(held: HeldProposal | null, labelOf: LabelOf): Actio
   const copies = held.proposal.targets.length
   return {
     title: effectTitle,
-    statement: `If this were ever carried out, it would ask a mail provider to ${kind.toLowerCase()} ${copies === 1 ? 'the copy' : 'the copies'} named above, and nothing else: ${named}.`,
-    note: `What a provider does when asked that is not verified here — including whether it would touch anything else in the thread, and what ${kind.toLowerCase()} means to it. Nothing has been asked, nothing can be, and ${unchanged.toLowerCase()}`,
+    statement: `The intended effect is to mark ${copies === 1 ? 'only the copy' : 'only the copies'} named above as read: ${named}.`,
+    note: `Spark has not verified that this action can target these exact mailbox copies without changing others. Its effect on the rest of the thread is also unverified. No live write is connected, and ${unchanged.toLowerCase()}`,
   }
 }
 

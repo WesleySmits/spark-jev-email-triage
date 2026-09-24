@@ -90,7 +90,7 @@ function useProposal({ proposable, observation, approver }: ActionProposalAction
       settle(
         {
           proposal: proposeMailboxAction({
-            kind: 'archive',
+            kind: 'markAsSeen',
             targets: [proposable.target],
             basis: proposable.basis,
             proposedAt: now(),
@@ -131,7 +131,7 @@ function buttonsFor(state: Held, canPropose: boolean): readonly PanelAction[] {
     return [
       {
         id: 'propose',
-        label: 'Propose archive',
+        label: 'Propose marking as read',
         variant: 'secondary',
         disabled: !canPropose,
         onClick: state.propose,
@@ -164,7 +164,7 @@ function buttonsFor(state: Held, canPropose: boolean): readonly PanelAction[] {
  * Nothing here reaches a mailbox. Proposing names one copy and no other,
  * approving is a person's decision recorded on this page, and execution has
  * no path at all: this build has no write adapter, so every state says the
- * mailbox is unchanged and none of them says a message was archived.
+ * mailbox is unchanged and none of them says a message was marked as read.
  *
  * Give it a new `key` per row, so one message's proposal never carries to
  * the next.
@@ -176,7 +176,7 @@ export function ActionProposalAction(props: ActionProposalActionProps) {
       <ActionProposalPanel
         headingLevel={3}
         title="Mailbox action"
-        summary="Proposed here, approved by you, and never carried out."
+        summary="Proposed here, approved by you, and never carried out. Spark cannot yet target this exact mailbox copy for a write."
         stages={actionStages(state.held, state.standing)}
         targetsTitle="Mailbox copies named"
         targets={actionTargets(state.held, state.observations, props.labelOf)}

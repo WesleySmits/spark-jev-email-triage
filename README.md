@@ -236,9 +236,9 @@ pnpm readback:spark                      # whether Spark answers on this host
   Errors reach the browser only as a coarse reason or a fixed message.
 - The page runs in `read-only` completion mode: no Complete, E, Completed
   notice or Undo. The sync button only reads the inbox again.
-- The open message offers one mailbox action to propose, `archive`, which is
-  the one kind this build models and is an illustration of a proposal rather
-  than permission for any provider mutation. The reader shows proposal, human
+- The open message offers one mailbox action to propose, `markAsSeen`, which
+  expresses the intended change to the chosen copy's read status. It is a
+  proposal, not permission for a provider mutation. The reader shows proposal, human
   approval and execution as three stages that never read as one another. A
   proposal names the open row's own mailbox copy and the thread version it was
   proposed against, and nothing is ever added to it: a copy of the same
@@ -246,16 +246,24 @@ pnpm readback:spark                      # whether Spark answers on this host
   named. Each named copy is shown by the mailbox and message ids a provider
   would be given, beside the name the rail uses, because two mailboxes may
   carry one name and one message id may be listed in both. The panel also says
-  what the action would change about those copies and nothing else, and says
-  in the same breath that what a provider does when asked is not verified
-  here, the rest of the thread included. Approving is a distinct transition and is that person's
+  the intended change for those copies and says that exact provider targeting
+  and effects elsewhere in the thread are unverified. Approving is a distinct transition and is that person's
   decision alone: it is recorded on the page, no provider is told about it,
   and it lapses the moment a later message reaches a target's thread. Nothing
-  is stored and nothing is executed. `src/domain/mailbox-action.ts` names
-  every precondition, `write_adapter_connected` among them, and that one can
-  never be met: no Spark write adapter exists, execution has no ready state
-  to represent, and every state the panel shows says the mailbox is unchanged.
+  is stored by this panel and nothing is executed from it. `src/domain/mailbox-action.ts` names
+  every proposal precondition, `write_adapter_connected` among them. No Spark
+  write adapter exists, so the live panel's execution remains blocked and
+  every state it shows says the mailbox is unchanged. The installed Spark CLI
+  accepts a message id for `markAsSeen` but no mailbox id, so it cannot yet
+  prove that a write would touch only the named `(mailboxId, messageId)` copy.
   Nothing in it names a subject, an address or a body.
+- A disconnected `markAsSeen` executor can be exercised with a fictional
+  provider. It requires one exact target, a trusted fresh approval, an
+  unchanged thread and unread precondition, an atomic version check, a kill
+  switch, a durable receipt before the attempt and provider readback after it.
+  An uncertain attempt blocks another attempt on that copy until it is
+  reconciled. This executor is not connected to the workbench or Spark, and
+  the fictional tests do not establish a live mailbox result.
 - Spark wiring lives in `*.server.ts` files, which TanStack Start keeps out
   of the client build; ESLint also keeps components and stories from
   importing `*.server`, `*.functions`, `src/spark` and Node built-ins, and
