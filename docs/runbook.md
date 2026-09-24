@@ -106,9 +106,11 @@ Storybook's separate container serves component demonstrations, not live mail.
 
 ## Current operational boundary
 
-The root route reads up to ten recent Inbox messages in each of the first
-five readable Spark mailboxes. There is no pagination; filters cover only
-loaded rows, and one failed listing currently fails the whole inbox.
+The root route starts with ten unread Inbox messages from every readable
+Spark mailbox. A person can request older ten-message pages or switch to the
+same bounded reading of read Inbox mail, up to twenty pages per mailbox.
+Filters cover only the selected view's loaded rows. A first-page failure costs
+only that mailbox; completed pages remain visible if a later page fails.
 Opening a row lazily reads its body/thread. Refreshing does not classify.
 
 Classification is the explicit `pnpm shadow --mailbox <mailbox> --apply`

@@ -8,6 +8,7 @@ import { useReconnect } from '../components/pages/ConnectionPage/useReconnect'
 import { WorkbenchPage } from '../components/pages/WorkbenchPage/WorkbenchPage'
 import { syncScopeLabel } from '../components/pages/WorkbenchPage/scope'
 import { ReviewDesk, type DeskReason, type DeskView } from '../app/review-desk'
+import { maxInboxPages, type InboxListRequest, type InboxScope } from '../app/live-inbox'
 
 export const Route = createFileRoute('/')({
   loader: (): Promise<DeskView> => ReviewDesk.open(),
@@ -107,13 +108,80 @@ type PageProps = Readonly<{
   inbox: DeskView
   root: RefObject<HTMLDivElement | null>
   onReady: () => Promise<void>
+  onRefresh: () => Promise<void>
+  onChange: (request: InboxListRequest) => Promise<void>
+  loading: boolean
 }>
 
+function ViewTab({
+  label,
+  selected,
+  disabled,
+  onClick,
+}: Readonly<{ label: string; selected: boolean; disabled: boolean; onClick: () => void }>) {
+  return (
+    <button
+      type="button"
+      aria-current={selected ? 'page' : undefined}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {label}
+    </button>
+  )
+}
+
+function InboxViewBar({
+  scope,
+  loading,
+  onChange,
+}: Readonly<{
+  scope: InboxScope
+  loading: boolean
+  onChange: PageProps['onChange']
+}>) {
+  const { view, pages } = scope
+  const retry = (scope.incomplete?.length ?? 0) > 0
+  const canLoad = scope.bounded && (pages < maxInboxPages || retry)
+  const kind = view === 'unread' ? 'unread' : 'read'
+  return (
+    <nav className="inbox-view" aria-label="Inbox views">
+      <div className="inbox-view__tabs">
+        <ViewTab
+          label="Unread"
+          selected={view === 'unread'}
+          disabled={loading}
+          onClick={() => void onChange({ view: 'unread', pages: 1 })}
+        />
+        <ViewTab
+          label="Other Inbox"
+          selected={view === 'other'}
+          disabled={loading}
+          onClick={() => void onChange({ view: 'other', pages: 1 })}
+        />
+      </div>
+      <span className="inbox-view__note" role="status">
+        {loading
+          ? 'Loading…'
+          : `Showing ${String(scope.loaded)} loaded ${kind} messages · ${String(scope.readable)} readable mailboxes`}
+      </span>
+      {canLoad && (
+        <button
+          type="button"
+          disabled={loading}
+          onClick={() => void onChange({ view, pages: retry ? pages : pages + 1 })}
+        >
+          {retry ? 'Retry older' : 'Load older'} {kind} messages
+        </button>
+      )}
+    </nav>
+  )
+}
+
 /** The page for what the loader found: waiting, no mailboxes or the inbox. */
-function Page({ inbox, root, onReady }: PageProps) {
-  const router = useRouter()
+function Page({ inbox, root, onReady, onRefresh, onChange, loading }: PageProps) {
   const reread = () => {
-    void router.invalidate()
+    void onRefresh()
   }
   if (inbox.status === 'unavailable') return <Connection reason={inbox.reason} onReady={onReady} />
   if (inbox.mailboxes.length === 0) {
@@ -133,44 +201,49 @@ function Page({ inbox, root, onReady }: PageProps) {
   // them all again. A reading that lost a mailbox keeps the rest, so the
   // retry is global but costs no mail that did arrive.
   const syncLabel = syncScopeLabel(inbox.scope)
+  const { view } = inbox.scope
   return (
-    <div ref={root} className="app-root">
-      <WorkbenchPage
-        messages={inbox.messages}
-        classifications={{
-          reading: inbox.reading,
-          states: inbox.classifications,
-          reviews: inbox.reviews,
-        }}
-        loadBody={ReviewDesk.focus(inbox)}
-        workflows={ReviewDesk.workflows}
-        mailboxes={inbox.mailboxes}
-        scope={inbox.scope}
-        completion={{ mode: 'read-only' }}
-        review={{
-          mode: 'enabled',
-          onSaveReview: ReviewDesk.review,
-          onCheckReview: async (subject) => {
-            const result = await ReviewDesk.check(subject)
-            if (result.status === 'recorded') reread()
-            return result
-          },
-        }}
-        proposals={{
-          mode: 'enabled',
-          approver: 'you, at this computer',
-          onApprove: ReviewDesk.approveDone,
-          onExecute: ReviewDesk.executeDone,
-          onConfirmed: reread,
-        }}
-        topBar={{
-          syncStatus: 'connected',
-          syncLabel,
-          syncActionLabel: `Refresh mail · ${syncLabel}`,
-          onSyncClick: reread,
-          ...profile,
-        }}
-      />
+    <div ref={root} className="app-root app-root--inbox">
+      <div className="inbox-view__workbench" inert={loading} aria-busy={loading}>
+        <WorkbenchPage
+          key={view}
+          messages={inbox.messages}
+          classifications={{
+            reading: inbox.reading,
+            states: inbox.classifications,
+            reviews: inbox.reviews,
+          }}
+          loadBody={ReviewDesk.focus(inbox)}
+          workflows={ReviewDesk.workflows}
+          mailboxes={inbox.mailboxes}
+          scope={inbox.scope}
+          queueControls={<InboxViewBar scope={inbox.scope} loading={loading} onChange={onChange} />}
+          completion={{ mode: 'read-only' }}
+          review={{
+            mode: 'enabled',
+            onSaveReview: ReviewDesk.review,
+            onCheckReview: async (subject) => {
+              const result = await ReviewDesk.check(subject)
+              if (result.status === 'recorded') reread()
+              return result
+            },
+          }}
+          proposals={{
+            mode: 'enabled',
+            approver: 'you, at this computer',
+            onApprove: ReviewDesk.approveDone,
+            onExecute: ReviewDesk.executeDone,
+            onConfirmed: reread,
+          }}
+          topBar={{
+            syncStatus: 'connected',
+            syncLabel,
+            syncActionLabel: `Refresh mail · ${syncLabel}`,
+            onSyncClick: reread,
+            ...profile,
+          }}
+        />
+      </div>
     </div>
   )
 }
@@ -180,14 +253,28 @@ function Page({ inbox, root, onReady }: PageProps) {
 // message-ID action when the server kill switch is enabled. Inbox refresh and
 // body reads remain read-only and never start an action.
 function Home() {
-  const inbox = Route.useLoaderData()
-  const router = useRouter()
+  const initial = Route.useLoaderData()
+  const [inbox, setInbox] = useState<DeskView>(initial)
+  const [loading, setLoading] = useState(false)
+  const request = useRef<InboxListRequest>({ view: 'unread', pages: 1 })
+  const sequence = useRef(0)
+  const read = async (next: InboxListRequest) => {
+    const current = ++sequence.current
+    request.current = next
+    setLoading(true)
+    const result = await ReviewDesk.open(next)
+    if (current === sequence.current) {
+      setInbox(result)
+      setLoading(false)
+    }
+  }
   const root = useRef<HTMLDivElement>(null)
   // Set once Spark answered after the page waited, so the inbox says so.
   const [waited, setWaited] = useState(false)
   const count = inbox.status === 'ready' ? inbox.messages.length : 0
   const notice = useConnectedNotice(root, waited && count > 0)
-  const messages = `${String(count)} recent ${count === 1 ? 'message' : 'messages'}`
+  const kind = inbox.status === 'ready' && inbox.scope.view === 'other' ? 'read' : 'unread'
+  const messages = `${String(count)} ${kind} ${count === 1 ? 'message' : 'messages'}`
   return (
     <>
       <Page
@@ -196,8 +283,11 @@ function Home() {
         onReady={() => {
           setWaited(true)
           notice.reset()
-          return router.invalidate()
+          return read(request.current)
         }}
+        onRefresh={() => read(request.current)}
+        onChange={read}
+        loading={loading}
       />
       <LocalStatusToast
         visible={notice.visible}

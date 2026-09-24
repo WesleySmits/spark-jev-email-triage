@@ -302,7 +302,7 @@ async function filtersAndSearch(root: HTMLElement) {
     'aria-pressed',
     'true',
   )
-  await expect(canvas.getByRole('button', { name: /^All loaded/ })).toHaveAttribute(
+  await expect(canvas.getByRole('button', { name: /^All mailboxes/ })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
@@ -404,8 +404,8 @@ export const KeyboardNavigation: Story = {
     }
 
     // A mailbox filter keeps its focus and the open message stays.
-    await rail(canvasElement, 'All loaded')
-    const filter = canvas.getByRole('button', { name: /^All loaded/ })
+    await rail(canvasElement, 'All mailboxes')
+    const filter = canvas.getByRole('button', { name: /^All mailboxes/ })
     await keysChangeNothing(canvasElement, 'kj', filter)
     await rail(canvasElement, 'Needs review')
     await keysChangeNothing(
@@ -1080,7 +1080,7 @@ export const SharedMarkerMailboxes: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByRole('heading', { level: 1, name: 'Recent mail' })).toBeVisible()
     await expect(canvas.getByText('4 results')).toBeVisible()
-    await expect(queueContext(canvasElement)).toHaveTextContent(/^All loaded mailboxes$/)
+    await expect(queueContext(canvasElement)).toHaveTextContent(/^All readable mailboxes$/)
     await bodyShows(canvasElement, 'Hi Wesley,')
     await rail(canvasElement, 'second@mail.example')
     await expect(canvas.getByText('2 results')).toBeVisible()

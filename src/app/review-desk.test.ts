@@ -317,7 +317,7 @@ describe('ReviewDesk.probe', () => {
 
 describe('ReviewDesk.workflows', () => {
   it('offers the one workflow live mail has while it is not triaged', () => {
-    expect(ReviewDesk.workflows).toEqual([{ id: 'inbox', icon: 'inbox', label: 'Recent mail' }])
+    expect(ReviewDesk.workflows).toEqual([{ id: 'inbox', icon: 'inbox', label: 'Inbox' }])
   })
 })
 

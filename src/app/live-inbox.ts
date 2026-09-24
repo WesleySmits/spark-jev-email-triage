@@ -11,8 +11,12 @@ import type { BodyLoader, InboxSummary, MessageBody } from './inbox'
 
 /** Live mail isn't triaged yet, so every message is in one workflow. */
 export const liveWorkflows: readonly SidebarItem[] = [
-  { id: 'inbox', icon: 'inbox', label: 'Recent mail' },
+  { id: 'inbox', icon: 'inbox', label: 'Inbox' },
 ]
+
+export type InboxView = 'unread' | 'other'
+export type InboxListRequest = Readonly<{ view: InboxView; pages: number }>
+export const maxInboxPages = 20
 
 /**
  * How much of one mailbox a reading holds. Counted from the rows it kept,
@@ -60,6 +64,12 @@ export type MailboxFailure = Readonly<{
  * the one thing a reading learns about mail it did not load.
  */
 export type InboxScope = Readonly<{
+  /** The selected Inbox state. This is never an all-mail count. */
+  view: InboxView
+  /** Number of pages requested per mailbox in this reading. */
+  pages: number
+  /** Mailboxes whose earlier pages were kept after a later page failed. */
+  incomplete?: readonly MailboxFailure[]
   /**
    * The mailboxes this reading listed, in provider order. A mailbox that
    * failed stays here, so the rail and the mailbox filter survive a failure
@@ -159,6 +169,10 @@ export const bodyRequestSchema = z.strictObject({
   mailbox: z.email(),
   /** Spark's message id, not the row's `id`. */
   id: z.string().regex(/^[1-9][0-9]{0,18}$/),
+  /** The listed selection to recheck if the server restarted before this body read. */
+  selection: z
+    .strictObject({ view: z.enum(['unread', 'other']), pages: z.int().min(1).max(maxInboxPages) })
+    .optional(),
 })
 
 export type BodyRequest = z.infer<typeof bodyRequestSchema>
@@ -174,10 +188,13 @@ type FetchBody = (request: BodyRequest, signal: AbortSignal) => Promise<MessageB
 export function liveBodyLoader(
   messages: readonly InboxSummary[],
   fetchBody: FetchBody,
+  selection?: InboxListRequest,
 ): BodyLoader {
   const copies = new Map<string, BodyRequest>()
   for (const { id, mailbox, messageId } of messages) {
-    if (messageId !== undefined) copies.set(id, { mailbox, id: messageId })
+    if (messageId !== undefined) {
+      copies.set(id, { mailbox, id: messageId, ...(selection && { selection }) })
+    }
   }
   return (id, { signal }) => {
     const copy = copies.get(id)

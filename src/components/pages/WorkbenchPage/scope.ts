@@ -1,3 +1,9 @@
+import {
+  maxInboxPages,
+  type MailboxFailure as LiveMailboxFailure,
+  type MailboxScope as LiveMailboxScope,
+} from '../../../app/live-inbox'
+
 /**
  * What the page says about its own reach. The queue holds a bounded reading
  * of a few mailboxes, never a whole mailbox, and these are the words for
@@ -13,35 +19,19 @@
  * mail behind by accident, and only one of the two is worth retrying.
  */
 
-/** How much of one mailbox the page holds. */
-export type MailboxScope = Readonly<{
-  id: string
-  /** The mailbox as the rail names it, e.g. its address. */
-  label: string
-  /** Rows the page holds for it. */
-  loaded: number
-  /** Whether the per-mailbox bound may have cut it. */
-  bounded: boolean
-}>
-
-/** One mailbox the reading could not read. It names no mail, only the mailbox. */
-export type MailboxFailure = Readonly<{
-  id: string
-  /** The mailbox as the rail names it, e.g. its address. */
-  label: string
-  /** Why it could not be read, coarsely. */
-  reason: 'missing' | 'failed' | 'malformed'
-}>
-
 /** What the page holds, what bounded it and what failed. The route counts these. */
 export type QueueScope = Readonly<{
+  view?: 'unread' | 'other'
+  pages?: number
   /** Every mailbox the reading listed, failed ones included. */
-  mailboxes: readonly MailboxScope[]
+  mailboxes: readonly LiveMailboxScope[]
   /**
    * The listed mailboxes that could not be read. Each holds 0 rows here
    * because nothing could be read from it, never because it is empty.
    */
-  failed: readonly MailboxFailure[]
+  failed: readonly LiveMailboxFailure[]
+  /** Earlier pages are shown, but a later page could not be read. */
+  incomplete?: readonly LiveMailboxFailure[]
   /** Readable mailboxes the provider offered, before the mailbox bound. */
   readable: number
   /** At most this many mailboxes are loaded. */
@@ -163,6 +153,28 @@ function cutBy(scope: QueueScope) {
  * mail beside it arrived, and nothing older is shown as fresh.
  */
 export function scopeText(scope: QueueScope): ScopeText {
+  if (scope.view) {
+    const kind = scope.view === 'unread' ? 'unread' : 'other Inbox'
+    const unread = unreadBy(scope)
+    const incomplete = scope.incomplete?.length
+      ? `Older ${kind} messages could not be loaded from ${scope.incomplete.map((mailbox) => mailbox.label).join(', ')}. Earlier pages remain visible; retry loading older messages.`
+      : undefined
+    const notices = [unread, incomplete].filter((notice) => notice !== undefined)
+    const possible = scope.bounded
+      ? scope.pages === maxInboxPages
+        ? `Older ${kind} messages may remain beyond Spark's page limit.`
+        : `Older ${kind} messages may remain; load more to continue.`
+      : `No further ${kind} messages were found in the pages read.`
+    return {
+      summary: `Loaded: ${plural(scope.loaded, `${kind} message`)} from ${mailboxCount(scope)}`,
+      detail:
+        `${possible} Search and filters cover only loaded ${kind} messages. ` +
+        'Read messages still in the Inbox count toward Inbox Zero.',
+      ...(notices.length > 0 && { unread: notices.join(' ') }),
+      refreshed: { label: `Last refreshed ${scope.readAt}.`, dateTime: scope.refreshedAt },
+      bounded: scope.bounded,
+    }
+  }
   const loaded = plural(scope.loaded, 'recent message')
   const unread = unreadBy(scope)
   return {
@@ -184,7 +196,8 @@ export function syncScopeLabel(scope: QueueScope) {
   const failed = scope.failed.length
   const unread =
     failed === 0 ? '' : ` · ${plural(failed, 'mailbox', 'mailboxes')} could not be read`
-  return `Loaded mail updated at ${scope.readAt}${unread} · read only`
+  const kind = scope.view === 'unread' ? 'unread' : scope.view === 'other' ? 'other Inbox' : 'mail'
+  return `Loaded ${kind} updated at ${scope.readAt}${unread} · read only`
 }
 
 /**
@@ -210,6 +223,15 @@ export function emptyScopeText(scope: QueueScope | undefined) {
     } as const
   }
   if (scope?.loaded === 0) {
+    if (scope.view) {
+      return {
+        title:
+          scope.view === 'unread' ? 'No unread messages loaded' : 'No other Inbox messages loaded',
+        description:
+          `No messages matched this view in ${mailboxCount(scope)}. ` +
+          'Read messages may still be in the Inbox. This is not an Inbox Zero confirmation.',
+      } as const
+    }
     return {
       title: 'No mail loaded',
       description: `This reading holds no messages from ${mailboxCount(
