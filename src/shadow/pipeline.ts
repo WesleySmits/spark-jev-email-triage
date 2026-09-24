@@ -48,6 +48,8 @@ export interface ShadowDeps {
   isProcessAlive: (pid: number) => boolean
   /** Optional, explicit browser-run cancellation and content-free progress. */
   signal?: AbortSignal | undefined
+  /** Durable cancellation checked before provider reads and dispatches. */
+  stopRequested?: (() => boolean) | undefined
   observer?: ShadowObserver | undefined
 }
 
@@ -325,13 +327,20 @@ async function classifyAll(
   let calls = 0
   try {
     for await (const selected of threadsToJudge(deps, scope, listings, counts)) {
-      if (calls >= settings.maxJevCalls || deps.signal?.aborted === true) {
+      if (calls >= settings.maxJevCalls || stopped(deps)) {
         counts.deferred += 1
         observe(deps, scope, selected.messageId, 'deferred')
         continue
       }
       calls += 1
       await pool.add(async () => {
+        // `add` may wait for capacity. Check again after that wait so a stop
+        // recorded by another process cannot leak one more provider call.
+        if (stopped(deps)) {
+          counts.deferred += 1
+          observe(deps, scope, selected.messageId, 'deferred')
+          return
+        }
         const classification = await deps.classify(
           { thread: selected.thread, mailboxAddress: scope.mailboxAddress },
           deps.signal,
@@ -378,7 +387,7 @@ async function classificationCandidate(
   messageId: string,
   seen: Set<string>,
 ): Promise<Candidate> {
-  if (deps.signal?.aborted === true) return { status: 'deferred' }
+  if (stopped(deps)) return { status: 'deferred' }
   if (isMessageJudged(deps.db, { ...scope, messageId })) return { status: 'already_current' }
   const thread = await readThread(deps.reader, scope.mailboxId, messageId, deps.signal)
   if (thread === null) return { status: 'read_error' }
@@ -458,6 +467,9 @@ function store(
 function observe(deps: ShadowDeps, scope: Scope, messageId: string, status: ShadowMessageStatus) {
   deps.observer?.message?.({ mailboxId: scope.mailboxId, messageId, status })
 }
+
+const stopped = (deps: ShadowDeps) =>
+  deps.signal?.aborted === true || deps.stopRequested?.() === true
 
 /** Display fields come from the same scrubbed state Jev received. */
 function judgedThread(thread: Thread, mailboxAddress: string): JudgedThread {

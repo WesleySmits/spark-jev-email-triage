@@ -182,6 +182,15 @@ export function requestManualRunStop(db: DatabaseSync, runId: string): boolean {
   return result.changes > 0
 }
 
+/** Durable stop state, visible to the process that owns the running job. */
+export function manualRunStopRequested(db: DatabaseSync, runId: string): boolean {
+  return (
+    db
+      .prepare("SELECT 1 FROM manual_runs WHERE id = :runId AND status = 'stopping'")
+      .get({ runId }) !== undefined
+  )
+}
+
 export function deferQueuedManualRunItems(db: DatabaseSync, runId: string): void {
   db.prepare(
     "UPDATE manual_run_items SET status = 'deferred' WHERE manual_run_id = :runId AND status = 'queued'",
@@ -234,6 +243,7 @@ const runRowSchema = z.object({
 const itemRowSchema = z.object({
   mailbox_id: z.string(),
   message_id: z.string(),
+  shadow_run_id: z.int().nullable(),
   status: z.enum([
     'queued',
     'already_current',
@@ -268,7 +278,7 @@ export function readManualRun(db: DatabaseSync, runId: string): TriageRunSnapsho
   const itemRows = itemRowSchema.array().parse(
     db
       .prepare(
-        `SELECT mailbox_id, message_id, status FROM manual_run_items
+        `SELECT mailbox_id, message_id, shadow_run_id, status FROM manual_run_items
          WHERE manual_run_id = :runId ORDER BY position`,
       )
       .all({ runId }),
@@ -334,23 +344,7 @@ export function readManualRun(db: DatabaseSync, runId: string): TriageRunSnapsho
 }
 
 function projectItem(db: DatabaseSync, row: z.infer<typeof itemRowSchema>): TriageRunItem {
-  const judgment = judgmentRowSchema.optional().parse(
-    db
-      .prepare(
-        `SELECT j.category, j.priority, j.review, j.error_code
-         FROM judgment_messages m
-         JOIN judgments j ON j.id = m.judgment_id
-         WHERE m.mailbox_id = :mailboxId AND m.message_id = :messageId
-           AND j.rubric = :rubric AND j.requested_model = :model
-         ORDER BY j.judged_at DESC, j.id DESC LIMIT 1`,
-      )
-      .get({
-        mailboxId: row.mailbox_id,
-        messageId: row.message_id,
-        rubric: currentTriageRubric,
-        model: jevModel,
-      }),
-  )
+  const judgment = judgmentForItem(db, row)
   return {
     mailbox: row.mailbox_id,
     messageId: row.message_id,
@@ -360,6 +354,30 @@ function projectItem(db: DatabaseSync, row: z.infer<typeof itemRowSchema>): Tria
     ...(judgment ? { needsReview: judgment.review === 'needs_review' } : {}),
     ...(judgment?.error_code ? { errorCode: judgment.error_code } : {}),
   }
+}
+
+function judgmentForItem(db: DatabaseSync, row: z.infer<typeof itemRowSchema>) {
+  const mayHaveJudgment = row.status === 'classified' || row.status === 'provider_failure'
+  if (!mayHaveJudgment || row.shadow_run_id === null) return undefined
+  return judgmentRowSchema.optional().parse(
+    db
+      .prepare(
+        `SELECT j.category, j.priority, j.review, j.error_code
+         FROM judgment_messages m
+         JOIN judgments j ON j.id = m.judgment_id
+         WHERE m.mailbox_id = :mailboxId AND m.message_id = :messageId
+           AND j.run_id = :shadowRunId
+           AND j.rubric = :rubric AND j.requested_model = :model
+         LIMIT 1`,
+      )
+      .get({
+        mailboxId: row.mailbox_id,
+        messageId: row.message_id,
+        shadowRunId: row.shadow_run_id,
+        rubric: currentTriageRubric,
+        model: jevModel,
+      }),
+  )
 }
 
 export function selectionForManualRun(db: DatabaseSync, runId: string): ManualRunSelection[] {
