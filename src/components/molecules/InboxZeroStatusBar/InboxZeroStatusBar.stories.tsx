@@ -38,6 +38,7 @@ type Story = StoryObj<typeof meta>
 
 export const Incomplete: Story = {}
 export const Confirmed: Story = { args: { coverage: confirmed } }
+export const Refreshing: Story = { args: { coverage: confirmed, refreshing: true } }
 export const Failed: Story = { args: { coverage: failed } }
 export const Mobile: Story = {
   render: (args) => (

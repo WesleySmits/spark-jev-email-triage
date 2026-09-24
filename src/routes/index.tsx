@@ -8,7 +8,7 @@ import { useReconnect } from '../components/pages/ConnectionPage/useReconnect'
 import { WorkbenchPage } from '../components/pages/WorkbenchPage/WorkbenchPage'
 import { syncScopeLabel } from '../components/pages/WorkbenchPage/scope'
 import { InboxZeroStatusBar } from '../components/molecules/InboxZeroStatusBar/InboxZeroStatusBar'
-import { coverageFromInboxScope } from '../app/inbox-coverage-adapter'
+import { coverageFromInboxScope, readWithCoverage } from '../app/inbox-coverage-adapter'
 import { failedCoverage, inboxCoverage, type InboxCoverage } from '../app/inbox-coverage'
 import { ReviewDesk, type DeskReason, type DeskView } from '../app/review-desk'
 import type { InboxListRequest, InboxScope } from '../app/live-inbox'
@@ -224,7 +224,7 @@ function Page({ inbox, root, onReady, onRefresh, onChange, coverage, loading }: 
           queueControls={
             <>
               <InboxViewBar scope={inbox.scope} loading={loading} onChange={onChange} />
-              {coverage && <InboxZeroStatusBar coverage={coverage} />}
+              {coverage && <InboxZeroStatusBar coverage={coverage} refreshing={loading} />}
             </>
           }
           completion={{ mode: 'read-only' }}
@@ -290,11 +290,15 @@ function useDeskReading(initial: DeskView) {
     const startedAt = new Date().toISOString()
     request.current = next
     setLoading(true)
-    const result = await ReviewDesk.open(next)
+    const result = await readWithCoverage(
+      next.view,
+      startedAt,
+      () => ReviewDesk.open(next),
+      (value, finishedAt) => coverageUpdate(value, next.view, startedAt, finishedAt),
+    )
     if (current === sequence.current) {
-      const update = coverageUpdate(result, next.view, startedAt, new Date().toISOString())
-      setInbox(result)
-      setCoverage((previous) => inboxCoverage(previous, update))
+      if (result.status === 'ready') setInbox(result.value)
+      setCoverage((previous) => inboxCoverage(previous, result.update))
       setLoading(false)
     }
   }

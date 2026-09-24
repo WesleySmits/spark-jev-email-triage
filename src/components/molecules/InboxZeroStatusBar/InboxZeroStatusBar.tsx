@@ -20,13 +20,39 @@ function resultName(result: InboxViewCoverage['result']) {
 const viewTone = (result: InboxViewCoverage['result']): Tone =>
   result === 'complete' ? 'success' : result === 'failed' ? 'danger' : 'attention'
 
-function verdict(coverage: InboxCoverage): Verdict {
+function notConfirmedDetail(views: readonly InboxViewCoverage[]) {
+  const failed = views.filter(({ result }) => result === 'failed')
+  if (failed.length > 0) {
+    return `Messages remain in the Inbox; ${failed.map(({ view }) => viewName(view)).join(' and ')} failed to scan.`
+  }
+  const incomplete = views.filter(({ result }) => result === 'incomplete')
+  if (incomplete.length > 0) {
+    return `Messages remain in the Inbox; ${incomplete.map(({ view }) => viewName(view)).join(' and ')} ${incomplete.length === 1 ? 'is' : 'are'} not fully scanned.`
+  }
+  return 'The complete scan found messages still in the Inbox.'
+}
+
+function verdict(coverage: InboxCoverage, refreshing: boolean): Verdict {
   const views = [coverage.unread, coverage.read]
+  if (refreshing) {
+    return {
+      title: 'Inbox Zero verification pending',
+      detail: 'Refreshing an Inbox view; the prior proof is temporarily withheld.',
+      tone: 'attention',
+    }
+  }
   if (coverage.zero === 'confirmed') {
     return {
       title: 'Inbox Zero confirmed',
       detail: 'Unread and Other Inbox are fully scanned with zero messages.',
       tone: 'success',
+    }
+  }
+  if (coverage.zero === 'not-confirmed') {
+    return {
+      title: 'Inbox Zero not reached',
+      detail: notConfirmedDetail(views),
+      tone: 'neutral',
     }
   }
   const failed = views.filter(({ result }) => result === 'failed')
@@ -45,13 +71,6 @@ function verdict(coverage: InboxCoverage): Verdict {
       tone: 'attention',
     }
   }
-  if (coverage.zero === 'not-confirmed') {
-    return {
-      title: 'Inbox Zero not reached',
-      detail: 'The complete scan found messages still in the Inbox.',
-      tone: 'neutral',
-    }
-  }
   return {
     title: 'Inbox Zero unknown',
     detail: 'The two views do not prove the same complete empty mailbox scope.',
@@ -66,13 +85,17 @@ const timeLabel = (instant: string) =>
     hourCycle: 'h23',
   }).format(new Date(instant))
 
-export function InboxZeroStatusBar({ coverage }: Readonly<{ coverage: InboxCoverage }>) {
-  const status = verdict(coverage)
+export function InboxZeroStatusBar({
+  coverage,
+  refreshing = false,
+}: Readonly<{ coverage: InboxCoverage; refreshing?: boolean | undefined }>) {
+  const status = verdict(coverage, refreshing)
   const views = [coverage.unread, coverage.read]
   return (
     <section
       className={`inbox-zero-status inbox-zero-status--${status.tone}`}
       aria-label="Inbox Zero scan status"
+      aria-busy={refreshing}
     >
       <div className="inbox-zero-status__verdict" role="status">
         <strong>{status.title}</strong>

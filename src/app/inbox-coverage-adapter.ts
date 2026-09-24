@@ -1,5 +1,10 @@
 import type { InboxScope } from './live-inbox'
-import { viewCoverage, type InboxViewCoverage } from './inbox-coverage'
+import {
+  failedCoverage,
+  viewCoverage,
+  type CoverageView,
+  type InboxViewCoverage,
+} from './inbox-coverage'
 
 /** Browser-safe adapter: it only reshapes one read-only Inbox scope. */
 export function coverageFromInboxScope(
@@ -17,4 +22,25 @@ export function coverageFromInboxScope(
     startedAt,
     refreshedAt: scope.refreshedAt,
   })
+}
+
+type CoveredRead<T> =
+  | Readonly<{ status: 'ready'; value: T; update: InboxViewCoverage }>
+  | Readonly<{ status: 'failed'; update: InboxViewCoverage }>
+
+/** An unexpected read throw closes only the requested view and never strands loading state. */
+export async function readWithCoverage<T>(
+  view: CoverageView,
+  startedAt: string,
+  read: () => Promise<T>,
+  coverageOf: (value: T, finishedAt: string) => InboxViewCoverage,
+  now = () => new Date().toISOString(),
+): Promise<CoveredRead<T>> {
+  try {
+    const value = await read()
+    const finishedAt = now()
+    return { status: 'ready', value, update: coverageOf(value, finishedAt) }
+  } catch {
+    return { status: 'failed', update: failedCoverage(view, startedAt, now()) }
+  }
 }

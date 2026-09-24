@@ -6,13 +6,14 @@ Implementation evidence:
 
 - `/tmp/inbox-zero-variant-a-incomplete.png`
 - `/tmp/inbox-zero-variant-a-confirmed.png`
+- `/tmp/inbox-zero-variant-a-refreshing.png`
 - `/tmp/inbox-zero-variant-a-failed.png`
 - `/tmp/inbox-zero-variant-a-mobile.png`
 - Combined comparison: `/tmp/inbox-zero-design-qa-comparison.png`
 
 ## Capture
 
-- State: fictional incomplete scan matching the selected Variant A mock; confirmed and failed contract states were also captured.
+- State: fictional incomplete scan matching the selected Variant A mock; confirmed, refreshing, and failed contract states were also captured.
 - Desktop browser viewport: 480 × 640 CSS px; component: 400 × 182 CSS px; device scale factor 1.
 - Mobile browser viewport: 375 × 667 CSS px; component: 320 × 182 CSS px; device scale factor 1.
 - Source image: 1440 × 900 px; focused Variant A preview crop: 411 × 366 px.
@@ -27,7 +28,7 @@ No actionable P0, P1, or P2 differences remain.
 - Spacing and layout rhythm: verdict, two scope rows, and scan metadata retain the selected compact vertical structure. Desktop and 320 px mobile captures have no horizontal overflow.
 - Colors and tokens: the mock's dark palette was intentionally mapped to the existing light product surfaces and semantic success, attention, and danger tokens.
 - Image and asset fidelity: the component contains no imagery, logos, decorative assets, or substitute icon drawings.
-- Copy and content: `unknown`, `incomplete`, and `failed` are explicit. A zero is shown only for the contract-confirmed state. The command interval and non-atomic warning remain visible.
+- Copy and content: `not reached`, `unknown`, `incomplete`, and `failed` are explicit. A zero is shown only for the contract-confirmed state and is withheld while a refresh is pending. The command interval and non-atomic warning remain visible.
 - Keyboard and accessibility: the status section adds no focus stop. The browser Tab check did not move focus into it; status changes use the existing live-status pattern.
 - Console: no console errors or page errors occurred in incomplete, confirmed, failed, or mobile captures.
 
@@ -44,7 +45,7 @@ The combined comparison shows the selected mock and implementation together. The
 
 ## Interactions tested
 
-- Rendered fictional incomplete, confirmed, and failed states.
+- Rendered fictional positive/incomplete, confirmed, refreshing, and failed states.
 - Rendered the incomplete state at a 375 px mobile viewport.
 - Verified no horizontal overflow.
 - Pressed Tab and confirmed the informational status bar is not focusable.

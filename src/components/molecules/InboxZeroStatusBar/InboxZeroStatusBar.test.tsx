@@ -73,4 +73,34 @@ describe('InboxZeroStatusBar', () => {
     expect(textContent(root)).toContain('Inbox Zero not reached')
     expect(textContent(root)).toContain('Other InboxComplete · 2')
   })
+
+  it.each(['incomplete', 'failed'] as const)(
+    'keeps not reached ahead of an %s positive view',
+    (result) => {
+      const unread = inboxCoverage(undefined, view('unread'))
+      const positive = { ...view('other', 23), result }
+      const coverage = inboxCoverage(unread, positive)
+      const root = InboxZeroStatusBar({ coverage }) as Element
+
+      expect(coverage.zero).toBe('not-confirmed')
+      expect(textContent(root)).toContain('Inbox Zero not reached')
+      expect(textContent(root)).toContain(
+        result === 'failed' ? 'Other Inbox failed to scan' : 'Other Inbox is not fully scanned',
+      )
+      expect(textContent(root)).toContain(
+        `Other Inbox${result === 'failed' ? 'Failed' : 'Incomplete'} · 23`,
+      )
+    },
+  )
+
+  it('withholds an earlier confirmed claim while a refresh is pending', () => {
+    const unread = inboxCoverage(undefined, view('unread'))
+    const coverage = inboxCoverage(unread, view('other'))
+    const root = InboxZeroStatusBar({ coverage, refreshing: true }) as Element
+
+    expect(coverage.zero).toBe('confirmed')
+    expect(textContent(root)).toContain('Inbox Zero verification pending')
+    expect(textContent(root)).not.toContain('Inbox Zero confirmed')
+    expect(root.props['aria-busy']).toBe(true)
+  })
 })
