@@ -442,11 +442,47 @@ const boundedScope: NonNullable<Props['scope']> = {
     { id: 'atelier', label: 'atelier@mail.example', loaded: 10, bounded: true },
     { id: 'personal', label: 'personal@mail.example', loaded: 4, bounded: false },
   ],
+  failed: [],
   readable: 5,
   mailboxLimit: 3,
   messageLimit: 10,
   loaded: 24,
   bounded: true,
+  readAt: '09:42',
+  refreshedAt: '2026-09-24T07:42:00.000Z',
+}
+
+// The same reading with one mailbox that did not answer. Its rows are the
+// only thing missing: the other two mailboxes were read at the same moment
+// and are shown in full, and the failed mailbox keeps its place in the rail
+// so the filter a person picked is still there. Synthetic throughout.
+const partialScope: NonNullable<Props['scope']> = {
+  mailboxes: [
+    { id: 'studio', label: 'studio@mail.example', loaded: 10, bounded: true },
+    // Zero rows because it could not be read, which is why it is in `failed`.
+    { id: 'atelier', label: 'atelier@mail.example', loaded: 0, bounded: false },
+    { id: 'personal', label: 'personal@mail.example', loaded: 4, bounded: false },
+  ],
+  failed: [{ id: 'atelier', label: 'atelier@mail.example', reason: 'failed' }],
+  readable: 3,
+  mailboxLimit: 3,
+  messageLimit: 10,
+  loaded: 14,
+  bounded: true,
+  readAt: '09:42',
+  refreshedAt: '2026-09-24T07:42:00.000Z',
+}
+
+// Every listed mailbox failed: no rows at all, and nothing that says those
+// mailboxes are empty.
+const noMailboxReadScope: NonNullable<Props['scope']> = {
+  mailboxes: partialScope.mailboxes.map((mailbox) => ({ ...mailbox, loaded: 0, bounded: false })),
+  failed: partialScope.mailboxes.map(({ id, label }) => ({ id, label, reason: 'failed' as const })),
+  readable: 3,
+  mailboxLimit: 3,
+  messageLimit: 10,
+  loaded: 0,
+  bounded: false,
   readAt: '09:42',
   refreshedAt: '2026-09-24T07:42:00.000Z',
 }
@@ -506,6 +542,73 @@ export const BoundedScopeOnMobile: Story = {
     await expect(document.activeElement).not.toBe(line)
     await openDinnerOnMobile(canvasElement)
     await backToDinnerRow(canvasElement)
+  },
+}
+
+/**
+ * A reading that lost one mailbox. The two that answered are shown in full
+ * and counted as two of three, the one that did not is named with no guess
+ * about how much it holds, and Refresh is what tries it again. The failure
+ * reads as its own problem, not as a bound: nothing says "nothing was cut".
+ */
+export const PartialMailboxFailure: Story = {
+  args: { scope: partialScope },
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  play: async ({ canvasElement }) => {
+    const line = queueScope(canvasElement)
+    // Counted from the mailboxes that answered, so the failed one is not
+    // passed off as read.
+    await expect(line).toHaveTextContent(
+      'Loaded: 14 recent messages from 2 of 3 readable mailboxes',
+    )
+    await expect(line).toHaveTextContent('1 mailbox could not be read')
+    await expect(line).toHaveTextContent('atelier@mail.example')
+    await expect(line).toHaveTextContent('How much it holds is unknown. Refresh to try again.')
+    // A bound still reads as a bound, and the all-clear is withheld.
+    await expect(line).toHaveTextContent('Older mail was left out of 1 loaded mailbox')
+    await expect(line).not.toHaveTextContent('nothing was cut')
+    // The reading is still dated, so what did arrive is not shown as older
+    // than it is and the mail that is missing is not shown at all.
+    await expect(line).toHaveTextContent('Last refreshed 09:42')
+    // Announced when it appears: a refresh that lost a mailbox changes what
+    // the list means without moving focus.
+    const canvas = within(canvasElement)
+    // Scoped to the scope line: the page has other status regions, e.g. the
+    // notice toast, and this is the one the reading owns.
+    const announced = canvasElement.querySelector('.queue-header__scope-unread')
+    await expect(announced).toHaveAttribute('role', 'status')
+    await expect(announced).toHaveTextContent('1 mailbox could not be read')
+    // No mail is in the failure: it names the mailbox and nothing it holds.
+    await expect(line).not.toHaveTextContent('Move Friday dinner')
+    // The line takes no focus, so the keyboard still goes search → rows.
+    canvas.getByRole('searchbox').focus()
+    await userEvent.tab()
+    await expect(document.activeElement).not.toBe(line)
+    // The mailbox that failed keeps its filter, so a selection survives it.
+    await rail(canvasElement, 'Atelier')
+    await expect(queueContext(canvasElement)).toHaveTextContent('Atelier')
+  },
+}
+
+/**
+ * Every listed mailbox failed. That is not an empty mailbox and not a filter
+ * that matched nothing, so the queue says which of the three it is and
+ * claims nothing about what those mailboxes hold.
+ */
+export const NoMailboxCouldBeRead: Story = {
+  args: { scope: noMailboxReadScope, messages: [] },
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('No mailbox could be read')).toBeVisible()
+    await expect(
+      canvas.getByText(/None of the 3 listed mailboxes answered, so this reading holds no mail/),
+    ).toBeVisible()
+    // It never turns a failure into a claim that the mailboxes are empty.
+    await expect(canvas.getByText(/Nothing here says those mailboxes are empty/)).toBeVisible()
+    // Resetting filters would bring nothing back, so it is not offered.
+    await expect(canvas.queryByRole('button', { name: 'Reset filters' })).toBeNull()
+    await expect(queueScope(canvasElement)).toHaveTextContent('No listed mailbox could be read')
   },
 }
 
