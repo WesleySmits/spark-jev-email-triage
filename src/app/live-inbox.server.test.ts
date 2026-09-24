@@ -1117,6 +1117,50 @@ describe('createLiveInbox controlled discovery', () => {
     expect(pages).toEqual([])
   })
 
+  it('preserves a same-view list cursor while search shares its loaded depth', async () => {
+    const pages: number[] = []
+    const reader: MailReader = {
+      listMailboxes: () => Promise.resolve([access(one)]),
+      listRecentEmails: ({ page = 1 }) => {
+        pages.push(page)
+        return Promise.resolve(fullPage(one, page))
+      },
+      readThread: () => Promise.resolve(thread([])),
+    }
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+    const listed = await live.list()
+    if (listed.status !== 'ready') throw new Error('Expected reading')
+
+    await live.search({ view: 'unread', query: 'routine' })
+    await live.list(undefined, { view: 'unread', cursor: listed.scope.cursor })
+
+    expect(pages).toEqual([1, 2])
+  })
+
+  it('leaves a list continuation intact when searching another view', async () => {
+    const requests: { filter: 'is:read' | 'is:unread'; page: number }[] = []
+    const reader: MailReader = {
+      listMailboxes: () => Promise.resolve([access(one)]),
+      listRecentEmails: ({ filter, page = 1 }) => {
+        if (!filter) throw new Error('Expected an inbox view filter')
+        requests.push({ filter, page })
+        return Promise.resolve(fullPage(one, page))
+      },
+      readThread: () => Promise.resolve(thread([])),
+    }
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+    const listed = await live.list()
+    if (listed.status !== 'ready') throw new Error('Expected reading')
+
+    await live.search({ view: 'other', query: 'routine' })
+    await live.list(undefined, { view: 'unread', cursor: listed.scope.cursor })
+
+    expect(requests).toEqual([
+      { filter: 'is:unread', page: 1 },
+      { filter: 'is:unread', page: 2 },
+    ])
+  })
+
   it('counts one mailbox copy once when shifting pages repeat it', async () => {
     const repeated = listing(one, '199', null, {
       subject: { text: 'Cedar repeated at a page boundary', cut: false },
@@ -1164,9 +1208,12 @@ describe('createLiveInbox controlled discovery', () => {
       log: (entry) => entries.push(entry),
     })
     const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
-    await live.search({ view: 'unread', query: 'private' })
+    const cold = await live.search({ view: 'unread', query: 'private' })
+    if (cold.status !== 'ready') throw new Error('Expected cold discovery')
+    await live.search({ view: 'unread', query: 'private', cursor: cold.scope.cursor })
 
     const logged = JSON.stringify(entries)
+    expect(entries.some((entry) => entry.command === 'emails')).toBe(true)
     for (const privateValue of ['private', 'Secret', '7001', '@']) {
       expect(logged).not.toContain(privateValue)
     }
