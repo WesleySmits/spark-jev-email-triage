@@ -146,6 +146,31 @@ describe('ReviewPanel', () => {
     }
   })
 
+  it('lists one line per ground under the reason, as text', () => {
+    const reasons = ['Category score below the threshold.', 'Signal: it asks for a code.']
+    const { find, text } = render({ reasons })
+
+    expect(find((element) => element.type === 'ul')).toHaveLength(1)
+    expect(text('li')).toEqual(reasons)
+  })
+
+  it('shows no list at all where the caller gives no ground', () => {
+    for (const reasons of [undefined, []]) {
+      const { find } = render({ reasons })
+      expect(find((element) => element.type === 'ul')).toHaveLength(0)
+    }
+  })
+
+  it('shows every ground as its own text node, never as markup', () => {
+    // The caller owns this copy, and React escapes it: a line is read, not
+    // parsed, so nothing a ground says can become an element.
+    const line = '<b>Signal</b>: it asks for a password'
+    const { text, find } = render({ reasons: [line] })
+
+    expect(text('li')).toEqual([line])
+    expect(find((element) => element.type === 'b')).toHaveLength(0)
+  })
+
   it('shows the score rounded and bounded to 100', () => {
     const score = (value: number) => render({ score: value }).one('p').props['children']
     expect(score(57.6)).toEqual([expect.anything(), 'Model score', ' · ', '58/100'])

@@ -7,7 +7,11 @@ import SidebarStories from '../../organisms/Sidebar/Sidebar.stories'
 import TopBarStories from '../../organisms/TopBar/TopBar.stories'
 import { fixtureBodyLoader, type BodyLoader, type InboxFixture } from '../../../app/inbox'
 import type { DeskReviewOutcome, DeskReviewRequest, RowReview } from '../../../app/desk-review'
-import type { StoredClassification } from '../../../domain/stored-classification'
+import type {
+  ClassificationLabels,
+  StoredClassification,
+} from '../../../domain/stored-classification'
+import type { ReviewReason, SuspicionSignal } from '../../../domain/triage'
 import type { ListedEvidence } from './classification'
 import type { WorkbenchMessage } from './workbench'
 import { WorkbenchPage } from './WorkbenchPage'
@@ -769,6 +773,15 @@ const subjectOf = (id: string) => ({
   classifierVersion: 'jev-1.13.0',
 })
 
+/**
+ * Grounds as one run recorded them. No reason at all is what an accepted
+ * judgment records; `unknown` is what a record that does not say reads as.
+ */
+const grounds = (
+  reasons: readonly ReviewReason[] = [],
+  suspicionSignals: readonly SuspicionSignal[] = [],
+): ClassificationLabels['grounds'] => ({ state: 'recorded', reasons, suspicionSignals })
+
 const judgedLabels = {
   category: 'personal',
   priority: 'high',
@@ -776,6 +789,7 @@ const judgedLabels = {
   priorityUncertain: false,
   review: 'auto_accepted',
   reviewPriority: 'normal',
+  grounds: grounds(),
 } as const
 
 /** What the store alone can say about m1: judged, and nothing contradicts it. */
@@ -807,6 +821,7 @@ const storedStates: Readonly<Record<string, StoredClassification>> = {
       priorityUncertain: true,
       review: 'needs_review',
       reviewPriority: 'elevated',
+      grounds: grounds(['low_category_confidence', 'suspicious'], ['payment_redirect']),
     },
   },
   m3: { state: 'provider_failure', subject: subjectOf('m3'), judgedAt, errorCode: 'timeout' },
@@ -1058,7 +1073,12 @@ const suspicious = { category: 'suspicious', priority: 'urgent' } as const
 // The same judgment of m1, but one the model was unsure of, so its panel
 // opens itself. `m1Unverified` keeps the auto-accepted labels, for the story
 // that shows what a row the model accepted offers instead.
-const unsureLabels = { ...judgedLabels, confidence: 0.58, review: 'needs_review' } as const
+const unsureLabels = {
+  ...judgedLabels,
+  confidence: 0.58,
+  review: 'needs_review',
+  grounds: grounds(['low_category_confidence']),
+} as const
 const m1Unsure: StoredClassification = { ...m1Unverified, labels: unsureLabels }
 const m1UnsureCurrent: StoredClassification = { ...m1Unsure, state: 'current' }
 
@@ -1724,20 +1744,29 @@ const reviewingUncertainPriority = () => ({
   loadBody: fn(provingBodies({ m1: { ...priorityUncertain, state: 'current' } })),
 })
 
+/**
+ * Corrects the open row's category to Notification with the keyboard alone and
+ * saves it: focus the first option, check the next one with an arrow, tab to
+ * Save and press it. Waits until the store's answer shows.
+ */
+async function correctWithKeyboard(root: HTMLElement) {
+  await reviewReady(root)
+  const canvas = within(root)
+  canvas.getByRole('radio', { name: 'Personal' }).focus()
+  await userEvent.keyboard(' {ArrowDown}')
+  await expect(canvas.getByRole('radio', { name: 'Notification' })).toBeChecked()
+  await userEvent.tab()
+  await expect(save(root)).toHaveFocus()
+  await userEvent.keyboard('{Enter}')
+  await resultShows(root, 'Review saved')
+}
+
 /** A category correction made with the keyboard leaves the priority uncertain. */
 export const CategoryCorrectionKeepsPriorityUncertain: Story = {
   globals: { viewport: { value: 'desktop', isRotated: false } },
   args: reviewingUncertainPriority(),
   play: async ({ args, canvasElement }) => {
-    await reviewReady(canvasElement)
-    const canvas = within(canvasElement)
-    canvas.getByRole('radio', { name: 'Personal' }).focus()
-    await userEvent.keyboard(' {ArrowDown}')
-    await expect(canvas.getByRole('radio', { name: 'Notification' })).toBeChecked()
-    await userEvent.tab()
-    await expect(save(canvasElement)).toHaveFocus()
-    await userEvent.keyboard('{Enter}')
-    await resultShows(canvasElement, 'Review saved')
+    await correctWithKeyboard(canvasElement)
 
     await expect(evidence(canvasElement)).toHaveTextContent('Category review')
     await expect(evidence(canvasElement)).toHaveTextContent('Corrected by a person')
@@ -1801,5 +1830,160 @@ export const OutdatedCategoryReviewKeepsPriorityUncertain: Story = {
     )
     await expect(panel(canvasElement)).not.toBeInTheDocument()
     await expect(reviewOf(args).onSaveReview).not.toHaveBeenCalled()
+  },
+}
+
+// Four judgments of the reviewable row that differ only in why a person was
+// asked. Each has to read as itself: a score, a mail read as a possible scam,
+// several grounds at once, and a record that names none.
+type UnverifiedJudgment = Extract<StoredClassification, { state: 'unverified' }>
+
+/** A story reviewing the row, judged on exactly the grounds given. */
+const reviewingGrounds = (labels: Partial<ClassificationLabels>) => {
+  const asked: UnverifiedJudgment = {
+    state: 'unverified',
+    subject: subjectOf('m1'),
+    judgedAt,
+    labels: { ...unsureLabels, ...labels },
+  }
+  return {
+    ...reviewing({ outcome: recording }, { ...unsureStates, m1: asked }),
+    loadBody: fn(provingBodies({ m1: { ...asked, state: 'current' as const } })),
+  }
+}
+
+const scamSuspected: Partial<ClassificationLabels> = {
+  reviewPriority: 'elevated',
+  grounds: grounds(['suspicious'], ['credential_request']),
+}
+
+/** The grounds list in the review panel. */
+const groundsShown = (root: HTMLElement) =>
+  [...root.querySelectorAll('.review-panel__grounds li')].map((line) => line.textContent)
+
+/**
+ * A low category score, explained as the score it is. The panel names one
+ * ground, attributes the decision to policy rather than to the model's own
+ * account of itself, and warns about nothing, because nothing was flagged.
+ */
+export const ReviewGroundIsLowScore: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewingGrounds({}),
+  play: async ({ canvasElement }) => {
+    await reviewReady(canvasElement)
+    await expect(groundsShown(canvasElement)).toEqual([
+      "The model's score for this category stayed under the level triage accepts on its own.",
+    ])
+    await expect(panel(canvasElement)).toHaveTextContent("rule over the model's scores")
+    await expect(evidence(canvasElement)).toHaveTextContent('Low category score')
+    await expect(evidence(canvasElement)).not.toHaveTextContent('Possible scam or phishing')
+    // The replaced copy explained every review as the model doubting itself.
+    await expect(panel(canvasElement)).not.toHaveTextContent(
+      'The model was unsure of this category',
+    )
+  },
+}
+
+/**
+ * The same row, asked about because the mail was read as a possible scam. The
+ * panel names the signal that fired and the priority policy raised, and the
+ * reader carries the warning beside the labels. Nothing quotes the mail.
+ */
+export const ReviewGroundIsSuspicion: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewingGrounds(scamSuspected),
+  play: async ({ canvasElement }) => {
+    await reviewReady(canvasElement)
+    await expect(groundsShown(canvasElement)).toEqual([
+      'Triage read this mail as a possible scam or phishing attempt.',
+      'Signal: It asks for a password, a login code or another credential.',
+      'Triage raised how urgent a look is, which asks for attention sooner and nothing else.',
+    ])
+    await expect(evidence(canvasElement)).toHaveTextContent('Possible scam or phishing')
+    await expect(evidence(canvasElement)).not.toHaveTextContent('Low category score')
+  },
+}
+
+/**
+ * Several grounds of one judgment, each still its own line: a score, a category
+ * nothing fits, the warning, its signals and the raised priority. The reader
+ * names them together beside the labels.
+ */
+export const ReviewGroundsAreSeveral: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewingGrounds({
+    category: 'other',
+    reviewPriority: 'elevated',
+    grounds: grounds(
+      ['low_category_confidence', 'ambiguous_category', 'suspicious'],
+      ['sender_impersonation', 'payment_redirect'],
+    ),
+  }),
+  play: async ({ canvasElement }) => {
+    await reviewReady(canvasElement)
+    await expect(groundsShown(canvasElement)).toHaveLength(6)
+    await expect(evidence(canvasElement)).toHaveTextContent(
+      'Low category score · No category fits · Possible scam or phishing',
+    )
+    await expect(evidence(canvasElement)).toHaveTextContent(
+      'It asks to send money or to change payment details.',
+    )
+  },
+}
+
+/**
+ * A record from before grounds were recorded. It stays readable: the row, its
+ * labels and the panel all show, the panel says the grounds are not there
+ * rather than explaining the review as model doubt, and no warning is claimed
+ * either way.
+ */
+export const ReviewGroundsNotRecorded: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewingGrounds({ grounds: { state: 'unknown' } }),
+  play: async ({ canvasElement }) => {
+    await reviewReady(canvasElement)
+    await expect(reviewedRow(canvasElement)).toHaveTextContent('Personal')
+    await expect(groundsShown(canvasElement)).toEqual([])
+    await expect(panel(canvasElement)).toHaveTextContent('does not say on what grounds')
+    await expect(evidence(canvasElement)).toHaveTextContent('Not recorded')
+    await expect(evidence(canvasElement)).not.toHaveTextContent('Possible scam or phishing')
+    await expect(canvasElement.textContent).not.toMatch(/\bsafe\b/i)
+  },
+}
+
+/**
+ * Correcting the category with the keyboard, on a row flagged as a possible
+ * scam. The correction is saved and shown, and the warning is still there:
+ * what the mail asked for did not change because someone filed it elsewhere.
+ */
+export const CategoryCorrectionKeepsTheWarning: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewingGrounds(scamSuspected),
+  play: async ({ args, canvasElement }) => {
+    await correctWithKeyboard(canvasElement)
+
+    await expect(evidence(canvasElement)).toHaveTextContent('Corrected by a person')
+    await expect(evidence(canvasElement)).toHaveTextContent('Possible scam or phishing')
+    await expect(evidence(canvasElement)).toHaveTextContent(
+      'This stands whatever category a person decides on.',
+    )
+    // The warning is about the mail, so the row now filed as Notification keeps it.
+    await expect(reviewedRow(canvasElement)).toHaveTextContent('Notification')
+    await expect(groundsShown(canvasElement)).toContain(
+      'Signal: It asks for a password, a login code or another credential.',
+    )
+    await expectSavedCorrection(args, subjectOf('m1'), 'notification')
+  },
+}
+
+/** On a narrow screen the grounds stack and the warning still reads in full. */
+export const GroundsOnANarrowScreen: Story = {
+  globals: { viewport: { value: 'mobile1', isRotated: false } },
+  args: reviewingGrounds(scamSuspected),
+  play: async ({ canvasElement }) => {
+    await userEvent.click(reviewedRow(canvasElement))
+    await expect(groundsShown(canvasElement)).toHaveLength(3)
+    await expect(evidence(canvasElement)).toHaveTextContent('Possible scam or phishing')
+    await expect(canvasElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth)
   },
 }

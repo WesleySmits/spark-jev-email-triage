@@ -14,8 +14,11 @@ import { defaultRubric } from '../domain/rubric'
 import {
   categorySchema,
   resolveTriage,
+  suspicionSignalSchema,
   triageDecisionSchema,
   type prioritySchema,
+  type ReviewReason,
+  type SuspicionSignal,
   type TriageDecision,
 } from '../domain/triage'
 import type { JevClassification } from './classifier'
@@ -23,18 +26,22 @@ import type { TriageAnswers } from './response'
 
 const { thresholds } = defaultRubric
 
-export const suspicionQuestions = [
-  'credential_request',
-  'sender_impersonation',
-  'payment_redirect',
-  'automated_reader_instructions',
-] as const satisfies readonly (keyof TriageAnswers)[]
+/**
+ * The questions a suspicion signal is read from. The signals themselves are
+ * the rubric's, in `src/domain/triage.ts`, so the code a run stores and the
+ * question it came from cannot drift apart; `satisfies` keeps every one of
+ * them a question this classifier actually asks.
+ */
+export const suspicionQuestions: readonly SuspicionSignal[] =
+  suspicionSignalSchema.options satisfies readonly (keyof TriageAnswers)[]
 
-type SuspicionSignal = (typeof suspicionQuestions)[number]
 type Signal = 'likely' | 'uncertain' | 'unlikely'
 
-export type ReviewReason =
-  'provider_failure' | 'low_category_confidence' | 'ambiguous_category' | 'suspicious'
+/**
+ * Why one outcome needs a person: a policy rule from the rubric, or a call that
+ * answered nothing, which is a ground of the attempt rather than of a judgment.
+ */
+export type OutcomeReason = ReviewReason | 'provider_failure'
 
 export type TriageOutcome =
   | {
@@ -56,7 +63,7 @@ export type TriageOutcome =
       /** `auto_accepted` accepts the labels only; it permits no action. */
       review: 'auto_accepted' | 'needs_review'
       reviewPriority: 'normal' | 'elevated'
-      reasons: ReviewReason[]
+      reasons: OutcomeReason[]
       replyExpected: Signal
       deadline: Signal
       suspicionSignals: SuspicionSignal[]
@@ -78,7 +85,7 @@ export function resolveClassification(classification: JevClassification): Triage
   const suspicionSignals = suspicionQuestions.filter(
     (question) => answers[question].noul >= thresholds.suspicionFloor,
   )
-  const reasons: ReviewReason[] = [
+  const reasons: OutcomeReason[] = [
     ...(review === 'needs_review' ? ['low_category_confidence' as const] : []),
     ...(decision.category === 'other' ? ['ambiguous_category' as const] : []),
     ...(suspicionSignals.length > 0 || decision.category === 'suspicious'

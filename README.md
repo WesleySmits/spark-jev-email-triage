@@ -275,10 +275,30 @@ pnpm readback:spark                      # whether Spark answers on this host
   labels and request id are kept in the browser tab's `sessionStorage` before
   sending; saving is blocked if that storage cannot retain the request.
 - The review UI only asks about category and retains the model priority.
-  Currently the priority-uncertainty note disappears when a review applies,
-  even though the person did not review priority. The panel also uses a
-  generic uncertainty explanation for `needs_review`. These are current
-  presentation limitations, not evidence that all fields were confirmed.
+  A saved review is never evidence that another field was confirmed: the
+  model's own signals stay beside it, and the copy says the review covers
+  the category only.
+- The panel and the reader say why review was asked for, from the grounds the
+  run recorded beside the judgment: a category score under the accept level,
+  a category no rubric label fits, a mail read as a possible scam, and the
+  signals cited for that last one. Each reads as itself, so no state explains
+  every `needs_review` as the model doubting its own category. Those grounds
+  are policy decisions over the model's scores, made in ordinary code; they
+  say nothing about whether the judgment still describes the mail, which is
+  the state beside them, and nothing about what a person decided, which is a
+  review beside them. A judgment read as a possible scam carries that warning
+  as a value of its own, so confirming or correcting the category never
+  clears it.
+- Grounds are codes from closed sets that `src/domain/triage.ts` defines, and
+  every line shown for one is this application's own copy. No mail or model
+  text is shown for a reason, inert or otherwise: a stored value that is not
+  one of those codes has no line to print.
+- A record that does not give its grounds reads as an explicit unknown state
+  and says so, rather than borrowing another judgment's reason. That covers a
+  row stored without them, one naming a code this build cannot read, and one
+  whose grounds disagree with the review need stored beside it. The judgment
+  itself stays readable either way, and no warning or reassurance is claimed
+  for it.
 - `src/spark` reads mail through the local `spark` CLI, read-only. Its command
   type allows only `accounts`, `emails`, and `thread`. It never uses a shell,
   runs one call at a time with a timeout and output limit, and logs no mail

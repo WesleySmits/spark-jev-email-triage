@@ -43,10 +43,62 @@
  */
 import { z } from 'zod'
 import { mailboxCopyId, mailboxCopyRefSchema, type MailboxCopyRef } from './mailbox-copy'
-import { categorySchema, prioritySchema } from './triage'
+import { categorySchema, prioritySchema, reviewReasonSchema, suspicionSignalSchema } from './triage'
 
 const id = z.string().trim().min(1)
 const version = z.string().trim().min(1)
+
+/** Grounds as a run recorded them: codes from closed sets, never any text. */
+const recordedGroundsSchema = z.strictObject({
+  /** The policy rules that asked for a person. Empty where none did. */
+  reasons: z.array(reviewReasonSchema).readonly(),
+  /** The narrow suspicion judgments policy cited, where any fired. */
+  suspicionSignals: z.array(suspicionSignalSchema).readonly(),
+})
+
+/**
+ * Why the run that stored a judgment asked for a person, as it recorded it.
+ *
+ * `recorded` carries the grounds themselves. `unknown` says the record does
+ * not give them, and is a state of its own for that reason: a judgment whose
+ * grounds nobody wrote down is not a judgment with no grounds, and explaining
+ * it as one would put words in the classifier's mouth. Nothing here invents a
+ * ground to fill the gap.
+ */
+const reviewGroundsSchema = z.discriminatedUnion('state', [
+  recordedGroundsSchema.extend({ state: z.literal('recorded') }),
+  z.strictObject({ state: z.literal('unknown') }),
+])
+
+export type ReviewGrounds = Readonly<z.infer<typeof reviewGroundsSchema>>
+
+const unknownGrounds: ReviewGrounds = { state: 'unknown' }
+
+/**
+ * The grounds one stored record names, from the values read back for it.
+ * `reasons` and `suspicionSignals` are whatever the store held, unvalidated.
+ *
+ * Policy records grounds exactly when it asks for a person: a judgment needs
+ * review if and only if it names at least one. Three things therefore read as
+ * `unknown` rather than as an empty set of grounds — values that are not
+ * lists of this build's own codes, a code from another build, and a set that
+ * disagrees with the review need stored beside it. Reading any of them as
+ * "no grounds" would present a review nobody can account for as if the model
+ * had merely been unsure of itself, which is the claim this state exists to
+ * avoid making.
+ */
+export function reviewGroundsFor(
+  /** Whether the record stored beside these grounds says a person was asked. */
+  needsReview: boolean,
+  reasons: unknown,
+  suspicionSignals: unknown,
+): ReviewGrounds {
+  const read = recordedGroundsSchema.safeParse({ reasons, suspicionSignals })
+  if (!read.success) return unknownGrounds
+  const asked = read.data.reasons.length > 0
+  if (asked !== needsReview) return unknownGrounds
+  return { state: 'recorded', ...read.data }
+}
 
 /** What a stored classification proposes. Labels only: they authorize nothing. */
 const classificationLabelsSchema = z.strictObject({
@@ -59,6 +111,13 @@ const classificationLabelsSchema = z.strictObject({
   /** `auto_accepted` accepts the labels only; it permits no mailbox action. */
   review: z.enum(['auto_accepted', 'needs_review']),
   reviewPriority: z.enum(['normal', 'elevated']),
+  /**
+   * Why `review` says what it does, as the run recorded it. It explains the
+   * classifier's own labels and nothing else: not whether the judgment still
+   * describes the mail, which is the state around these labels, and not what
+   * a person made of it, which is a review beside them.
+   */
+  grounds: reviewGroundsSchema,
 })
 
 export type ClassificationLabels = z.infer<typeof classificationLabelsSchema>

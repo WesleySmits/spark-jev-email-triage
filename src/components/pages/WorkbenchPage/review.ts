@@ -26,6 +26,7 @@ import type {
 } from '../../../domain/stored-classification'
 import type { ReviewCategory } from '../../organisms/ReviewPanel/ReviewPanel'
 import { categoryLabels, categoryReviewScopeNote } from './classification'
+import { reviewGroundsCopy } from './review-grounds'
 
 export type ReviewCategoryValue = ClassificationLabels['category']
 
@@ -244,20 +245,26 @@ export function reviewAnnouncement(state: ReviewState, original: string): string
   return state.status === 'saved' ? `${title}. ${detail} Not completed yet.` : `${title}. ${detail}`
 }
 
-/** Everything the panel says about one reviewable classification. */
+/**
+ * Everything the panel says about one reviewable classification.
+ *
+ * Why a person was asked comes from the grounds the run recorded, one line
+ * each, so a low category score, a mail read as a possible scam and a record
+ * that names no grounds at all each read as what they are. See
+ * `review-grounds.ts`, which owns that copy and keeps the model's scores,
+ * policy's decision and a person's review apart.
+ */
 export function reviewPanelCopy(labels: ClassificationLabels) {
   const unsure = labels.review === 'needs_review'
-  const raised =
-    labels.reviewPriority === 'elevated' ? ' It is marked as more urgent to look at.' : ''
+  const { lead, grounds } = reviewGroundsCopy(labels)
   return {
     title: unsure ? 'Needs review' : 'Review this triage',
     summary: 'Confirm the category the model chose, or correct it. This records nothing in mail.',
     scoreLabel: 'Model score',
     score: labels.confidence * 100,
     reasonTitle: 'Why review?',
-    reason: unsure
-      ? `The model was unsure of this category, so it asked for a person.${raised}`
-      : `The model accepted its own labels. Nothing is a person's decision until a review says so.${raised}`,
+    reason: lead,
+    reasons: grounds,
     originalLabel: 'Original AI suggestion',
     originalSuggestion: categoryLabels[labels.category],
     originalNote: 'This original suggestion is kept, whatever you decide.',

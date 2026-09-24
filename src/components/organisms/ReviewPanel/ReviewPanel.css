@@ -110,6 +110,19 @@
   color: var(--ink-soft);
 }
 
+.review-panel__reason--leads-grounds {
+  margin-bottom: var(--s2);
+}
+
+/* One line per ground, e.g. why review was asked for. */
+.review-panel__grounds {
+  display: grid;
+  gap: var(--s1);
+  margin: 0 0 var(--s4);
+  padding-left: var(--s4);
+  color: var(--ink-soft);
+}
+
 .review-panel__original {
   margin: 0;
   padding: var(--s3);

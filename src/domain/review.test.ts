@@ -21,6 +21,7 @@ const labels: ClassificationLabels = {
   priorityUncertain: false,
   review: 'auto_accepted',
   reviewPriority: 'normal',
+  grounds: { state: 'recorded', reasons: [], suspicionSignals: [] },
 }
 
 const judgedAt = '2026-09-20T09:00:00.000Z'

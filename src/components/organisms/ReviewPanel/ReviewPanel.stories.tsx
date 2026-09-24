@@ -49,7 +49,10 @@ const meta = {
     score: 58,
     reasonTitle: 'Why review?',
     reason:
-      'The message uses scheduling language, but the sender explicitly asks for an answer and a decision.',
+      'Triage policy asked for a person on the grounds below. Each is a rule over the scores, not the model\u2019s own account of itself.',
+    reasons: [
+      "The model's score for this category stayed under the level triage accepts on its own.",
+    ],
     originalLabel: 'Original AI suggestion',
     originalSuggestion: 'Newsletter',
     originalNote: 'This original suggestion is kept, even after later corrections.',
@@ -72,6 +75,7 @@ const meta = {
       options: [null, ...categories.map((category) => category.value)],
     },
     categories: { control: 'object' },
+    reasons: { control: 'object' },
     result: { control: 'object' },
   },
   render: function Render(args, { parameters }) {
@@ -154,7 +158,8 @@ function ReviewFixture({ language, updateArgs, ...args }: FixtureProps) {
  *   scoreLabel="Model score"
  *   score={58}
  *   reasonTitle="Why review?"
- *   reason="The sender explicitly asks for an answer and a decision."
+ *   reason="Triage policy asked for a person on the grounds below."
+ *   reasons={['The category score stayed under the level triage accepts.']}
  *   originalLabel="Original AI suggestion"
  *   originalSuggestion="Newsletter"
  *   categoriesTitle="Choose the right category"
@@ -173,6 +178,39 @@ export const Expanded: Story = {}
 export const Collapsed: Story = { args: { expanded: false } }
 
 export const Selected: Story = { args: { selectedCategory: 'customer-question' } }
+
+/**
+ * Several grounds at once: a score, a category nothing fits, a warning with the
+ * signal under it, and the priority policy raised. Each reads as itself, so a
+ * reader can tell a low score from a possible scam.
+ */
+export const SeveralGrounds: Story = {
+  args: {
+    score: 41,
+    reason:
+      'Triage policy asked for a person on the grounds below. Each is a rule over the scores, not the model\u2019s own account of itself, and none of them says whether this triage still describes the mail as it stands now.',
+    reasons: [
+      "The model's score for this category stayed under the level triage accepts on its own.",
+      'No category of the rubric clearly fits this mail, so the model answered Other.',
+      'Triage read this mail as a possible scam or phishing attempt.',
+      'Signal: It asks to send money or to change payment details.',
+      'Triage raised how urgent a look is, which asks for attention sooner and nothing else.',
+    ],
+    originalSuggestion: 'Other',
+  },
+}
+
+/**
+ * A record that names no grounds. The panel says so instead of explaining the
+ * review as model doubt, and still offers the category review.
+ */
+export const GroundsNotRecorded: Story = {
+  args: {
+    reason:
+      'Triage policy asked for a person, but what was stored does not say on what grounds. It was written without them, or by a build whose grounds this one cannot read, so none is shown rather than guessed at.',
+    reasons: [],
+  },
+}
 
 /** After saving: the result names the new category and the original suggestion stays. */
 export const Saved: Story = {
@@ -209,6 +247,10 @@ export const LongDutchCopy: Story = {
     reasonTitle: 'Waarom controleren?',
     reason:
       'De mail bevat planningstaal over de leveranciersovereenkomstwijzigingsvoorstellen, maar de afzender vraagt expliciet om een antwoord en een besluit vóór vrijdag.',
+    reasons: [
+      'De modelscore voor deze leveranciersovereenkomstwijzigingscategorie bleef onder de drempel die triage zonder mens accepteert.',
+      'Signaal: er wordt gevraagd om geld over te maken of betaalgegevens te wijzigen.',
+    ],
     originalLabel: 'Originele AI-suggestie',
     originalSuggestion: 'Nieuwsbrief',
     originalNote: 'Deze oorspronkelijke suggestie blijft bewaard, ook na latere correcties.',
