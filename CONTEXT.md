@@ -1,4 +1,29 @@
-# Domain glossary
+# Product context and domain glossary
+
+## Implemented boundary
+
+`src/routes/index.tsx` reads mail through `ReviewDesk` and enables local
+category reviews while keeping completion in `read-only` mode. Spark mailbox
+data is only read. The CLI `pnpm shadow --apply` stores classifications;
+the review desk appends human reviews to the same local schema-3 SQLite file.
+The default is `.data/shadow-triage.sqlite`; `--db` selects the CLI path and
+`SHADOW_DATABASE_PATH` selects the app path.
+
+The root inbox is bounded to five readable mailboxes and ten recent Inbox
+messages each, without pagination. Classifying is a CLI workflow; the app
+only reads existing judgments and saves reviews. It shows a raw category
+"Model score", which is not calibrated certainty. Reviews currently decide
+category, not reply expectations or deadlines; the UI retains priority but
+hides its uncertainty note after a review. See [README](README.md) for the
+supported workflows and current limitations.
+
+`/health` reports the configured deployment commit. Spark readiness separately
+probes `spark accounts` on the executing host; neither proves that all mail,
+the classifier, or local review storage works.
+
+The terms below include future concepts. Logical-message correlation,
+mailbox-action execution and action receipts are not exposed by the current
+root route or shadow command on `main`.
 
 ## Mailbox
 
@@ -22,7 +47,7 @@ One classifier judgment about one classification subject. A classification propo
 
 ## Review
 
-A human confirmation or correction of one classification. A review preserves the original classification and becomes stale when its classification subject is no longer current.
+A human confirmation or correction of one exact classification subject, stored append-only beside the original classification. The current UI asks only about category. Reviews are shown for their matching subject, including historical labels when stale; they never make an unverified or stale judgment current and are not transferred to a newer subject.
 
 ## Logical message
 
