@@ -2,6 +2,34 @@
 
 TanStack Start app with React, Vite, and strict TypeScript.
 
+## Current product status
+
+The root route reads a bounded recent inbox from the local Spark CLI and
+shows classifications previously stored by the shadow CLI. Mailbox data is
+read-only; local data is not: `shadow --apply` stores classifications and the
+app saves human category reviews in the same SQLite database. Neither a
+classification nor a review completes, archives, moves, or marks mail as read.
+
+The inbox includes the first five readable mailboxes in provider order and
+up to ten recent Inbox messages per mailbox, sorted newest first (at most
+50 rows before deduplication). It has no pagination or complete-history
+view. Search and mailbox filtering operate on those loaded rows. One failed
+mailbox listing currently makes the whole inbox unavailable. Copies in
+different mailboxes remain distinct even when message ids, subjects or
+contents match.
+
+Supported: reading mail, refreshing, opening one body, viewing stored triage,
+and confirming or correcting its category locally. Classification starts
+through `pnpm shadow --mailbox <mailbox> --apply`, not from the UI; it sends
+minimized thread content to Jev and requires `TYPESAFE_API_KEY`. Loading,
+refreshing and reviewing in the app make no model calls. There is no UI
+triage-run control, priority/reply/deadline editor, persisted completion/Undo,
+or mailbox-action workflow on `main`.
+
+The web process needs the local Spark CLI to read mail. A successful build
+or `/health` response does not prove Spark readiness. See
+[the runbook](docs/runbook.md) for separate deployment and host-local checks.
+
 ## Setup
 
 Requires Node.js 24 and pnpm 12.5.1 (pinned in `packageManager`).
@@ -74,7 +102,7 @@ pnpm shadow --mailbox you@example.com --apply        # classify with Jev and sto
   without Spark, Jev, or a TypeSafe key. Back up the file first using the
   procedure in `docs/runbook.md`.
 - `SHADOW_DATABASE_PATH` points the app at a database a run wrote elsewhere
-  with `--db`. The app only ever reads it.
+  with `--db`. The app reads classifications from it and appends human reviews to it.
 - Output is status and counts only. The exit code is `0` for completed or
   dry runs, `1` for failed, `2` for partial, `3` for blocked, and `64` for
   invalid options.
@@ -96,8 +124,8 @@ The first local run needs `pnpm exec playwright install --only-shell chromium`.
 
 ## Releasing
 
-`docs/runbook.md` is the release runbook: the required check and the branch
-protection to apply for it, how a deployment names the commit it was built
+`docs/runbook.md` is the release runbook: the required check and observed branch
+protection, how a deployment names the commit it was built
 from, health, the live Spark readback, rollback, and what may be logged. It
 reports the build, the merge, the deployment and the live result separately,
 because none of them is evidence for another.
@@ -147,10 +175,10 @@ pnpm readback:spark                      # whether Spark answers on this host
 
 ## Safety status
 
-- The app's root route shows recent Spark mail, strictly read-only. It
-  reads only through `ReviewDesk` in `src/app/review-desk.ts`, its one deep
-  read interface: `open` for the list and what was stored about it, `focus`
-  for one opened row's body and `probe` for whether Spark answers.
+- The app's root route keeps mailbox access read-only. It uses
+  `ReviewDesk` in `src/app/review-desk.ts`: `open` for the list and stored
+  evidence, `focus` for one opened row's body, `probe` for Spark readiness,
+  `review` to append a local review, and `check` to read a save's outcome.
   Everything below it stays behind that module, so the route imports no
   server, Spark, Jev or persistence code.
 - `ReviewDesk.open` calls `getLiveInbox` in `src/app/live-inbox.functions.ts`,
@@ -198,7 +226,7 @@ pnpm readback:spark                      # whether Spark answers on this host
   of the client build; ESLint also keeps components and stories from
   importing `*.server`, `*.functions`, `src/spark` and Node built-ins, and
   keeps routes from importing that server-only code at all.
-- Live mail is not triaged in the app, so every message is in one "Recent
+- Classification cannot be started in the app, so every message is in one "Recent
   mail" workflow. Each row shows what shadow triage last stored about it
   instead: "Triage current", "Triage from earlier", "Triage outdated",
   "Triage failed", "Not triaged" or "Triage unreadable", always as words
@@ -207,9 +235,10 @@ pnpm readback:spark                      # whether Spark answers on this host
   the category, the priority and whether the priority was uncertain, whether
   the model accepted its own labels or sent them to a person, and when it
   was judged. `auto_accepted` reads as the model accepting its labels, never
-  as a review by a person; no probability is shown, so nothing suggests the
-  model's confidence is calibrated. The page offers no way to save a review
-  or change a mailbox. Spark's list shows at most 30 characters of a sender
+  as a review by a person. The review panel shows category confidence as a
+  percentage labelled "Model score"; this is the model's raw score, not a
+  calibrated probability of correctness. The page can save a category
+  review but cannot change a mailbox. Spark's list shows at most 30 characters of a sender
   and 50 of a subject and has no uncut or structured form. A cut sender keeps its whole name when the address
   was cut, otherwise the visible start; a cut subject keeps its visible
   start. Both end in `…`, and nothing is guessed. Only a blank value
@@ -232,8 +261,26 @@ pnpm readback:spark                      # whether Spark answers on this host
   loader. A late response for a message that is no longer open is dropped.
 - `src/app/demo.ts` keeps fictional sample data for tests; the app no
   longer shows it.
-- The only persistence is the local shadow-triage SQLite file (Node's
-  built-in `node:sqlite`, migrated through `PRAGMA user_version`).
+- Classifications and reviews persist in the local shadow-triage SQLite
+  file (Node's built-in `node:sqlite`, schema 3 via `PRAGMA user_version`).
+  Evaluation snapshots are separate local JSON files under `.data/`.
+- A `current` or `unverified` classification offers a category review;
+  stale, failed, absent or unreadable classifications do not. The save
+  rechecks the exact subject against the store in a transaction, without
+  reading Spark; `unverified` is not proof of live currency. Reviews are
+  append-only, retain the original judgment, and record the server's local
+  OS account name and timestamp. The latest applicable review determines
+  the displayed labels after reload; it never makes a classification current.
+  Review POSTs and save readback are loopback-only with `no-store` responses.
+  A lost response is an unknown outcome, with readback and a retry using the
+  same request id to avoid duplicate reviews. The pending subject, chosen
+  labels and request id are kept in the browser tab's `sessionStorage` before
+  sending; saving is blocked if that storage cannot retain the request.
+- The review UI only asks about category and retains the model priority.
+  Currently the priority-uncertainty note disappears when a review applies,
+  even though the person did not review priority. The panel also uses a
+  generic uncertainty explanation for `needs_review`. These are current
+  presentation limitations, not evidence that all fields were confirmed.
 - `src/spark` reads mail through the local `spark` CLI, read-only. Its command
   type allows only `accounts`, `emails`, and `thread`. It never uses a shell,
   runs one call at a time with a timeout and output limit, and logs no mail
@@ -301,25 +348,23 @@ pnpm readback:spark                      # whether Spark answers on this host
   inbox, personal or work: the categories `personal`, `notification`,
   `security`, `purchase`, `newsletter`, `promotion`, `suspicious`, and
   `other`, four priorities, and the policy thresholds. Ids and classifier
-  text are English; display labels will come from UI translations, with
-  English as the default and Dutch as a second locale.
+  text and current UI labels are English; a Dutch locale is not implemented.
 - The only secret is `TYPESAFE_API_KEY`, read server-side from the
-  environment. The SDK's logging is off and its base URL is pinned. No
-  deployment configuration.
-- CI runs every quality command, the Storybook play tests, and the build on
-  pull requests and `main`.
+  environment. The SDK's logging is off and its base URL is pinned.
+  Docker build targets exist; runtime secrets are configured outside Git.
+- CI runs the checks in `pnpm check`, including Storybook play tests and
+  both builds, on pull requests and pushes to `main`.
 - On pull requests, CI also runs commitlint and the Fallow changed-code audit.
 - CI fails on `git diff --check` errors or uncommitted generated files.
 - CI ends in one job, `required-checks`, which waits for every other job and
   fails unless each succeeded. It is the single check a branch can require,
   and `src/release/ci-workflow.test.ts` reads the workflow and fails when a
   job is not covered by it.
-- Branch protection is still not applied: neither `main` nor
-  `feature/human-triage-review` is protected and no ruleset exists, so CI
-  results are not enforced on merge. `docs/runbook.md` holds the settings to
-  apply and how to read them back; enforcement may be claimed only from that
-  read-back.
-- `GET /health` answers with the commit the running build was made from, and
+- GitHub readback on 2026-09-24 showed active ruleset `23879348` requiring
+  PRs and `required-checks` on `main` and `feature/human-triage-review`, with
+  no bypass actors. Repository settings can change; see the runbook's
+  evidence and readback commands before reporting enforcement.
+- `GET /health` answers with the configured commit identity, and
   nothing else: it reads one environment variable, `APP_COMMIT_SHA`, calls no
   provider, opens no database and holds no mail. A build that cannot name its
   commit answers `503`, because a deployment nobody can name cannot be rolled
@@ -336,7 +381,9 @@ pnpm readback:spark                      # whether Spark answers on this host
   - judgment values with raw probabilities, rubric and model versions, token
     counts, and provider error codes
   - run status and counts
-  - an empty table for later human corrections
+  - append-only human reviews: exact classification subject, decision,
+    corrected category/priority when supplied, reviewer and time
+  - save request ids, payloads and outcomes for idempotent retries
 
   It never stores mail bodies, attachment details, or credentials. Reruns are
   idempotent. A new message, rubric, or model gets a new judgment and keeps

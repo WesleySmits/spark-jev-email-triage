@@ -8,6 +8,33 @@ a merge says nothing about what is deployed, a healthy deployment says
 nothing about whether Spark answers, and a Spark that answers on one host
 says nothing about which code asked it or about any other host.
 
+## Current operational boundary
+
+The root route reads up to ten recent Inbox messages in each of the first
+five readable Spark mailboxes. There is no pagination; filters cover only
+loaded rows, and one failed listing currently fails the whole inbox.
+Opening a row lazily reads its body/thread. Refreshing does not classify.
+
+Classification is the explicit `pnpm shadow --mailbox <mailbox> --apply`
+workflow (see [README](../README.md#shadow-triage) for limits and exit codes).
+It reads mail, sends minimized content to Jev, and writes local judgments.
+The default dry run reads Spark but calls no model and writes no persistent
+store. `pnpm shadow --preflight` checks a disposable database without Spark
+or Jev; it is not a migration of the user's database.
+
+The app reads those judgments and can append a category review in the same
+SQLite file. `SHADOW_DATABASE_PATH` must match a CLI `--db` override. The
+review server opens an existing schema-3 file for writing, without migration;
+listing and body evidence open it read-only. Backups can include judgments,
+reviewer account names, review timestamps and save-request records as well
+as mail metadata. Treat the database and backups as private.
+
+A review does not complete or mutate mail. Its category choice preserves the
+model judgment and priority. The panel's "Model score" is raw category
+confidence, not calibrated certainty. Current limitations include hiding the
+priority-uncertainty note after a review and generic review-reason copy.
+There is no app control to launch classification or execute mailbox actions.
+
 ## Upgrade an existing shadow database to schema 3
 
 Do this on the machine that holds the local SQLite file before using the
@@ -86,100 +113,44 @@ requires cannot quietly stop covering what CI runs.
 A cancelled run reports as cancelled, not as success, so the check must be
 re-run before the pull request can merge.
 
-### The protection settings to apply
+### Observed repository protection
 
-Protection is repository configuration, not source, so this document cannot
-enforce it and neither can this repository. **As of 2026-09-23 neither `main`
-nor `feature/human-triage-review` is protected and no ruleset exists** (both
-branch-protection reads answer 404, `rulesets` answers `[]`), which means CI
-results are advisory today: a merge is possible with the check red.
+Repository settings are external to source. Read back on **2026-09-24**:
 
-One ruleset covers both branches. Apply it with a token that may administer
-the repository:
+- The repository API and remote symbolic HEAD both name `main` as default.
+- [Ruleset 23879348, release gates](https://github.com/WesleySmits/spark-jev-email-triage/rules/23879348)
+  is active for `main` and `feature/human-triage-review`, with
+  `bypass_actors: []` and `current_user_can_bypass: never`.
+- Effective branch-rules responses for both branches include `pull_request`,
+  `required_status_checks` with context `required-checks`, `deletion`, and
+  `non_fast_forward`. Required approval count is zero and strict status
+  checks are off; all three merge methods are allowed.
+- Classic branch protection for `main` responds `404 Branch not protected`.
+  That does **not** mean the branch lacks ruleset protection.
 
-```sh
-gh api -X POST repos/WesleySmits/spark-jev-email-triage/rulesets \
-  --input - <<'JSON'
-{
-  "name": "release gates",
-  "target": "branch",
-  "enforcement": "active",
-  "bypass_actors": [],
-  "conditions": {
-    "ref_name": {
-      "include": ["refs/heads/main", "refs/heads/feature/human-triage-review"],
-      "exclude": []
-    }
-  },
-  "rules": [
-    { "type": "deletion" },
-    { "type": "non_fast_forward" },
-    {
-      "type": "pull_request",
-      "parameters": {
-        "required_approving_review_count": 0,
-        "dismiss_stale_reviews_on_push": false,
-        "require_code_owner_review": false,
-        "require_last_push_approval": false,
-        "required_review_thread_resolution": false
-      }
-    },
-    {
-      "type": "required_status_checks",
-      "parameters": {
-        "strict_required_status_checks_policy": false,
-        "required_status_checks": [{ "context": "required-checks" }]
-      }
-    }
-  ]
-}
-JSON
-```
-
-What each part is for, and why it is no larger than this:
-
-- **`pull_request`, zero approvals.** Every change reaches these branches
-  through a pull request, which is what makes a status check able to block a
-  merge at all. Zero approvals, because this repository has one maintainer;
-  raising it later changes nothing else here.
-- **`required_status_checks: required-checks`.** The one name CI ends in. No
-  other context is listed, so the required set does not have to be edited
-  when CI gains a job.
-- **`strict_required_status_checks_policy: false`.** A branch does not have
-  to be rebased on its target before merging. Strict would re-run CI for
-  every intervening merge; the check itself is unaffected.
-- **`deletion` and `non_fast_forward`.** These branches cannot be deleted or
-  force-pushed, so history cannot be rewritten under a merged release.
-- **`bypass_actors`: empty.** Nobody is exempt, including the repository
-  admin. This repository has one maintainer, so a standing admin bypass would
-  mean the person doing the merge is the person the check does not apply to,
-  and the check would be advisory for the only account that ever merges.
-  There is no honest way to call that enforcement. Rollback does not need a
-  standing exemption; see _Rollback_ below for what to do when CI itself is
-  broken.
-
-The field names above are GitHub's own, taken from the REST documentation for
-_Create a repository ruleset_ (read 2026-09-23). No role or actor id is
-published here, because none is needed and an unverified one would be a guess
-in a document people act on. GitHub may change rule shapes, so read the
-applied ruleset back rather than assuming this document applied cleanly.
+These observations replace the earlier claim that no ruleset exists. They
+are dated evidence, not a guarantee about future settings. No protection
+settings are changed by documenting them.
 
 ### Reading protection back
 
 ```sh
+gh api repos/WesleySmits/spark-jev-email-triage --jq '{default_branch,allow_merge_commit,allow_squash_merge,allow_rebase_merge}'
+git ls-remote --symref origin HEAD
 gh api repos/WesleySmits/spark-jev-email-triage/rulesets
-gh api repos/WesleySmits/spark-jev-email-triage/rulesets/<id>
+gh api repos/WesleySmits/spark-jev-email-triage/rulesets/23879348
 gh api repos/WesleySmits/spark-jev-email-triage/rules/branches/main
 gh api repos/WesleySmits/spark-jev-email-triage/rules/branches/feature/human-triage-review
+gh api repos/WesleySmits/spark-jev-email-triage/branches/main/protection
 ```
 
-The last two answer with the rules that apply to a branch, whether they come
-from a ruleset or from classic branch protection, which is the read that
-matters. Enforcement may be claimed only once that read shows the
-`pull_request` and `required_status_checks` rules on both branches, with
-`required-checks` as the context, **and** the ruleset's `bypass_actors` is
-empty. Until then, say that the check exists and that protection is not
-applied.
+Use the ids returned by the ruleset listing if they change. The
+`rules/branches` endpoints report active ruleset rules; classic branch
+protection is read separately through `branches/<branch>/protection`.
+Do not infer absence of all protection from a single 404. Check effective
+rules, the ruleset's enforcement and bypass actors together. If access is
+refused or results cannot be verified, report protection as **unverified**,
+with the endpoint and error, rather than claiming it is enabled or absent.
 
 A check an actor is exempt from is not enforced for that actor. If a bypass
 is ever added, say who is exempt whenever enforcement is reported, rather than
@@ -187,13 +158,30 @@ reporting the check as enforced for everyone.
 
 ## 2. Merge
 
-Merge through the pull request, once `required-checks` is green on the head
-commit. Ticket pull requests into `feature/human-triage-review` are
-squash-merged, so one lands as one commit; pull requests from that branch
-into `main` are merge commits. Either way, record the SHA the merge produced
-on the target branch, not the SHA of the branch that was merged: that commit,
-and no branch name, is what a deployment is built from and what a rollback
-goes back to. _Rollback_ below says which revert each kind takes.
+Use `main` as the target for independent changes unless an explicit active
+integration agreement says otherwise. Fetch first and check open and merged
+PRs for existing work. Recent history uses purpose-prefixed task branches
+such as `fix/review-response-loss` (#75) and `fix/review-db-migration` (#74);
+older feature work targeted integration branches. This is observed practice,
+not an enforced branch-name rule. Commit messages follow Conventional Commits
+(`commitlint.config.js`, the commit hook, and PR CI).
+
+Create an isolated worktree and a task branch from the fetched target,
+leaving existing changes alone. Open a draft PR with scope and validation;
+merge only through the PR once `required-checks` is green on its head commit.
+
+Do not assume a merge method from the branch name. The repository API allows
+merge, squash and rebase. PR #72 from `feature/human-triage-review` landed on
+`main` as the single-parent commit `984c8e5`; the older #65 landed as the
+two-parent merge `191e75c`. The old blanket claim that feature-to-main PRs
+always use merge commits is therefore wrong. Record the actual target SHA
+and inspect its parents before rollback, not the task branch's head SHA.
+
+```sh
+gh pr list --state all --limit 100 --json number,title,state,headRefName,baseRefName,url
+gh pr view <number> --json baseRefName,headRefName,mergeCommit,mergedAt
+git rev-list --parents -n 1 <target-sha>
+```
 
 ## 3. Deployment: which commit is running
 
@@ -214,7 +202,7 @@ Prefer the build argument.
 
 ### Health
 
-`GET /health` answers with the commit and nothing else:
+`GET /health` answers with the configured commit identity and health status:
 
 ```sh
 curl -fsS http://<host>:3000/health
@@ -222,7 +210,8 @@ curl -fsS http://<host>:3000/health
 ```
 
 - `200` and `{"status":"ok","commit":"<40 hex>"}`: the deployment is
-  identified, and that commit is what is running.
+  reporting a syntactically valid commit identity. Compare it with the
+  build/deployment record; the endpoint does not attest the running files.
 - `503` and `{"status":"unidentified","reason":"unset"}`: the build carries no
   commit. `"reason":"malformed"` means something was set that is not a full
   commit; the value is never echoed back.
@@ -231,7 +220,8 @@ Health is deliberately narrow. It reads one environment variable. It opens no
 database, calls no provider, reads no mailbox, and holds no address, subject
 or body, so it is safe to expose to a monitor, to log and to paste into a
 release report. It is **not** a check that mail can be read: a build with no
-Spark is healthy, because the deployed code is exactly what was merged.
+Spark can return `200` when its commit identity is set. This does not prove
+that the configured SHA matches the running files or the merged commit.
 
 `src/release/health.ts` holds that judgment, `src/release/health.server.ts`
 the response, `src/routes/health.ts` the route.
@@ -259,7 +249,8 @@ It makes one read-only Spark call — `spark accounts` — through the same prob
 the application uses, drops the listing, and prints one line. Exit codes: `0`
 ready, `1` unavailable, `64` invalid options. A failure prints a coarse
 reason, `missing`, `failed`, `malformed` or `local-only`, and no address,
-count, subject or body.
+count, subject or body. `ready` means account discovery answered; it does
+not prove Inbox/body reads, writable review storage or Jev availability.
 
 ### It only speaks for the host it ran on
 
@@ -272,12 +263,13 @@ connectivity, and reporting it as such would claim a thing nobody observed.
 or container that serves the application:
 
 ```sh
-docker exec <container> pnpm readback:spark     # the container that serves the app
 ssh <runtime-host> 'cd <app> && pnpm readback:spark'
 ```
 
-If the probe cannot run there at all — the usual case today, because Spark
-Desktop is macOS-only while `Dockerfile.app` runs a Linux container — then
+The shipped `Dockerfile.app` runtime copies only `.output`, not the source,
+package scripts or `tsx` needed by `pnpm readback:spark`, and installs no
+Spark CLI. Do not assume that command is available in the container. If the
+probe cannot run in the deployed runtime, then
 deployed connectivity is **blocked**, and blocked is what is reported. It is
 not `unavailable`, which would mean the runtime asked and got no answer, and
 it is certainly not `ready`. A deployment that cannot reach Spark serves a
@@ -317,32 +309,29 @@ The deployment and the source roll back separately.
    `required-checks` is green. History is not rewritten, so the reverted
    commit stays readable and can be re-applied.
 
-   Which revert depends on what is being undone, because the two branches are
-   merged differently. Ticket pull requests into
-   `feature/human-triage-review` are **squash-merged**, so each lands as one
-   ordinary commit with one parent (`#67`, `#68`, `#69` are these). Pull
-   requests from `feature/human-triage-review` into `main` are **merge
-   commits** with two parents (`Merge pull request #63`, `#64`, `#65` are
-   these). Check before reverting, rather than remembering:
+   Inspect the commit being undone: `984c8e5` (#72) has one parent;
+   `191e75c` (#65) has two. These examples show why branch names alone
+   cannot choose a revert command:
 
    ```sh
-   git rev-list --parents -n 1 <sha>    # one sha after it: squash; two: merge commit
-   git revert <squash-sha>              # a squashed ticket commit
+   git rev-list --parents -n 1 <sha>    # one parent: ordinary commit; two: merge commit
+   git revert <single-parent-sha>      # an ordinary or squashed commit
    git revert -m 1 <merge-sha>          # a merge commit, keeping its first parent
    ```
 
-   `-m 1` on a squashed commit fails with a mainline error, and leaving it off
+   `-m 1` on a single-parent commit fails with a mainline error, and leaving it off
    a merge commit fails too, so the check above is the whole trick. Reverting
-   a merge commit on `main` backs out everything that merge brought in, which
-   is a batch of ticket commits, not one; revert the squashed commits on the
-   feature branch instead when only one ticket is at fault.
+   a merge commit backs out everything it brought in. When only one change
+   is at fault, select that change's actual commit and target a revert PR at
+   the branch that needs the correction.
 
    Step 1 needs no repository change at all, which is the point: the fast way
    back is redeploying a known commit, not editing protection. Step 2 is an
    ordinary pull request and passes the same check as any other change.
 
-3. **When CI itself is broken** and a revert cannot go green, an admin may
-   change the ruleset explicitly and temporarily. Nobody is standingly exempt,
+3. **When CI itself is broken** and a revert cannot go green, an authorized
+   admin may change the ruleset explicitly and temporarily. The observed
+   ruleset has no bypass actors,
    so this is a recorded act, not a quiet one:
    1. Read the ruleset back first and keep that copy:
       `gh api repos/WesleySmits/spark-jev-email-triage/rulesets/<id> > ruleset-before.json`
@@ -353,16 +342,17 @@ The deployment and the source roll back separately.
    4. Restore immediately from the copy, and read it back again to prove the
       rules are as they were, with `bypass_actors` still empty.
 
-   The change is visible either way: ruleset edits appear in the repository's
-   audit log, and step 4's read-back is what closes the incident. While
+   Keep the incident record and before/after responses; audit-log access
+   and retention have not been verified here. Step 4's readback closes the incident. While
    enforcement is off, the check is not enforced, and any release report
    covering that window must say so.
 
 Force-pushing or deleting `main` or `feature/human-triage-review` is not a
-rollback path and the ruleset refuses both.
+rollback path; the ruleset observed above blocks both.
 
 What rolling back cannot undo: mail the application already read is not
-changed by a rollback, because the application only reads. The shadow-triage
+changed by a rollback, because mailbox access only reads. Local reviews are
+writes and remain in SQLite after a code rollback. The shadow-triage
 database keeps earlier judgments beside newer ones, so reverting code does
 not remove judgments an older build stored; a judgment naming a rubric or
 classifier build the running code no longer holds reads as stale, which is
