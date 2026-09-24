@@ -14,10 +14,11 @@ confirmation.
 The inbox includes the first five readable mailboxes in provider order and
 up to ten recent Inbox messages per mailbox, sorted newest first (at most
 50 rows before deduplication). It has no pagination or complete-history
-view. Search and mailbox filtering operate on those loaded rows. One failed
-mailbox listing currently makes the whole inbox unavailable. Copies in
-different mailboxes remain distinct even when message ids, subjects or
-contents match.
+view. Search and mailbox filtering operate on those loaded rows. A failure
+is isolated to the mailbox it happened in: the mailboxes that answered are
+still delivered, and only discovering the mailboxes at all makes the whole
+inbox unavailable. Copies in different mailboxes remain distinct even when
+message ids, subjects or contents match.
 
 That reach is stated on the page rather than left to be inferred. Every
 reading carries a scope: the mailboxes it listed with their counts, how
@@ -35,6 +36,31 @@ mailbox filter is named "All loaded", the search says it searches loaded
 mail, and a reading that loaded nothing reads differently from a filter that
 matched nothing.
 
+The scope also names the mailboxes the reading could not read, so a partial
+failure is visible rather than silent. Such a mailbox contributes no rows
+and is counted as unread, never as empty and never as bounded: a listing
+that never arrived says nothing about how much mail is behind it. A mailbox
+that answered with nothing is a real, empty reading of it, and reads
+differently. Failed, partly failed and fully read readings are therefore
+distinguishable, as is an inbox where every listed mailbox failed, which
+says so instead of showing an empty queue. The failed mailbox keeps its
+place in the rail, so a chosen mailbox filter survives the failure. An open
+message remains available when its own mailbox answered. Retrying is Refresh,
+which reads every mailbox again; there is
+no per-mailbox retry, because a reading is delivered and dated as a whole.
+Nothing older is kept when a mailbox fails, so no row is ever shown as
+fresher than the reading it came from, and a failure carries the mailbox
+address and a coarse reason only, never mail content.
+
+The filters are reachable at every supported width. Above 900px they are the
+navigation rail beside the queue. At 900px and below the rail would leave the
+reader too narrow, so it goes and a button in the top bar opens the same rail
+as a modal sheet: one filter model and one set of counts, never a second
+mobile one. Choosing there applies the filter, closes the sheet and shows the
+list; Escape, the close button and the backdrop close it and hand focus back
+to the button. What was open, where back leads and what was searched all stay
+as they were.
+
 Supported: reading mail, refreshing, opening one body, viewing stored triage,
 and confirming or correcting its category locally. The guarded Done panel
 can archive a selected message when explicitly enabled. Classification starts
@@ -42,6 +68,12 @@ through `pnpm shadow --mailbox <mailbox> --apply`, not from the UI; it sends
 minimized thread content to Jev and requires `TYPESAFE_API_KEY`. Loading,
 refreshing and reviewing in the app make no model calls. There is no UI
 triage-run control, priority/reply/deadline editor, persisted completion or Undo.
+
+The workbench's single-key shortcuts (K, J, E and `/`) can be turned off in
+the rail, under the shortcut help. The choice is kept in that browser's local
+storage, holds after a reload, and carries no mail. With the keys off nothing
+in the page claims one, and Tab, Enter and Escape keep working. On narrow
+screens, the setting remains available through the Filters sheet.
 
 The web process needs the local Spark CLI to read mail. A successful build
 or `/health` response does not prove Spark readiness. See
@@ -134,7 +166,10 @@ Git hooks:
 `pnpm test-storybook` renders every story and runs its play function in
 headless Chromium through Vitest browser mode and Storybook's portable
 stories (`.storybook/stories.test.ts`). It starts no Storybook server. A
-story's `viewport` global sets the window size; other stories get 1280×1024.
+story's `viewport` global sets the window size, from the map in
+`.storybook/preview.ts`; other stories get 1280×1024. Besides Storybook's own
+sizes that map holds the widths the workbench is checked at: 390, 600, 640
+(1280 at 200% zoom), 768 and 1024.
 The first local run needs `pnpm exec playwright install --only-shell chromium`.
 
 ## Releasing
@@ -199,8 +234,11 @@ pnpm readback:spark                      # whether Spark answers on this host
 - `ReviewDesk.open` calls `getLiveInbox` in `src/app/live-inbox.functions.ts`,
   a server function: it discovers the readable mailboxes (at most 5), lists
   the 10 most recent Inbox messages in each, one Spark call at a time, and
-  returns strict summaries without a body, newest first. An app server that
-  doesn't answer is reported as `unreachable`, not as an error. Opening a
+  returns strict summaries without a body, newest first. A mailbox whose
+  listing fails is recorded in the reading's scope and costs only its own
+  rows; the remaining mailboxes are still listed, still one call at a time.
+  An app server that doesn't answer is reported as `unreachable`, not as an
+  error. Opening a
   message calls `getLiveBody` for that message only; it returns that
   message's plain-text body, or `null` when it has none, and reads only
   messages the last list offered. Both answer only requests from this

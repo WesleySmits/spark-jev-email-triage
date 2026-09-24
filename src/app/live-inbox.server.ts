@@ -4,6 +4,14 @@
  * time, and reads one message's body on request. Nothing here writes, and
  * provider errors never reach the browser as more than a coarse reason.
  *
+ * A failure is as small as what it cost. Discovering the mailboxes is the
+ * one all-or-nothing step, because a reading that does not know its
+ * mailboxes cannot say what it holds; that failure is `unavailable`. After
+ * it, each mailbox is listed on its own: one that fails costs its own rows
+ * and is named in the scope, and the mailboxes read before and after it are
+ * still delivered. So a reading reports what it read and what it could not,
+ * never one in place of the other.
+ *
  * Listing reads no thread. Only opening one row does, and that one read can
  * also say what the thread now is: its ids go to the injected `verify`, so
  * this module keeps no knowledge of what is stored about a row, and asks the
@@ -17,7 +25,7 @@ import type { ObservedThread, StoredClassification } from '../domain/stored-clas
 import type { RowReview } from './desk-review'
 import { SparkError } from '../spark/errors'
 import { inboxSummarySchema, messageBodySchema, type InboxSummary, type MessageBody } from './inbox'
-import type { BodyRequest, InboxScope, LiveInbox } from './live-inbox'
+import type { BodyRequest, InboxScope, LiveInbox, MailboxFailure } from './live-inbox'
 
 type Listing = z.infer<typeof emailListingSchema>
 type Thread = z.infer<typeof threadSchema>
@@ -53,8 +61,12 @@ export type VerifiedRow = Readonly<{
   review?: RowReview | undefined
 }>
 
-/** Why a read failed, without anything the provider said. */
-export function reasonFor(error: unknown): Extract<LiveInbox, { status: 'unavailable' }>['reason'] {
+/**
+ * Why a read failed, without anything the provider said. It is the reason a
+ * whole reading gives and the reason one mailbox gives, so both stay coarse:
+ * `local-only` is not among them, because that decides a request, not a read.
+ */
+export function reasonFor(error: unknown): MailboxFailure['reason'] {
   if (!(error instanceof SparkError)) return 'failed'
   if (error.code === 'not_installed') return 'missing'
   return error.code === 'malformed_output' ? 'malformed' : 'failed'
@@ -104,18 +116,38 @@ export function createLiveInbox({
       // Whether a mailbox gave back as many messages as it was asked for, so
       // the bound may have cut it. Counted per mailbox, before anything drops.
       const atLimit = new Map<string, boolean>()
+      const failed: MailboxFailure[] = []
+      // Still one mailbox at a time: isolating a failure must not turn these
+      // reads into concurrent Spark commands. One that fails costs its own
+      // rows and nothing else, so the mailboxes after it are still read.
       for (const mailbox of mailboxes) {
         const request = { mailboxId: mailbox.id, limit: perMailbox }
-        const listings = await reader.listRecentEmails(request, options)
-        atLimit.set(mailbox.id, listings.length >= perMailbox)
-        listed.push(...listings.map((listing) => ({ listing, mailbox })))
+        try {
+          const listings = await reader.listRecentEmails(request, options)
+          atLimit.set(mailbox.id, listings.length >= perMailbox)
+          listed.push(...listings.map((listing) => ({ listing, mailbox })))
+        } catch (error) {
+          // A caller that gave up wants no more commands run for it, so an
+          // abort ends the whole read rather than being reported as a mailbox
+          // that could not be read.
+          if (options?.signal?.aborted === true) throw error
+          failed.push({ id: mailbox.id, label: mailbox.label, reason: reasonFor(error) })
+        }
       }
       const at = now()
       const messages = newestFirst(unique(listed)).map(({ listing, mailbox }) =>
         summarize(listing, mailbox, format.listed(listing.date, at)),
       )
       if (read === reads) offered = new Set(messages.map((message) => message.id))
-      const scope = scopeOf({ mailboxes, messages, readable: readable.length, atLimit, at, format })
+      const scope = scopeOf({
+        mailboxes,
+        messages,
+        readable: readable.length,
+        atLimit,
+        failed,
+        at,
+        format,
+      })
       return { status: 'ready', scope, mailboxes, messages }
     } catch (error) {
       return { status: 'unavailable', reason: reasonFor(error) }
@@ -189,6 +221,8 @@ type ScopeInput = Readonly<{
   readable: number
   /** Per mailbox: whether its listing came back at the per-mailbox bound. */
   atLimit: ReadonlyMap<string, boolean>
+  /** The listed mailboxes whose listing failed, so they hold no rows here. */
+  failed: readonly MailboxFailure[]
   at: Date
   format: ReturnType<typeof timeFormats>
 }>
@@ -197,8 +231,21 @@ type ScopeInput = Readonly<{
  * What this reading holds, counted from the rows it kept. A mailbox copy is
  * one row, so one message delivered to a primary address and an alias counts
  * in both mailboxes: nothing here merges copies to make a figure smaller.
+ *
+ * A mailbox that failed is still listed, with the 0 rows it actually
+ * contributed, and named in `failed`. It is never reported as bounded: a
+ * listing that never arrived proves nothing about what the bound would have
+ * cut, and calling it empty would claim its mailbox holds no mail.
  */
-function scopeOf({ mailboxes, messages, readable, atLimit, at, format }: ScopeInput): InboxScope {
+function scopeOf({
+  mailboxes,
+  messages,
+  readable,
+  atLimit,
+  failed,
+  at,
+  format,
+}: ScopeInput): InboxScope {
   const scoped = mailboxes.map((mailbox) => ({
     id: mailbox.id,
     label: mailbox.label,
@@ -207,6 +254,7 @@ function scopeOf({ mailboxes, messages, readable, atLimit, at, format }: ScopeIn
   }))
   return {
     mailboxes: scoped,
+    failed,
     readable,
     mailboxLimit: maxMailboxes,
     messageLimit: perMailbox,

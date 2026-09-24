@@ -62,16 +62,38 @@
   }
 }
 
+/* Above the compact width the rail is there, so the compact filter control is
+ * not: it leaves the layout and the tab order, and the rail is the only way
+ * to the filters. Two class names deep, so it also wins over a control that
+ * sets its own display, such as .button. */
+@media (min-width: 901px) {
+  .workbench .workbench__compact-only {
+    display: none;
+  }
+}
+
+/* At 900px and below the rail would leave the reader too narrow: a 156px rail
+ * and a 280px queue take more than half of a 768px tablet. The rail leaves the
+ * layout, the tab order and the accessibility tree; the same filters are
+ * reached from the compact control the caller puts in the top bar. */
+@media (max-width: 900px) {
+  .workbench > .workbench__workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workbench__sidebar {
+    display: none;
+  }
+}
+
 /* At 600px and below the top bar sits above one pane: the queue or, as in
- * the source's mobile reader, the reader. The rail and the other pane leave
+ * the source's mobile reader, the reader. The pane that is not shown leaves
  * the layout, the tab order and the accessibility tree. */
 @media (max-width: 600px) {
-  .workbench > .workbench__workspace,
   .workbench__main {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .workbench__sidebar,
   .workbench--mobile-reader .workbench__queue,
   .workbench--mobile-queue .workbench__reader {
     display: none;

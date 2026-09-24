@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { parse } from 'postcss'
 import type { ReactElement } from 'react'
 import { describe, expect, it } from 'vitest'
-import { WorkbenchTemplate } from './WorkbenchTemplate'
+import { compactOnly, compactQuery, compactWidth, WorkbenchTemplate } from './WorkbenchTemplate'
 
 type Element = ReactElement<Record<string, unknown>>
 type Props = Parameters<typeof WorkbenchTemplate>[0]
@@ -20,13 +20,13 @@ const slots: Props = {
 
 function render(overrides: Partial<Props> = {}) {
   const root = WorkbenchTemplate({ ...slots, ...overrides }) as Element
-  const [topBar, workspace] = root.props['children'] as Element[]
+  const [topBar, workspace, filters] = root.props['children'] as Element[]
   if (!topBar || !workspace) throw new Error('Missing workbench part')
   const [sidebar, main] = workspace.props['children'] as Element[]
   if (!sidebar || !main) throw new Error('Missing workspace part')
   const [queue, reader] = main.props['children'] as Element[]
   if (!queue || !reader) throw new Error('Missing main part')
-  return { root, topBar, workspace, sidebar, main, queue, reader }
+  return { root, topBar, workspace, sidebar, main, queue, reader, filters }
 }
 
 function css() {
@@ -108,19 +108,37 @@ describe('WorkbenchTemplate', () => {
     ).toBe('156px minmax(0, 1fr)')
   })
 
+  it('puts the compact filters outside main, after the workspace', () => {
+    const filters = <div>Sheet</div>
+    const { root, filters: rendered } = render({ filters })
+    expect(rendered).toBe(filters)
+    expect(root.props['children'] as unknown[]).toHaveLength(3)
+    expect(render().filters).toBeUndefined()
+  })
+
+  it('drops the rail where it would leave the reader too narrow', () => {
+    const compact = rules(compactQuery)
+    expect(compactWidth).toBe(900)
+    expect(compact.get('.workbench__sidebar')?.get('display')).toBe('none')
+    expect(compact.get('.workbench > .workbench__workspace')?.get('grid-template-columns')).toBe(
+      'minmax(0, 1fr)',
+    )
+  })
+
+  it('leaves the compact control out of the layout while the rail is there', () => {
+    const wide = rules(`(min-width: ${String(compactWidth + 1)}px)`)
+    expect(wide.get(`.workbench .${compactOnly}`)?.get('display')).toBe('none')
+  })
+
   it('shows one pane, queue or reader, at 600px and below', () => {
     const mobile = rules('(max-width: 600px)')
     for (const hidden of [
-      '.workbench__sidebar',
       '.workbench--mobile-reader .workbench__queue',
       '.workbench--mobile-queue .workbench__reader',
     ]) {
       expect(mobile.get(hidden)?.get('display')).toBe('none')
     }
     expect(mobile.get('.workbench__main')?.get('grid-template-columns')).toBe('minmax(0, 1fr)')
-    expect(mobile.get('.workbench > .workbench__workspace')?.get('grid-template-columns')).toBe(
-      'minmax(0, 1fr)',
-    )
     expect(mobile.get('.workbench__queue')?.get('border-right')).toBe('0')
   })
 })

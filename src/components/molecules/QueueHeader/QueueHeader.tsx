@@ -19,7 +19,14 @@ type QueueHeaderScope = Readonly<{
   summary: string
   /** What bounded it and what the search covers. */
   detail: string
-  /** The last successful refresh: the words shown, and the instant behind them. */
+  /**
+   * What could not be read and how to try again, e.g. "1 mailbox could not
+   * be read…". Left out, the header says nothing about failure. It is
+   * announced when it appears, because a reading that lost part of itself
+   * changes what the list means without changing where focus is.
+   */
+  unread?: string | undefined
+  /** When this reading was read: the words shown, and the instant behind them. */
   refreshed: Readonly<{
     /** Already formatted, e.g. "Last refreshed 09:42." */
     label: string
@@ -43,9 +50,10 @@ type QueueHeaderProps = Readonly<{
   context?: string | undefined
   /**
    * What the list actually holds, under the context line: a counted line,
-   * what bounded it, and when it was last refreshed. `bounded` marks it as a
-   * cut selection rather than everything there is. The caller writes the
-   * words; only the refresh instant is rendered as machine-readable time.
+   * what bounded it, what could not be read, and when it was last refreshed.
+   * `bounded` marks it as a cut selection rather than everything there is.
+   * The caller writes the words; only the refresh instant is rendered as
+   * machine-readable time.
    */
   scope?: QueueHeaderScope | undefined
   /** One optional action beside the title. The caller owns what it does. */
@@ -106,6 +114,11 @@ export function QueueHeader({
           >
             <span className="queue-header__scope-summary">{scope.summary}</span>
             <span className="queue-header__scope-detail">{scope.detail}</span>
+            {scope.unread && (
+              <span className="queue-header__scope-unread" role="status">
+                {scope.unread}
+              </span>
+            )}
             <time className="queue-header__scope-refreshed" dateTime={scope.refreshed.dateTime}>
               {scope.refreshed.label}
             </time>

@@ -104,6 +104,41 @@ describe('QueueHeader', () => {
     )
   })
 
+  it('shows what could not be read, announced, without disturbing the other lines', () => {
+    const { byClass } = render({
+      scope: {
+        summary: 'Loaded: 4 recent messages from 2 of 3 readable mailboxes',
+        detail: 'Search and filters cover only loaded mail.',
+        unread: '1 mailbox could not be read, so none of its mail is shown (two@mail.example).',
+        refreshed: { label: 'Last refreshed 09:42.', dateTime: '2026-09-24T07:42:00.000Z' },
+        bounded: false,
+      },
+    })
+    expect(byClass('queue-header__scope-unread')).toMatchObject({
+      type: 'span',
+      props: {
+        role: 'status',
+        children: '1 mailbox could not be read, so none of its mail is shown (two@mail.example).',
+      },
+    })
+    // A failure is not a bound, so it does not take the bounded marking.
+    expect(byClass('queue-header__scope')?.props['className']).toBe('queue-header__scope')
+    expect(byClass('queue-header__scope-refreshed')).toBeDefined()
+  })
+
+  it('leaves the failure line out when everything could be read', () => {
+    const { byClass } = render({
+      scope: {
+        summary: 'Loaded: 6 recent messages from 3 mailboxes',
+        detail: 'Search and filters cover only loaded mail.',
+        refreshed: { label: 'Last refreshed 09:42.', dateTime: '2026-09-24T07:42:00.000Z' },
+        bounded: false,
+      },
+    })
+    expect(byClass('queue-header__scope-unread')).toBeUndefined()
+    expect(byClass('queue-header__scope')).toBeDefined()
+  })
+
   it('adds extra classes to the root', () => {
     expect(render({ className: 'extra' }).root.props['className']).toBe('queue-header extra')
   })

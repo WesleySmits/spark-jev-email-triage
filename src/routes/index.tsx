@@ -6,6 +6,7 @@ import { ConnectionPage } from '../components/pages/ConnectionPage/ConnectionPag
 import { connectionView } from '../components/pages/ConnectionPage/connection'
 import { useReconnect } from '../components/pages/ConnectionPage/useReconnect'
 import { WorkbenchPage } from '../components/pages/WorkbenchPage/WorkbenchPage'
+import { syncScopeLabel } from '../components/pages/WorkbenchPage/scope'
 import { ReviewDesk, type DeskReason, type DeskView } from '../app/review-desk'
 
 export const Route = createFileRoute('/')({
@@ -127,8 +128,11 @@ function Page({ inbox, root, onReady }: PageProps) {
       </main>
     )
   }
-  // It names what was refreshed: the loaded selection, not a whole mailbox.
-  const syncLabel = `Loaded mail updated at ${inbox.scope.readAt}`
+  // It names what was refreshed: the loaded selection, not a whole mailbox,
+  // and whether a mailbox could not be read, because Refresh is what reads
+  // them all again. A reading that lost a mailbox keeps the rest, so the
+  // retry is global but costs no mail that did arrive.
+  const syncLabel = syncScopeLabel(inbox.scope)
   return (
     <div ref={root} className="app-root">
       <WorkbenchPage

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { fn } from 'storybook/test'
+import { expect, fn, userEvent, within } from 'storybook/test'
 import { QueueHeader } from './QueueHeader'
 
 const meta = {
@@ -84,6 +84,70 @@ export const UnboundedScope: Story = {
       bounded: false,
     },
   },
+}
+
+/**
+ * A reading that could not read one of its mailboxes. The failure is its own
+ * line, marked apart from a bound, and announced: a refresh that lost a
+ * mailbox changes what the list means without moving focus.
+ */
+export const UnreadMailbox: Story = {
+  args: {
+    ...BoundedScope.args,
+    count: '4 results',
+    scope: {
+      summary: 'Loaded: 4 recent messages from 2 of 3 readable mailboxes',
+      detail: 'Search and filters cover only loaded mail.',
+      unread:
+        '1 mailbox could not be read, so none of its mail is shown (atelier@mail.example). ' +
+        'The rest of this reading was read without it. How much it holds is unknown. ' +
+        'Refresh to try again.',
+      refreshed: { label: 'Last refreshed 09:42.', dateTime: '2026-09-24T07:42:00.000Z' },
+      bounded: false,
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const unread = canvas.getByRole('status')
+    await expect(unread).toBeVisible()
+    await expect(unread).toHaveTextContent('1 mailbox could not be read')
+    // A failure is not a bound, so the line takes no bounded marking.
+    await expect(canvasElement.querySelector('.queue-header__scope')).not.toHaveClass(
+      'queue-header__scope--bounded',
+    )
+    // The only focus stop is the retry, so the keyboard reaches Refresh first.
+    await userEvent.tab()
+    await expect(canvas.getByRole('button', { name: 'Refresh' })).toHaveFocus()
+    await expect(unread).not.toHaveFocus()
+  },
+}
+
+/** Every mailbox failed: no mail at all, and no claim that they are empty. */
+export const NoMailboxRead: Story = {
+  args: {
+    ...UnreadMailbox.args,
+    count: '0 results',
+    scope: {
+      summary: 'Loaded: 0 recent messages from 0 of 3 readable mailboxes',
+      detail: 'Search and filters cover only loaded mail.',
+      unread:
+        'No listed mailbox could be read, so no mail is shown (studio@mail.example, ' +
+        'atelier@mail.example, personal@mail.example). How much they hold is unknown. ' +
+        'Refresh to try again.',
+      refreshed: { label: 'Last refreshed 09:42.', dateTime: '2026-09-24T07:42:00.000Z' },
+      bounded: false,
+    },
+  },
+}
+
+/** The failure line at a phone-width column: it wraps instead of being cut. */
+export const UnreadMailboxOnMobile: Story = {
+  args: { ...UnreadMailbox.args },
+  render: (args) => (
+    <div style={{ width: 320 }}>
+      <QueueHeader {...args} />
+    </div>
+  ),
 }
 
 /** The scope line at a phone-width column: it wraps instead of being cut. */

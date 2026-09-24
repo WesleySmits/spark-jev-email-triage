@@ -19,16 +19,22 @@ import type { BodyLoader } from '../../../app/inbox'
 import { sameSubject } from '../../../domain/review'
 import type { DeskReviewRequest } from '../../../app/desk-review'
 import type { StoredClassification } from '../../../domain/stored-classification'
+import { IconButton } from '../../atoms/IconButton/IconButton'
 import { ClassificationEvidence } from '../../molecules/ClassificationEvidence/ClassificationEvidence'
 import { DisconnectedState } from '../../molecules/DisconnectedState/DisconnectedState'
 import { EmptyState } from '../../molecules/EmptyState/EmptyState'
 import { LocalStatusToast } from '../../molecules/LocalStatusToast/LocalStatusToast'
+import { FilterSheet } from '../../organisms/FilterSheet/FilterSheet'
 import { MessageQueue } from '../../organisms/MessageQueue/MessageQueue'
 import { MessageReader } from '../../organisms/MessageReader/MessageReader'
 import { formatMessageBody } from '../../organisms/MessageReader/formatMessageBody'
 import { Sidebar, type SidebarItem } from '../../organisms/Sidebar/Sidebar'
 import { TopBar } from '../../organisms/TopBar/TopBar'
-import { WorkbenchTemplate } from '../../templates/WorkbenchTemplate/WorkbenchTemplate'
+import {
+  compactOnly,
+  compactQuery,
+  WorkbenchTemplate,
+} from '../../templates/WorkbenchTemplate/WorkbenchTemplate'
 import { ActionProposalAction } from './ActionProposalAction'
 import { observationIn, proposableIn, threadReadIn, type LabelOf } from './action'
 import type { BodyState } from './body'
@@ -45,7 +51,8 @@ import { ReviewAction, type CheckReview, type SaveReview } from './ReviewAction'
 import { reviewableIn } from './review'
 import { emptyScopeText, scopeText, type QueueScope } from './scope'
 import { useMessageBody } from './useMessageBody'
-import { shortcutLegend, useWorkbenchShortcuts } from './useWorkbenchShortcuts'
+import { useShortcutPreference } from './useShortcutPreference'
+import { legendFor, useWorkbenchShortcuts } from './useWorkbenchShortcuts'
 import {
   afterRemoval,
   appliedFilter,
@@ -199,6 +206,18 @@ type WorkbenchPageProps = Readonly<{
     | 'searchId'
   >
 }>
+
+/** The single-key shortcut preference of this browser, as the page reads it. */
+type Preference = ReturnType<typeof useShortcutPreference>
+
+const shortcutSetting = {
+  label: 'Single-key shortcuts',
+  /** What the current value means, so the help never only says "on" or "off". */
+  note: {
+    on: 'K, J, E and / act on their own.',
+    off: 'Letters and / do nothing here. Tab, Enter and Escape still work.',
+  },
+} as const
 
 const readerContent = '.workbench__reader [role="region"][tabindex]'
 const currentRow = '.workbench__queue [aria-current="true"]'
@@ -477,8 +496,21 @@ function useFollowCurrentRow(root: Root, openId: string | undefined) {
   }, [root, openId])
 }
 
-/** K opens the next message, J the previous one, E completes and / searches. */
-function useShortcuts(root: Root, state: PageState, complete: () => void, searchId: string) {
+type ShortcutsInput = Readonly<{
+  root: Root
+  state: PageState
+  complete: () => void
+  searchId: string
+  /** Whether the user left the single-key shortcuts on. */
+  singleKeys: boolean
+}>
+
+/**
+ * K opens the next message, J the previous one, E completes and / searches,
+ * while the user leaves them on. Turned off, the page listens for no key of
+ * one character and says so wherever it named one.
+ */
+function useShortcuts({ root, state, complete, searchId, singleKeys }: ShortcutsInput) {
   useWorkbenchShortcuts(
     {
       next: () => {
@@ -495,7 +527,7 @@ function useShortcuts(root: Root, state: PageState, complete: () => void, search
         document.getElementById(searchId)?.focus()
       },
     },
-    queueRow,
+    { actsFrom: queueRow, singleKeys },
   )
 }
 
@@ -562,14 +594,20 @@ type PageTopBarProps = Readonly<{
   state: PageState
   searchId: string
   root: Root
+  /** The `/` hint shows only while the key does something. */
+  singleKeys: boolean
+  /** The filters button, shown where the rail is hidden. */
+  filters: ReactNode
 }>
 
 /** The top bar with the page's search. Enter moves focus to the results. */
-function PageTopBar({ topBar, state, searchId, root }: PageTopBarProps) {
+function PageTopBar({ topBar, state, searchId, root, singleKeys, filters }: PageTopBarProps) {
   return (
     <TopBar
       {...topBar}
+      filters={filters}
       searchId={searchId}
+      searchShortcut={singleKeys}
       searchLabel="Search loaded mail"
       searchPlaceholder="Search loaded mail"
       searchValue={state.filter.query}
@@ -584,21 +622,94 @@ function PageTopBar({ topBar, state, searchId, root }: PageTopBarProps) {
 }
 
 type PageRailProps = Readonly<
-  { state: PageState; canComplete: boolean } & Pick<PageInput, 'workflows' | 'mailboxes'>
+  {
+    state: PageState
+    canComplete: boolean
+    /** The preference: which keys the legend lists, and what the box shows. */
+    shortcuts: Preference
+    /** Called after a choice, e.g. to close the compact filter sheet. */
+    onChoose: () => void
+  } & Pick<PageInput, 'workflows' | 'mailboxes'>
 >
 
-/** The rail with the applied filters, counts and the shortcut legend. */
-function PageRail({ state, canComplete, workflows, mailboxes }: PageRailProps) {
+/**
+ * The filters with their counts and the shortcut legend. The rail and the
+ * compact sheet use this same component and filter state.
+ */
+function PageRail({
+  state,
+  canComplete,
+  shortcuts,
+  workflows,
+  mailboxes,
+  onChoose,
+}: PageRailProps) {
   return (
     <Sidebar
       label="Filters"
       groups={railGroups({ messages: state.messages, filter: state.filter, workflows, mailboxes })}
       onSelect={(groupId, itemId) => {
         state.filterBy({ [groupId]: itemId })
+        onChoose()
       }}
-      shortcuts={
-        canComplete ? shortcutLegend : shortcutLegend.filter((item) => item.label !== 'Complete')
-      }
+      shortcuts={legendFor({ singleKeys: shortcuts.on, canComplete })}
+      shortcutSetting={{
+        label: shortcutSetting.label,
+        on: shortcuts.on,
+        note: shortcuts.on ? shortcutSetting.note.on : shortcutSetting.note.off,
+        onChange: shortcuts.choose,
+      }}
+    />
+  )
+}
+
+/**
+ * Whether the compact filter sheet is open. It closes once the rail is back,
+ * so widening the window never leaves a modal panel over the filters it
+ * stands in for, and the button that opened it is never left hidden with
+ * focus to return to.
+ */
+function useFilterSheet() {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    const compact = window.matchMedia(compactQuery)
+    const closeWhenWide = () => {
+      if (!compact.matches) setOpen(false)
+    }
+    closeWhenWide()
+    compact.addEventListener('change', closeWhenWide)
+    return () => {
+      compact.removeEventListener('change', closeWhenWide)
+    }
+  }, [open])
+  return {
+    open,
+    show: () => {
+      setOpen(true)
+    },
+    close: () => {
+      setOpen(false)
+    },
+  } as const
+}
+
+type Sheet = ReturnType<typeof useFilterSheet>
+
+/**
+ * The button that opens the filter sheet. It shows only where the rail is
+ * hidden; above that width the template takes it out of the layout and the
+ * tab order, because the rail is right there.
+ */
+function FiltersButton({ sheet }: Readonly<{ sheet: Sheet }>) {
+  return (
+    <IconButton
+      className={compactOnly}
+      icon="filter"
+      label="Filters"
+      aria-haspopup="dialog"
+      aria-expanded={sheet.open}
+      onClick={sheet.show}
     />
   )
 }
@@ -794,18 +905,34 @@ function mailboxNames(messages: readonly WorkbenchMessage[]): LabelOf {
 
 type ReaderActions = ComponentProps<typeof MessageReader>['actions']
 
-/** Complete when the page may offer it; read-only says so instead. */
-function readerActions(complete: (() => void) | undefined, guardedDone: boolean): ReaderActions {
-  return complete
-    ? { primaryAction: { label: 'Complete', icon: 'check', shortcut: 'E', onClick: complete } }
-    : guardedDone
-      ? {
-          note: {
-            title: 'Guarded Done',
-            detail: 'Use the proposal panel below to approve and run Spark Done.',
-          },
-        }
-      : { note: { title: 'Read only', detail: 'Nothing here changes your mail.' } }
+/**
+ * Complete when the page may offer it. The E hint shows only while its key
+ * acts; guarded Done remains a separate proposal.
+ */
+function readerActions(
+  complete: (() => void) | undefined,
+  singleKeys: boolean,
+  guardedDone: boolean,
+): ReaderActions {
+  if (complete) {
+    return {
+      primaryAction: {
+        label: 'Complete',
+        icon: 'check',
+        ...(singleKeys && { shortcut: 'E' }),
+        onClick: complete,
+      },
+    }
+  }
+  if (guardedDone) {
+    return {
+      note: {
+        title: 'Guarded Done',
+        detail: 'Use the proposal panel below to approve and run Spark Done.',
+      },
+    }
+  }
+  return { note: { title: 'Read only', detail: 'Nothing here changes your mail.' } }
 }
 
 type ReaderProps = PaneProps &
@@ -822,6 +949,8 @@ type ReaderProps = PaneProps &
     /** The mailbox action panel for the open row, or none when none is offered. */
     proposal: ReactNode
     guardedDone?: boolean | undefined
+    /** Whether the single-key shortcuts are on, which the E hint follows. */
+    singleKeys: boolean
   }>
 
 function Reader({
@@ -835,6 +964,7 @@ function Reader({
   review,
   proposal,
   guardedDone = false,
+  singleKeys,
 }: ReaderProps) {
   const { shown, open } = state
   if (!open) {
@@ -868,7 +998,7 @@ function Reader({
       evidence={readerEvidence(evidence, reviewed)}
       review={review}
       proposal={proposal}
-      actions={readerActions(complete, guardedDone)}
+      actions={readerActions(complete, singleKeys, guardedDone)}
     >
       <ReaderBody body={body} retry={retry} />
     </MessageReader>
@@ -883,7 +1013,8 @@ function useWorkbench(props: WorkbenchPageProps) {
   const restoreRef = useRef<Place | null>(null)
   const notice = useCompletedNotice(state, restoreRef)
   const complete = useComplete(state, notice, restoreRef)
-  useShortcuts(root, state, complete, searchId)
+  const shortcuts = useShortcutPreference()
+  useShortcuts({ root, state, complete, searchId, singleKeys: shortcuts.on })
   useKeepFocus(root, restoreRef, state, notice.message !== undefined)
   useFollowCurrentRow(root, state.open?.id)
   const { body, retry } = useMessageBody(
@@ -893,7 +1024,18 @@ function useWorkbench(props: WorkbenchPageProps) {
   )
   const reviews = useRecordedReviews(props.review)
   const evidence = evidenceIn(props.classifications, state.open?.id, body, reviews.recorded)
-  return { state, searchId, root, notice, complete, body, retry, evidence, reviews } as const
+  return {
+    state,
+    searchId,
+    root,
+    notice,
+    complete,
+    body,
+    retry,
+    evidence,
+    reviews,
+    shortcuts,
+  } as const
 }
 
 /**
@@ -904,13 +1046,24 @@ function useWorkbench(props: WorkbenchPageProps) {
  * which message is open, the mobile pane, focus on pane switches, and the
  * K (next), J (previous), E and / shortcuts shown in the rail and search
  * field. The keys do nothing on a field, button, checkbox or link, except
- * the queue's rows, nor with Ctrl, Alt or Cmd. It also owns the
- * Completed notice with its optional Undo. The caller owns the data: it
+ * the queue's rows, nor with Ctrl, Alt or Cmd. The rail's Single-key
+ * shortcuts box turns them off for this browser: then no key of one
+ * character acts, nothing claims one, and Tab, Enter and Escape are all the
+ * page needs. That choice is kept in local storage, without any mail, and
+ * the rail opens in the Filters sheet at narrow widths. It also owns
+ * the Completed notice with its optional Undo. The caller owns the data: it
  * passes the messages without bodies, a loader for one body at a time, and
  * decides whether Complete is offered and what it and Undo do. The page
  * asks only for the open message's body, shows its loading, missing and
  * failed states, and changes no mail. Give it a bounded parent such as a
  * `100dvh` root.
+ *
+ * Where the layout hides the rail, the same filters are one button away in
+ * the top bar: it opens a modal sheet holding that very rail, so there is one
+ * filter model and one set of counts at every width. Choosing there applies
+ * the filter, closes the sheet and shows the queue; the open message, the
+ * back navigation and the search stay as they were. Escape, the close button
+ * and the backdrop close it, and focus returns to the button that opened it.
  *
  * Passing `classifications` shows what triage stored about each row: a state
  * badge and category on the row, and the evidence behind it under the reader
@@ -940,22 +1093,50 @@ function useWorkbench(props: WorkbenchPageProps) {
  */
 export function WorkbenchPage(props: WorkbenchPageProps) {
   const { workflows, mailboxes, completion } = props
-  const { state, searchId, root, notice, complete, body, retry, evidence, reviews } =
+  const { state, searchId, root, notice, complete, body, retry, evidence, reviews, shortcuts } =
     useWorkbench(props)
+  const sheet = useFilterSheet()
   const title = workflows.find((item) => item.id === state.filter.workflow)?.label ?? ''
   const canComplete = completion.mode === 'enabled'
+  const closeSheet = () => {
+    sheet.close()
+    if (window.matchMedia(compactQuery).matches) return
+    const rail = root.current?.querySelector<HTMLElement>('.workbench__sidebar')
+    const active = rail?.querySelector<HTMLElement>('button[aria-pressed="true"]')
+    const focusTarget = active ?? rail?.querySelector<HTMLElement>('button')
+    focusTarget?.focus()
+  }
+  // Both places use the same filter state and rail props. Only one is
+  // reachable at a given width.
+  const rail = (
+    <PageRail
+      state={state}
+      canComplete={canComplete}
+      shortcuts={shortcuts}
+      workflows={workflows}
+      mailboxes={mailboxes}
+      onChoose={sheet.close}
+    />
+  )
   return (
     <div ref={root} className="workbench-page">
       <WorkbenchTemplate
         mobilePane={state.pane}
-        topBar={<PageTopBar topBar={props.topBar} state={state} searchId={searchId} root={root} />}
-        sidebar={
-          <PageRail
+        topBar={
+          <PageTopBar
+            topBar={props.topBar}
             state={state}
-            canComplete={canComplete}
-            workflows={workflows}
-            mailboxes={mailboxes}
+            searchId={searchId}
+            root={root}
+            singleKeys={shortcuts.on}
+            filters={<FiltersButton sheet={sheet} />}
           />
+        }
+        sidebar={rail}
+        filters={
+          <FilterSheet label="Filters" open={sheet.open} onClose={closeSheet}>
+            {rail}
+          </FilterSheet>
         }
         queue={
           <Queue
@@ -975,6 +1156,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             retry={retry}
             evidence={evidence.open}
             reviewed={evidence.openReview}
+            singleKeys={shortcuts.on}
             review={readerReview(
               reviews.save,
               reviews.resolve,
