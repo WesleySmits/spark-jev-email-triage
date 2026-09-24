@@ -33,6 +33,22 @@ describe('Spark commands', () => {
         'Support@Example.com:Inbox',
       ],
     ],
+    [
+      emailsCommand('Support@Example.com', 10, 2, 'is:unread'),
+      [
+        'emails',
+        '--filter',
+        'is:unread',
+        '--page-size',
+        '10',
+        '--page',
+        '2',
+        '--order',
+        'descending',
+        '--',
+        'Support@Example.com:Inbox',
+      ],
+    ],
     [threadCommand('1001'), ['thread', '--', '1001']],
   ])('builds the argument vector for %o', (command, expected) => {
     expect(sparkArguments(command)).toEqual(expected)

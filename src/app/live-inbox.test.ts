@@ -37,6 +37,17 @@ describe('bodyRequestSchema', () => {
 })
 
 describe('liveBodyLoader', () => {
+  it('carries the selected pages for a cold server recheck', async () => {
+    const fetchBody = vi.fn(() => Promise.resolve(null))
+    const row = summary('31', 'one@mail.example')
+    await liveBodyLoader([row], fetchBody, { view: 'unread', pages: 2 })(row.id, {
+      signal: new AbortController().signal,
+    })
+    expect(fetchBody).toHaveBeenCalledWith(
+      { mailbox: 'one@mail.example', id: '31', selection: { view: 'unread', pages: 2 } },
+      expect.any(AbortSignal),
+    )
+  })
   const messages = [
     summary('11', 'one@mail.example'),
     summary('21', 'two@mail.example'),

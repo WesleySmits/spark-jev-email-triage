@@ -17,7 +17,12 @@
  */
 import type { DeskReviewOutcome, DeskReviewReadback, DeskReviewRequest } from './desk-review'
 import type { BodyLoader } from './inbox'
-import { liveBodyLoader, liveWorkflows, type ClassifiedInbox } from './live-inbox'
+import {
+  liveBodyLoader,
+  liveWorkflows,
+  type ClassifiedInbox,
+  type InboxListRequest,
+} from './live-inbox'
 import { getLiveBody, getLiveInbox } from './live-inbox.functions'
 import type { ConnectionReason } from './reconnect'
 import { checkReview, saveReview } from './review.functions'
@@ -57,8 +62,10 @@ export const ReviewDesk = {
    * stored judgment is unclassified, and judgments that cannot be read are
    * reported as unavailable rather than as absent.
    */
-  open: (): Promise<DeskView> =>
-    getLiveInbox().catch(() => ({ status: 'unavailable', reason: 'unreachable' }) as const),
+  open: (request: InboxListRequest = { view: 'unread', pages: 1 }): Promise<DeskView> =>
+    getLiveInbox({ data: request }).catch(
+      () => ({ status: 'unavailable', reason: 'unreachable' }) as const,
+    ),
 
   /**
    * Reads the body of one row of `view`, lazily: only when that row opens,
@@ -74,7 +81,11 @@ export const ReviewDesk = {
    * never holds up the body.
    */
   focus: (view: DeskView): BodyLoader =>
-    liveBodyLoader(rowsOf(view), (data, signal) => getLiveBody({ data, signal })),
+    liveBodyLoader(
+      rowsOf(view),
+      (data, signal) => getLiveBody({ data, signal }),
+      view.status === 'ready' ? { view: view.scope.view, pages: view.scope.pages } : undefined,
+    ),
 
   /**
    * Whether Spark answers now, while the page waits for it. The answer holds

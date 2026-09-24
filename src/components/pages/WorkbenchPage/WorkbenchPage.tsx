@@ -159,6 +159,8 @@ type WorkbenchPageProps = Readonly<{
    * reach and the page claims none.
    */
   scope?: QueueScope | undefined
+  /** Optional controls inside the queue header, below the loaded scope. */
+  queueControls?: ReactNode
   /**
    * What triage stored about the rows of one reading, and which reading that
    * was. A row with an entry shows that state instead of its own status and,
@@ -591,6 +593,7 @@ function CompletedNotice({ notice, state, note, onUndoComplete }: CompletedNotic
 
 type PageTopBarProps = Readonly<{
   topBar: WorkbenchPageProps['topBar']
+  searchScope?: string | undefined
   state: PageState
   searchId: string
   root: Root
@@ -601,15 +604,23 @@ type PageTopBarProps = Readonly<{
 }>
 
 /** The top bar with the page's search. Enter moves focus to the results. */
-function PageTopBar({ topBar, state, searchId, root, singleKeys, filters }: PageTopBarProps) {
+function PageTopBar({
+  topBar,
+  searchScope,
+  state,
+  searchId,
+  root,
+  singleKeys,
+  filters,
+}: PageTopBarProps) {
   return (
     <TopBar
       {...topBar}
       filters={filters}
       searchId={searchId}
       searchShortcut={singleKeys}
-      searchLabel="Search loaded mail"
-      searchPlaceholder="Search loaded mail"
+      searchLabel={`Search loaded ${searchScope ?? 'mail'}`}
+      searchPlaceholder={`Search loaded ${searchScope ?? 'mail'}`}
       searchValue={state.filter.query}
       onSearchChange={(query) => {
         state.filterBy({ query })
@@ -718,7 +729,7 @@ type PaneProps = Readonly<{ state: PageState; title: string }>
 
 type QueueProps = PaneProps &
   Pick<PageInput, 'mailboxes'> &
-  Readonly<{ evidence: Evidence; scope: QueueScope | undefined }>
+  Readonly<{ evidence: Evidence; scope: QueueScope | undefined; controls?: ReactNode }>
 
 /**
  * The queue, headed by the workflow, the applied mailbox filter and what the
@@ -726,7 +737,7 @@ type QueueProps = PaneProps &
  * mailbox, and the scope line under it says so. The queue header shows in
  * the mobile queue pane too, so that line is not desktop-only.
  */
-function Queue({ state, title, mailboxes, evidence, scope }: QueueProps) {
+function Queue({ state, title, mailboxes, evidence, scope, controls }: QueueProps) {
   const count = state.shown.length
   // Nothing loaded is not a filter that matched nothing, so Reset is offered
   // only where resetting could bring a row back.
@@ -739,6 +750,7 @@ function Queue({ state, title, mailboxes, evidence, scope }: QueueProps) {
         count: `${String(count)} ${count === 1 ? 'result' : 'results'}`,
         context: mailboxLabel(state.filter.mailbox, mailboxes),
         ...(scope && { scope: scopeText(scope) }),
+        controls,
       }}
       messages={queueRows(state.shown, evidence)}
       currentId={state.open?.id}
@@ -1038,6 +1050,22 @@ function useWorkbench(props: WorkbenchPageProps) {
   } as const
 }
 
+function queueTitle(
+  scope: QueueScope | undefined,
+  workflows: readonly SidebarItem[],
+  workflow: string,
+) {
+  if (scope?.view === 'unread') return 'Unread'
+  if (scope?.view === 'other') return 'Other Inbox'
+  return workflows.find((item) => item.id === workflow)?.label ?? ''
+}
+
+function searchScopeFor(scope: QueueScope | undefined) {
+  if (scope?.view === 'unread') return 'unread messages'
+  if (scope?.view === 'other') return 'other Inbox messages'
+  return undefined
+}
+
 /**
  * The triage workbench: the Compact workbench template filled with the rail,
  * search, queue and reader, and the state that ties them together.
@@ -1096,7 +1124,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   const { state, searchId, root, notice, complete, body, retry, evidence, reviews, shortcuts } =
     useWorkbench(props)
   const sheet = useFilterSheet()
-  const title = workflows.find((item) => item.id === state.filter.workflow)?.label ?? ''
+  const title = queueTitle(props.scope, workflows, state.filter.workflow)
   const canComplete = completion.mode === 'enabled'
   const closeSheet = () => {
     sheet.close()
@@ -1125,6 +1153,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
         topBar={
           <PageTopBar
             topBar={props.topBar}
+            searchScope={searchScopeFor(props.scope)}
             state={state}
             searchId={searchId}
             root={root}
@@ -1145,6 +1174,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             mailboxes={mailboxes}
             evidence={evidence}
             scope={props.scope}
+            controls={props.queueControls}
           />
         }
         reader={

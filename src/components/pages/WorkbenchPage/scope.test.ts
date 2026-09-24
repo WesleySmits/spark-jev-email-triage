@@ -44,6 +44,40 @@ const ofThree = (failing: readonly string[]): QueueScope => {
 }
 
 describe('scopeText', () => {
+  it('names the loaded unread subset and keeps Inbox Zero separate', () => {
+    const text = scopeText(scope({ view: 'unread', pages: 1, loaded: 0, bounded: true }))
+    expect(text.summary).toBe('Loaded: 0 unread messages from 1 mailbox')
+    expect(text.detail).toContain('Search and filters cover only loaded unread messages.')
+    expect(text.detail).toContain('Read messages still in the Inbox count toward Inbox Zero.')
+    expect(emptyScopeText(scope({ view: 'unread', pages: 1, loaded: 0 })).title).toBe(
+      'No unread messages loaded',
+    )
+    expect(emptyScopeText(scope({ view: 'unread', pages: 1, loaded: 0 })).description).toContain(
+      'not an Inbox Zero confirmation',
+    )
+  })
+
+  it('names the separately loaded other Inbox and provider page limit', () => {
+    const text = scopeText(scope({ view: 'other', pages: 20, bounded: true }))
+    expect(text.summary).toContain('other Inbox messages')
+    expect(text.detail).toContain("Spark's page limit")
+    expect(syncScopeLabel(scope({ view: 'other', pages: 1 }))).toContain('Loaded other Inbox')
+  })
+
+  it('keeps a later page failure distinct from a mailbox that yielded no rows', () => {
+    const text = scopeText(
+      scope({
+        view: 'unread',
+        pages: 2,
+        incomplete: [{ id: 'one@mail.example', label: 'one@mail.example', reason: 'failed' }],
+        bounded: true,
+      }),
+    )
+    expect(text.unread).toContain('Earlier pages remain visible')
+    expect(text.unread).toContain('one@mail.example')
+    expect(text.summary).toContain('4 unread messages')
+  })
+
   it('counts what is loaded and says nothing was cut when no bound applied', () => {
     const text = scopeText(scope())
 
