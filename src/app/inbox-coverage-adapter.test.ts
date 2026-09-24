@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { InboxScope } from './live-inbox'
-import { coverageFromInboxScope } from './inbox-coverage-adapter'
+import { coverageFromInboxScope, readWithCoverage } from './inbox-coverage-adapter'
 
 const scope = (change: Partial<InboxScope> = {}): InboxScope => ({
   view: 'unread',
@@ -54,6 +54,27 @@ describe('coverageFromInboxScope', () => {
       result: 'incomplete',
       reasons: ['more-pages', 'mailbox-errors'],
       incomplete: [failure],
+    })
+  })
+})
+
+describe('readWithCoverage', () => {
+  it('turns a thrown read into failed coverage for the requested view', async () => {
+    const result = await readWithCoverage(
+      'other',
+      '2026-09-24T09:42:00.000Z',
+      () => Promise.reject(new Error('transport dropped before a promise result')),
+      () => coverageFromInboxScope(scope({ view: 'other' })),
+      () => '2026-09-24T09:44:00.000Z',
+    )
+
+    expect(result.status).toBe('failed')
+    expect(result.update).toMatchObject({
+      view: 'other',
+      result: 'failed',
+      reasons: ['provider-failure'],
+      startedAt: '2026-09-24T09:42:00.000Z',
+      finishedAt: '2026-09-24T09:44:00.000Z',
     })
   })
 })
