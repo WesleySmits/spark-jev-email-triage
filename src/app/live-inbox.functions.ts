@@ -5,7 +5,7 @@
 import { createServerFn } from '@tanstack/react-start'
 import { getRequest, getRequestIP, setResponseHeaders } from '@tanstack/react-start/server'
 import { z } from 'zod'
-import { bodyRequestSchema, maxInboxPages, type ClassifiedInbox } from './live-inbox'
+import { bodyRequestSchema, type ClassifiedInbox } from './live-inbox'
 import { BodyUnavailableError, isLoopback } from './live-inbox.server'
 import { deskReading } from './review-desk.server'
 import { sparkInbox } from './spark-inbox.server'
@@ -26,9 +26,7 @@ function mailRequest() {
  * called, so refreshing the page classifies nothing.
  */
 export const getLiveInbox = createServerFn({ method: 'GET' })
-  .validator(
-    z.object({ view: z.enum(['unread', 'other']), pages: z.int().min(1).max(maxInboxPages) }),
-  )
+  .validator(z.strictObject({ view: z.enum(['unread', 'other']), cursor: z.uuid().optional() }))
   .handler(async ({ data }): Promise<ClassifiedInbox> => {
     const { allowed, signal } = mailRequest()
     if (!allowed) return { status: 'unavailable', reason: 'local-only' }

@@ -13,7 +13,8 @@ confirmation.
 
 The inbox starts with the ten newest unread messages from every readable
 mailbox, sorted newest first. "Load older" adds another ten-message page per
-mailbox, up to twenty pages. "Other Inbox" reads the same bounded set for
+mailbox that still has more, with no application page ceiling. Completed pages
+are retained rather than requested again. "Other Inbox" reads the same bounded set for
 messages Spark reports as read. Search and mailbox filtering operate on the
 selected view's loaded rows. A failure is isolated to the mailbox and page it
 happened in: mailboxes that answered are still delivered, and completed pages
@@ -228,7 +229,9 @@ pnpm readback:spark                      # whether Spark answers on this host
   returns strict summaries without a body, newest first. A mailbox whose first
   page fails is recorded in the reading's scope and costs only its own rows; a
   later-page failure keeps completed pages and is recorded as incomplete. The
-  remaining mailboxes are still listed, still one call at a time.
+  remaining mailboxes are still listed, still one call at a time. An opaque,
+  single-step continuation advances each still-bounded mailbox once, so a
+  replay cannot skip pages or start an unbounded provider loop.
   An app server that doesn't answer is reported as `unreachable`, not as an
   error. Opening a
   message calls `getLiveBody` for that message only; it returns that

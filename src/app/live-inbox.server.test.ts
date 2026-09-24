@@ -185,6 +185,7 @@ describe('createLiveInbox list', () => {
     expect(result.messages[0]).toEqual({
       id: copy(two, '21'),
       messageId: '21',
+      sourcePage: 1,
       workflow: 'inbox',
       mailbox: two,
       sender: 'Sample Sender',
@@ -195,6 +196,7 @@ describe('createLiveInbox list', () => {
       snippet: '',
       account: { marker: 'atelier', label: two },
       status: { label: 'Not triaged', tone: 'neutral' },
+      unread: true,
     })
     expect(result.messages.find((message) => message.messageId === '22')).toMatchObject({
       sender: 'Sender unavailable',
@@ -232,7 +234,7 @@ describe('createLiveInbox list', () => {
   it('is ready and empty when no mailbox is readable', async () => {
     const { live, calls } = inbox({ mailboxes: [access(one, false)] })
 
-    await expect(live.list()).resolves.toEqual({
+    await expect(live.list()).resolves.toMatchObject({
       status: 'ready',
       scope: {
         view: 'unread',
@@ -492,11 +494,11 @@ describe('createLiveInbox body', () => {
     const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
 
     await expect(
-      live.body({ mailbox: one, id: '31', selection: { view: 'unread', pages: 2 } }),
+      live.body({ mailbox: one, id: '31', selection: { view: 'unread', page: 2 } }),
     ).resolves.toMatchObject({ text: 'Older unread' })
-    expect(requests).toEqual([1, 2])
+    expect(requests).toEqual([2])
     await expect(
-      live.body({ mailbox: one, id: '99', selection: { view: 'unread', pages: 2 } }),
+      live.body({ mailbox: one, id: '99', selection: { view: 'unread', page: 2 } }),
     ).rejects.toThrow(BodyUnavailableError)
   })
 
@@ -659,7 +661,7 @@ describe('createLiveInbox scope', () => {
     const result = await live.list()
     if (result.status !== 'ready') throw new Error('Expected a list')
 
-    expect(result.scope).toEqual({
+    expect(result.scope).toMatchObject({
       view: 'unread',
       pages: 1,
       mailboxes: [
@@ -715,7 +717,7 @@ describe('createLiveInbox scope', () => {
     ])
 
     requests.length = 0
-    const older = await live.list(undefined, { view: 'unread', pages: 2 })
+    const older = await live.list(undefined, { view: 'unread', cursor: first.scope.cursor })
     if (older.status !== 'ready') throw new Error('Expected older unread list')
     expect(older.scope).toMatchObject({
       view: 'unread',
@@ -724,13 +726,11 @@ describe('createLiveInbox scope', () => {
       bounded: false,
     })
     expect(requests.map(({ mailboxId, page, filter }) => [mailboxId, page, filter])).toEqual([
-      [one, 1, 'is:unread'],
       [one, 2, 'is:unread'],
-      [two, 1, 'is:unread'],
     ])
 
     requests.length = 0
-    const other = await live.list(undefined, { view: 'other', pages: 1 })
+    const other = await live.list(undefined, { view: 'other' })
     if (other.status !== 'ready') throw new Error('Expected other Inbox list')
     expect(other.scope).toMatchObject({ view: 'other', loaded: 0, readable: 2 })
     expect(requests.every(({ filter }) => filter === 'is:read')).toBe(true)
@@ -752,10 +752,10 @@ describe('createLiveInbox scope', () => {
       },
       readThread: () => Promise.resolve(thread([])),
     }
-    const result = await createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now }).list(
-      undefined,
-      { view: 'unread', pages: 2 },
-    )
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+    const first = await live.list()
+    if (first.status !== 'ready') throw new Error('Expected a first page')
+    const result = await live.list(undefined, { view: 'unread', cursor: first.scope.cursor })
     if (result.status !== 'ready') throw new Error('Expected a partial list')
     expect(result.messages).toHaveLength(perMailbox + 1)
     expect(result.scope.failed).toEqual([])
@@ -764,6 +764,59 @@ describe('createLiveInbox scope', () => {
       loaded: perMailbox,
       bounded: true,
     })
+  })
+
+  it('continues beyond page twenty without rereading completed pages', async () => {
+    const pages: number[] = []
+    const reader: MailReader = {
+      listMailboxes: () => Promise.resolve([access(one)]),
+      listRecentEmails: ({ page = 1 }) => {
+        pages.push(page)
+        return Promise.resolve(
+          Array.from({ length: perMailbox }, (_, index) =>
+            listing(one, String(page * 100 + index + 1), null),
+          ),
+        )
+      },
+      readThread: () => Promise.resolve(thread([])),
+    }
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+    let result = await live.list()
+    for (let page = 2; page <= 21; page += 1) {
+      if (result.status !== 'ready') throw new Error('Expected a paged list')
+      result = await live.list(undefined, { view: 'unread', cursor: result.scope.cursor })
+    }
+    if (result.status !== 'ready') throw new Error('Expected page twenty-one')
+
+    expect(result.scope.pages).toBe(21)
+    expect(pages).toEqual(Array.from({ length: 21 }, (_, index) => index + 1))
+  })
+
+  it('does not advance twice when a continuation cursor is replayed', async () => {
+    const pages: number[] = []
+    const reader: MailReader = {
+      listMailboxes: () => Promise.resolve([access(one)]),
+      listRecentEmails: ({ page = 1 }) => {
+        pages.push(page)
+        return Promise.resolve(
+          Array.from({ length: perMailbox }, (_, index) =>
+            listing(one, String(page * 100 + index + 1), null),
+          ),
+        )
+      },
+      readThread: () => Promise.resolve(thread([])),
+    }
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+    const first = await live.list()
+    if (first.status !== 'ready') throw new Error('Expected a first page')
+    const cursor = first.scope.cursor
+    const second = await live.list(undefined, { view: 'unread', cursor })
+    const replay = await live.list(undefined, { view: 'unread', cursor })
+    if (second.status !== 'ready' || replay.status !== 'ready') throw new Error('Expected lists')
+
+    expect(second.scope.pages).toBe(2)
+    expect(replay.scope.pages).toBe(2)
+    expect(pages).toEqual([1, 2])
   })
 
   it('reports a mailbox as bounded when its listing came back at the bound', async () => {

@@ -13,8 +13,10 @@ The default is `.data/shadow-triage.sqlite`; `--db` selects the CLI path and
 
 The root inbox starts with one ten-message page of unread mail from every
 readable mailbox. A person can load older unread pages or switch to the same
-bounded reading of read Inbox mail ("Other Inbox"), up to twenty pages per
-mailbox. Each reading carries an inbox scope: selected view, requested pages,
+bounded reading of read Inbox mail ("Other Inbox"). Each continuation reads at
+most one new page for each mailbox that may still have more; there is no fixed
+application page ceiling and completed pages are not requested again. Each
+reading carries an inbox scope: selected view, completed pages,
 loaded mailbox counts, first-page failures, later-page incomplete reads,
 readable mailboxes offered, whether another page may exist, and when the
 reading finished. The queue states that scope on desktop and mobile, so a
