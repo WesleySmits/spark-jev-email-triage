@@ -7,7 +7,12 @@ export type CoverageView = 'unread' | 'other'
 export type CoverageResult = 'complete' | 'incomplete' | 'failed'
 export type ZeroResult = 'confirmed' | 'not-confirmed' | 'unknown'
 export type CoverageReason =
-  'not-scanned' | 'more-pages' | 'mailbox-errors' | 'count-mismatch' | 'provider-failure'
+  | 'not-scanned'
+  | 'more-pages'
+  | 'mailbox-errors'
+  | 'mailbox-scope'
+  | 'count-mismatch'
+  | 'provider-failure'
 
 export interface CoverageFailure {
   id: string
@@ -113,12 +118,18 @@ export function viewCoverage(scope: CoverageScopeInput): InboxViewCoverage {
   }))
   const hasErrors = scope.failed.length > 0 || (scope.incomplete?.length ?? 0) > 0
   const hasMorePages = scope.bounded || scope.mailboxes.some(({ bounded }) => bounded)
+  const mailboxIds = new Set(scope.mailboxes.map(({ id }) => id))
+  const mailboxScopeMismatch =
+    scope.mailboxes.length !== scope.readable || mailboxIds.size !== scope.readable
   const mailboxLoaded = scope.mailboxes.reduce((total, mailbox) => total + mailbox.loaded, 0)
   const countMismatch = mailboxLoaded !== scope.loaded
-  const result = aggregateResult(mailboxes, hasErrors || hasMorePages || countMismatch)
+  const result = mailboxScopeMismatch
+    ? 'incomplete'
+    : aggregateResult(mailboxes, hasErrors || hasMorePages || countMismatch)
   const reasons = [
     ...(hasMorePages ? (['more-pages'] as const) : []),
     ...(hasErrors ? (['mailbox-errors'] as const) : []),
+    ...(mailboxScopeMismatch ? (['mailbox-scope'] as const) : []),
     ...(countMismatch ? (['count-mismatch'] as const) : []),
   ]
   return {
