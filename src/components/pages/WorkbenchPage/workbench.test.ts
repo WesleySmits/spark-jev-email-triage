@@ -95,7 +95,7 @@ describe('visibleMessages', () => {
 })
 
 describe('railGroups', () => {
-  it('marks the applied filters and adds All accounts first', () => {
+  it('marks the applied filters and adds the loaded-mailboxes filter first', () => {
     const [workflow, mailbox] = railGroups({
       messages,
       filter: filter({ mailbox: 'studio' }),
@@ -107,7 +107,7 @@ describe('railGroups', () => {
     expect(mailbox?.items[0]).toEqual({
       id: allMailboxes,
       icon: 'inbox',
-      label: 'All accounts',
+      label: 'All loaded',
       count: 3,
     })
   })
@@ -125,9 +125,9 @@ describe('railGroups', () => {
 })
 
 describe('mailboxLabel', () => {
-  it('names the applied mailbox, or All accounts', () => {
+  it('names the applied mailbox, or every loaded mailbox', () => {
     expect(mailboxLabel('atelier', mailboxes)).toBe('Atelier Linden')
-    expect(mailboxLabel(allMailboxes, mailboxes)).toBe('All accounts')
+    expect(mailboxLabel(allMailboxes, mailboxes)).toBe('All loaded mailboxes')
   })
 })
 

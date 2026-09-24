@@ -16,6 +16,7 @@ const meta = {
     headingLevel: { control: 'inline-radio', options: [1, 2, 3] },
     count: { control: 'text' },
     context: { control: 'text' },
+    scope: { control: 'object' },
     titleId: { control: false },
     className: { control: false },
   },
@@ -50,6 +51,50 @@ export const DisabledAction: Story = {
 
 /** Without a context line. */
 export const TitleAndCount: Story = { args: { context: undefined } }
+
+/**
+ * A bounded reading: the count is of loaded rows, and the marked scope line
+ * says what was left out, so nothing reads as a whole mailbox.
+ */
+export const BoundedScope: Story = {
+  args: {
+    title: 'Recent mail',
+    count: '50 results',
+    scope: {
+      summary: 'Loaded: 50 recent messages from 5 of 7 readable mailboxes',
+      detail:
+        '2 readable mailboxes were not read at all, so even the newest mail in them is missing (at most 5 mailboxes). Older mail was left out of 5 loaded mailboxes (at most 10 recent Inbox messages each). Search and filters cover only loaded mail.',
+      refreshed: { label: 'Last refreshed 09:42.', dateTime: '2026-09-24T07:42:00.000Z' },
+      bounded: true,
+    },
+    action: { label: 'Refresh', onClick: fn() },
+  },
+}
+
+/** A reading no bound cut. It still says only what it loaded. */
+export const UnboundedScope: Story = {
+  args: {
+    ...BoundedScope.args,
+    count: '7 results',
+    scope: {
+      summary: 'Loaded: 7 recent messages from 2 mailboxes',
+      detail:
+        'Every readable mailbox was loaded and none reached the 10 recent Inbox messages bound, so nothing was cut. Search and filters cover only loaded mail.',
+      refreshed: { label: 'Last refreshed 09:42.', dateTime: '2026-09-24T07:42:00.000Z' },
+      bounded: false,
+    },
+  },
+}
+
+/** The scope line at a phone-width column: it wraps instead of being cut. */
+export const ScopeOnMobile: Story = {
+  args: { ...BoundedScope.args },
+  render: (args) => (
+    <div style={{ width: 320 }}>
+      <QueueHeader {...args} />
+    </div>
+  ),
+}
 
 /** The source's Dutch copy. */
 export const Dutch: Story = {

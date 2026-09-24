@@ -17,7 +17,7 @@ import type { ObservedThread, StoredClassification } from '../domain/stored-clas
 import type { RowReview } from './desk-review'
 import { SparkError } from '../spark/errors'
 import { inboxSummarySchema, messageBodySchema, type InboxSummary, type MessageBody } from './inbox'
-import type { BodyRequest, LiveInbox } from './live-inbox'
+import type { BodyRequest, InboxScope, LiveInbox } from './live-inbox'
 
 type Listing = z.infer<typeof emailListingSchema>
 type Thread = z.infer<typeof threadSchema>
@@ -94,18 +94,20 @@ export function createLiveInbox({
     const read = ++reads
     offered = new Set()
     try {
-      const mailboxes = (await reader.listMailboxes(options))
-        .filter((access) => access.canRead)
-        .slice(0, maxMailboxes)
-        .map(({ mailbox }, index) => ({
-          id: mailbox.id,
-          account: markerAt(index),
-          label: mailbox.address,
-        }))
+      const readable = (await reader.listMailboxes(options)).filter((access) => access.canRead)
+      const mailboxes = readable.slice(0, maxMailboxes).map(({ mailbox }, index) => ({
+        id: mailbox.id,
+        account: markerAt(index),
+        label: mailbox.address,
+      }))
       const listed: Listed[] = []
+      // Whether a mailbox gave back as many messages as it was asked for, so
+      // the bound may have cut it. Counted per mailbox, before anything drops.
+      const atLimit = new Map<string, boolean>()
       for (const mailbox of mailboxes) {
         const request = { mailboxId: mailbox.id, limit: perMailbox }
         const listings = await reader.listRecentEmails(request, options)
+        atLimit.set(mailbox.id, listings.length >= perMailbox)
         listed.push(...listings.map((listing) => ({ listing, mailbox })))
       }
       const at = now()
@@ -113,7 +115,8 @@ export function createLiveInbox({
         summarize(listing, mailbox, format.listed(listing.date, at)),
       )
       if (read === reads) offered = new Set(messages.map((message) => message.id))
-      return { status: 'ready', readAt: format.clock(at), mailboxes, messages }
+      const scope = scopeOf({ mailboxes, messages, readable: readable.length, atLimit, at, format })
+      return { status: 'ready', scope, mailboxes, messages }
     } catch (error) {
       return { status: 'unavailable', reason: reasonFor(error) }
     }
@@ -176,6 +179,41 @@ function evidence(verify: LiveInboxOptions['verify'], observed: ObservedThread) 
 }
 
 const markerAt = (index: number): Marker => markers[index % markers.length] ?? 'studio'
+
+type ScopeInput = Readonly<{
+  mailboxes: readonly ShownMailbox[]
+  messages: readonly InboxSummary[]
+  /** Readable mailboxes the provider offered, before the mailbox bound. */
+  readable: number
+  /** Per mailbox: whether its listing came back at the per-mailbox bound. */
+  atLimit: ReadonlyMap<string, boolean>
+  at: Date
+  format: ReturnType<typeof timeFormats>
+}>
+
+/**
+ * What this reading holds, counted from the rows it kept. A mailbox copy is
+ * one row, so one message delivered to a primary address and an alias counts
+ * in both mailboxes: nothing here merges copies to make a figure smaller.
+ */
+function scopeOf({ mailboxes, messages, readable, atLimit, at, format }: ScopeInput): InboxScope {
+  const scoped = mailboxes.map((mailbox) => ({
+    id: mailbox.id,
+    label: mailbox.label,
+    loaded: messages.filter((message) => message.mailbox === mailbox.id).length,
+    bounded: atLimit.get(mailbox.id) ?? false,
+  }))
+  return {
+    mailboxes: scoped,
+    readable,
+    mailboxLimit: maxMailboxes,
+    messageLimit: perMailbox,
+    loaded: messages.length,
+    bounded: readable > maxMailboxes || scoped.some((mailbox) => mailbox.bounded),
+    readAt: format.clock(at),
+    refreshedAt: at.toISOString(),
+  }
+}
 
 type ShownMailbox = Readonly<{ id: string; account: Marker; label: string }>
 /** A listing with the mailbox it was listed in. */

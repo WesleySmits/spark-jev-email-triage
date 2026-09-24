@@ -18,6 +18,22 @@ mailbox listing currently makes the whole inbox unavailable. Copies in
 different mailboxes remain distinct even when message ids, subjects or
 contents match.
 
+That reach is stated on the page rather than left to be inferred. Every
+reading carries a scope: the mailboxes it listed with their counts, how
+many readable mailboxes the provider offered, the two bounds, and when the
+last successful refresh finished. The queue header shows it under the title
+in both the desktop and the mobile queue pane, marked when a bound may have
+cut the reading. The figures are counted from the rows that were kept, never
+estimated: a mailbox whose listing came back full is reported as possibly
+cut, because a full listing only proves more was never asked for. The two
+bounds are stated apart, because they leave out different mail: a mailbox
+the mailbox bound never reached is missing whole, newest mail included,
+while the per-mailbox bound only cuts off older mail in a mailbox that was
+read. The
+mailbox filter is named "All loaded", the search says it searches loaded
+mail, and a reading that loaded nothing reads differently from a filter that
+matched nothing.
+
 Supported: reading mail, refreshing, opening one body, viewing stored triage,
 and confirming or correcting its category locally. Classification starts
 through `pnpm shadow --mailbox <mailbox> --apply`, not from the UI; it sends

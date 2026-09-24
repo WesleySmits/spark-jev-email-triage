@@ -10,7 +10,11 @@ The default is `.data/shadow-triage.sqlite`; `--db` selects the CLI path and
 `SHADOW_DATABASE_PATH` selects the app path.
 
 The root inbox is bounded to five readable mailboxes and ten recent Inbox
-messages each, without pagination. Classifying is a CLI workflow; the app
+messages each, without pagination. Those bounds are visible: each reading
+carries an inbox scope (loaded mailboxes and counts, readable mailboxes
+offered, both bounds, and the last successful refresh) that the queue header
+states on desktop and mobile, so a bounded selection never reads as a whole
+mailbox. Classifying is a CLI workflow; the app
 only reads existing judgments and saves reviews. It shows a raw category
 "Model score", which is not calibrated certainty. Reviews currently decide
 category, not reply expectations or deadlines; the UI retains priority but
@@ -28,6 +32,15 @@ root route or shadow command on `main`.
 ## Mailbox
 
 A Spark account or shared inbox that the application may read.
+
+## Inbox scope
+
+What one reading of the inbox holds and what bounded it: the mailboxes it
+listed with their loaded counts, how many readable mailboxes the provider
+offered before the mailbox bound, both bounds, and when that reading
+finished. Every figure is counted from the rows that were kept, so a scope
+describes a reading and never a mailbox. Mailbox copies are counted
+separately, so one delivery to a primary address and an alias counts in both.
 
 ## Mailbox copy
 

@@ -58,10 +58,50 @@ describe('QueueHeader', () => {
     })
   })
 
-  it('leaves out the context and the action when not given', () => {
+  it('leaves out the context, the scope line and the action when not given', () => {
     const { all, byClass } = render({ className: 'extra' })
     expect(byClass('queue-header__context')).toBeUndefined()
+    expect(byClass('queue-header__scope')).toBeUndefined()
     expect(all.some((element) => element.type === Button)).toBe(false)
+  })
+
+  it('shows the scope summary and detail under the context', () => {
+    const { byClass } = render({
+      scope: {
+        summary: 'Loaded: 50 recent messages',
+        detail: 'Older mail was left out of 1 loaded mailbox.',
+        refreshed: { label: 'Last refreshed 09:42.', dateTime: '2026-09-24T07:42:00.000Z' },
+        bounded: false,
+      },
+    })
+    const scope = byClass('queue-header__scope')
+    expect(scope?.type).toBe('p')
+    expect(scope?.props['className']).toBe('queue-header__scope')
+    expect(byClass('queue-header__scope-summary')?.props['children']).toBe(
+      'Loaded: 50 recent messages',
+    )
+    expect(byClass('queue-header__scope-detail')?.props['children']).toBe(
+      'Older mail was left out of 1 loaded mailbox.',
+    )
+    // The refresh time carries its machine-readable instant beside the words.
+    expect(byClass('queue-header__scope-refreshed')).toMatchObject({
+      type: 'time',
+      props: { dateTime: '2026-09-24T07:42:00.000Z', children: 'Last refreshed 09:42.' },
+    })
+  })
+
+  it('marks a bounded reading, so a cut selection never looks like everything', () => {
+    const { byClass } = render({
+      scope: {
+        summary: 'Loaded: 50 recent messages',
+        detail: 'Older mail was left out of 1 loaded mailbox.',
+        refreshed: { label: 'Last refreshed 09:42.', dateTime: '2026-09-24T07:42:00.000Z' },
+        bounded: true,
+      },
+    })
+    expect(byClass('queue-header__scope')?.props['className']).toBe(
+      'queue-header__scope queue-header__scope--bounded',
+    )
   })
 
   it('adds extra classes to the root', () => {
