@@ -58,3 +58,31 @@
   max-width: 100%;
   overflow-wrap: anywhere;
 }
+
+/* The scope block: what the list actually holds, in its own lines under the
+ * context, because a reader who skips it may read the count as a whole
+ * mailbox. A bounded reading takes the maintained review pair. */
+.queue-header__scope {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  margin: var(--s2) 0 0;
+  padding: var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  color: var(--muted);
+  background: var(--surface);
+  font: var(--text-meta);
+  overflow-wrap: anywhere;
+}
+
+.queue-header__scope--bounded {
+  border-color: var(--attention-line);
+  color: var(--attention);
+  background: var(--attention-soft);
+}
+
+.queue-header__scope-summary {
+  font-weight: 700;
+}

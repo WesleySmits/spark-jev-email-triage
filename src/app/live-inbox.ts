@@ -15,14 +15,61 @@ export const liveWorkflows: readonly SidebarItem[] = [
 ]
 
 /**
+ * How much of one mailbox a reading holds. Counted from the rows it kept,
+ * so it says what is there, never what the mailbox holds.
+ */
+export type MailboxScope = Readonly<{
+  /** The mailbox id, as every row's `mailbox` names it. */
+  id: string
+  /** The address the rail shows for it. */
+  label: string
+  /** Rows this reading holds for that mailbox. */
+  loaded: number
+  /**
+   * Whether the per-mailbox bound may have cut it: the provider returned as
+   * many messages as were asked for, so there may be more it was never
+   * asked for. Nothing here counts or guesses what was not loaded.
+   */
+  bounded: boolean
+}>
+
+/**
+ * What one reading of the inbox actually holds, and what bounded it. It is
+ * the honest answer to "is this the mailbox?": no, it is this many recent
+ * Inbox messages from these mailboxes, read at this time.
+ *
+ * Every figure is counted from what was read. `readable` is how many
+ * mailboxes the provider offered before the mailbox bound applied, which is
+ * the one thing a reading learns about mail it did not load.
+ */
+export type InboxScope = Readonly<{
+  /** The mailboxes this reading listed, in provider order. */
+  mailboxes: readonly MailboxScope[]
+  /** Readable mailboxes the provider offered, before the mailbox bound. */
+  readable: number
+  /** At most this many mailboxes are listed. */
+  mailboxLimit: number
+  /** At most this many recent Inbox messages are listed per mailbox. */
+  messageLimit: number
+  /** Rows this reading holds across those mailboxes. */
+  loaded: number
+  /** Whether either bound may have cut this reading. */
+  bounded: boolean
+  /** When this reading finished, already formatted, e.g. "09:42". */
+  readAt: string
+  /** Machine-readable form of `readAt`: the last successful refresh. */
+  refreshedAt: string
+}>
+
+/**
  * The initial page data: summaries without bodies, or why there are none.
  * `unavailable` never comes with messages, sample or otherwise.
  */
 export type LiveInbox =
   | Readonly<{
       status: 'ready'
-      /** When the list was read, already formatted, e.g. "09:42". */
-      readAt: string
+      /** What this reading holds and what bounded it, including when it was read. */
+      scope: InboxScope
       /** The readable mailboxes that were listed, as the rail shows them. */
       mailboxes: readonly SidebarItem[]
       messages: readonly InboxSummary[]

@@ -127,7 +127,8 @@ function Page({ inbox, root, onReady }: PageProps) {
       </main>
     )
   }
-  const syncLabel = `Updated at ${inbox.readAt} · read only`
+  // It names what was refreshed: the loaded selection, not a whole mailbox.
+  const syncLabel = `Loaded mail updated at ${inbox.scope.readAt} · read only`
   return (
     <div ref={root} className="app-root">
       <WorkbenchPage
@@ -140,6 +141,7 @@ function Page({ inbox, root, onReady }: PageProps) {
         loadBody={ReviewDesk.focus(inbox)}
         workflows={ReviewDesk.workflows}
         mailboxes={inbox.mailboxes}
+        scope={inbox.scope}
         completion={{ mode: 'read-only' }}
         review={{
           mode: 'enabled',

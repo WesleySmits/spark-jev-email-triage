@@ -14,6 +14,22 @@ type QueueHeaderAction = Readonly<{
   disabled?: boolean | undefined
 }>
 
+type QueueHeaderScope = Readonly<{
+  /** The counted line, e.g. "Loaded: 50 recent messages from 5 of 7 readable mailboxes". */
+  summary: string
+  /** What bounded it and what the search covers. */
+  detail: string
+  /** The last successful refresh: the words shown, and the instant behind them. */
+  refreshed: Readonly<{
+    /** Already formatted, e.g. "Last refreshed 09:42." */
+    label: string
+    /** Machine-readable form of that moment, e.g. an ISO instant. */
+    dateTime: string
+  }>
+  /** Whether a bound may have cut it, which the line is marked for. */
+  bounded: boolean
+}>
+
 type QueueHeaderProps = Readonly<{
   /** The queue's name, e.g. "Needs review". */
   title: string
@@ -25,6 +41,13 @@ type QueueHeaderProps = Readonly<{
   count: string
   /** One line of scope under the title, e.g. "All accounts · current filter". */
   context?: string | undefined
+  /**
+   * What the list actually holds, under the context line: a counted line,
+   * what bounded it, and when it was last refreshed. `bounded` marks it as a
+   * cut selection rather than everything there is. The caller writes the
+   * words; only the refresh instant is rendered as machine-readable time.
+   */
+  scope?: QueueHeaderScope | undefined
   /** One optional action beside the title. The caller owns what it does. */
   action?: QueueHeaderAction | undefined
   className?: string | undefined
@@ -57,6 +80,7 @@ export function QueueHeader({
   titleId,
   count,
   context,
+  scope,
   action,
   className,
 }: QueueHeaderProps) {
@@ -72,6 +96,21 @@ export function QueueHeader({
           <span className="queue-header__count">{count}</span>
         </div>
         {context && <p className="queue-header__context">{context}</p>}
+        {scope && (
+          <p
+            className={
+              scope.bounded
+                ? 'queue-header__scope queue-header__scope--bounded'
+                : 'queue-header__scope'
+            }
+          >
+            <span className="queue-header__scope-summary">{scope.summary}</span>
+            <span className="queue-header__scope-detail">{scope.detail}</span>
+            <time className="queue-header__scope-refreshed" dateTime={scope.refreshed.dateTime}>
+              {scope.refreshed.label}
+            </time>
+          </p>
+        )}
       </div>
       {action && (
         <Button

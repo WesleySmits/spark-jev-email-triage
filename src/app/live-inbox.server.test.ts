@@ -117,7 +117,8 @@ describe('createLiveInbox list', () => {
       `emails ${one} ${String(perMailbox)}`,
       `emails ${two} ${String(perMailbox)}`,
     ])
-    expect(result).toMatchObject({ status: 'ready', readAt: '12:00', messages: [] })
+    expect(result).toMatchObject({ status: 'ready', messages: [] })
+    expect(result).toHaveProperty('scope.readAt', '12:00')
   })
 
   it(`lists at most ${String(maxMailboxes)} mailboxes`, async () => {
@@ -239,7 +240,16 @@ describe('createLiveInbox list', () => {
 
     await expect(live.list()).resolves.toEqual({
       status: 'ready',
-      readAt: '12:00',
+      scope: {
+        mailboxes: [],
+        readable: 0,
+        mailboxLimit: maxMailboxes,
+        messageLimit: perMailbox,
+        loaded: 0,
+        bounded: false,
+        readAt: '12:00',
+        refreshedAt: '2026-09-22T10:00:00.000Z',
+      },
       mailboxes: [],
       messages: [],
     })
@@ -401,6 +411,19 @@ describe('createLiveInbox alias copies', () => {
     expect(new Set(result.messages.map((message) => message.id)).size).toBe(2)
   })
 
+  it('counts both copies in scope: one delivery to two aliases is two loaded rows', async () => {
+    const result = await inbox(mail).live.list()
+    if (result.status !== 'ready') throw new Error('Expected a list')
+
+    expect(result.scope.loaded).toBe(2)
+    expect(result.scope.mailboxes).toEqual([
+      { id: one, label: one, loaded: 1, bounded: false },
+      { id: two, label: two, loaded: 1, bounded: false },
+    ])
+    // The copies are never merged on message id, subject or contents.
+    expect(result.scope.loaded).toBe(result.messages.length)
+  })
+
   it('reads each copy through its own mailbox, naming the copy', async () => {
     const { live, calls } = inbox(mail)
     await live.list()
@@ -432,6 +455,62 @@ describe('createLiveInbox alias copies', () => {
     })
     await expect(live.body({ mailbox: two, id: '11' })).rejects.toThrow(BodyUnavailableError)
     expect(calls.filter((call) => call.startsWith('thread'))).toEqual([`thread ${one} 11`])
+  })
+})
+
+describe('createLiveInbox scope', () => {
+  const full = (mailboxId: string) =>
+    Array.from({ length: perMailbox }, (_, index) =>
+      listing(mailboxId, String(index + 11), `2026-09-22T09:0${String(index % 10)}:00+02:00`),
+    )
+
+  it('reports what was loaded, the bounds and when it was read', async () => {
+    const { live } = inbox({
+      mailboxes: [access(one), access(two)],
+      listings: { [one]: [listing(one, '11', null), listing(one, '12', null)], [two]: [] },
+    })
+    const result = await live.list()
+    if (result.status !== 'ready') throw new Error('Expected a list')
+
+    expect(result.scope).toEqual({
+      mailboxes: [
+        { id: one, label: one, loaded: 2, bounded: false },
+        { id: two, label: two, loaded: 0, bounded: false },
+      ],
+      readable: 2,
+      mailboxLimit: maxMailboxes,
+      messageLimit: perMailbox,
+      loaded: 2,
+      bounded: false,
+      readAt: '12:00',
+      refreshedAt: '2026-09-22T10:00:00.000Z',
+    })
+  })
+
+  it('reports a mailbox as bounded when its listing came back at the bound', async () => {
+    const { live } = inbox({
+      mailboxes: [access(one), access(two)],
+      listings: { [one]: full(one), [two]: [listing(two, '21', null)] },
+    })
+    const result = await live.list()
+    if (result.status !== 'ready') throw new Error('Expected a list')
+
+    expect(result.scope.mailboxes.map((mailbox) => mailbox.bounded)).toEqual([true, false])
+    expect(result.scope.bounded).toBe(true)
+    expect(result.scope.loaded).toBe(perMailbox + 1)
+  })
+
+  it('counts the readable mailboxes it left out, so the reading is not read as every mailbox', async () => {
+    const readable = Array.from({ length: maxMailboxes + 2 }, (_, index) =>
+      access(`box${String(index)}@mail.example`),
+    )
+    const { live } = inbox({ mailboxes: readable })
+    const result = await live.list()
+    if (result.status !== 'ready') throw new Error('Expected a list')
+
+    expect(result.scope.readable).toBe(maxMailboxes + 2)
+    expect(result.scope.mailboxes).toHaveLength(maxMailboxes)
+    expect(result.scope.bounded).toBe(true)
   })
 })
 

@@ -287,7 +287,7 @@ async function filtersAndSearch(root: HTMLElement) {
     'aria-pressed',
     'true',
   )
-  await expect(canvas.getByRole('button', { name: /^All accounts/ })).toHaveAttribute(
+  await expect(canvas.getByRole('button', { name: /^All loaded/ })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
@@ -389,8 +389,8 @@ export const KeyboardNavigation: Story = {
     }
 
     // A mailbox filter keeps its focus and the open message stays.
-    await rail(canvasElement, 'All accounts')
-    const filter = canvas.getByRole('button', { name: /^All accounts/ })
+    await rail(canvasElement, 'All loaded')
+    const filter = canvas.getByRole('button', { name: /^All loaded/ })
     await keysChangeNothing(canvasElement, 'kj', filter)
     await rail(canvasElement, 'Needs review')
     await keysChangeNothing(
@@ -428,6 +428,122 @@ export const Mobile: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Complete' }))
     await expect(subject(canvasElement)).toHaveTextContent('Can delivery move a week earlier?')
     await expect(content(canvasElement)).toHaveFocus()
+  },
+}
+
+// A bounded reading of five mailboxes, as the live inbox produces: the
+// figures are counted, never estimated. Synthetic throughout.
+const boundedScope: NonNullable<Props['scope']> = {
+  mailboxes: [
+    { id: 'studio', label: 'studio@mail.example', loaded: 10, bounded: true },
+    { id: 'atelier', label: 'atelier@mail.example', loaded: 10, bounded: true },
+    { id: 'personal', label: 'personal@mail.example', loaded: 4, bounded: false },
+  ],
+  readable: 7,
+  mailboxLimit: 5,
+  messageLimit: 10,
+  loaded: 24,
+  bounded: true,
+  readAt: '09:42',
+  refreshedAt: '2026-09-24T07:42:00.000Z',
+}
+
+// The scope line under the queue title, whatever it says.
+const queueScope = (root: HTMLElement) => root.querySelector('.queue-header__scope')
+
+/**
+ * A bounded reading: the queue counts loaded rows, and the scope line under
+ * the title says which mailboxes were loaded, that the bounds may have cut
+ * them, that search covers only loaded mail, and when it was last refreshed.
+ */
+export const BoundedScope: Story = {
+  args: { scope: boundedScope },
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  play: async ({ canvasElement }) => {
+    const line = queueScope(canvasElement)
+    await expect(line).toHaveTextContent(
+      'Loaded: 24 recent messages from 3 of 7 readable mailboxes',
+    )
+    await expect(line).toHaveTextContent('Older mail was not loaded')
+    await expect(line).toHaveTextContent('Search and filters cover only loaded mail')
+    await expect(line).toHaveTextContent('Last refreshed 09:42')
+    await expect(line).toHaveClass('queue-header__scope--bounded')
+    // The search says what it searches, so the field claims no whole mailbox.
+    await expect(within(canvasElement).getByRole('searchbox')).toHaveAccessibleName(
+      'Search loaded mail',
+    )
+  },
+}
+
+/**
+ * The same scope at 320px: the queue pane starts open on a phone, so the
+ * scope line is there without the rail. The keyboard reaches it and the rows
+ * as usual.
+ */
+export const BoundedScopeOnMobile: Story = {
+  args: { scope: boundedScope },
+  globals: { viewport: { value: 'mobile1', isRotated: false } },
+  play: async ({ canvasElement }) => {
+    const line = queueScope(canvasElement)
+    await expect(line).toBeVisible()
+    await expect(line).toHaveTextContent(
+      'Loaded: 24 recent messages from 3 of 7 readable mailboxes',
+    )
+    await expect(line).toHaveTextContent('Last refreshed 09:42')
+    // Tab from the search reaches the queue's rows past the scope line, which
+    // is text and takes no focus of its own.
+    const canvas = within(canvasElement)
+    canvas.getByRole('searchbox').focus()
+    await userEvent.tab()
+    await expect(document.activeElement).not.toBe(line)
+    await openDinnerOnMobile(canvasElement)
+    await backToDinnerRow(canvasElement)
+  },
+}
+
+/**
+ * A reading that loaded nothing is not a filter that matched nothing: the
+ * empty state says so and offers no Reset, because resetting brings no row
+ * back.
+ */
+export const NothingLoaded: Story = {
+  args: {
+    messages: [],
+    // Three readable mailboxes that each listed nothing: no bound applied.
+    scope: {
+      ...boundedScope,
+      mailboxes: boundedScope.mailboxes.map((mailbox) => ({
+        ...mailbox,
+        loaded: 0,
+        bounded: false,
+      })),
+      readable: 3,
+      loaded: 0,
+      bounded: false,
+    },
+  },
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('heading', { name: 'No mail loaded' })).toBeVisible()
+    await expect(canvas.getByText(/not proof that those mailboxes are empty/)).toBeVisible()
+    await expect(canvas.queryByRole('button', { name: 'Reset filters' })).toBeNull()
+  },
+}
+
+/**
+ * A filter that matched nothing keeps its own wording and its Reset, so the
+ * two empty states stay apart.
+ */
+export const FilteredEmptyWithScope: Story = {
+  args: { scope: boundedScope },
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.type(canvas.getByRole('searchbox'), 'zzzz')
+    await expect(canvas.getByRole('heading', { name: 'No results in this filter' })).toBeVisible()
+    await expect(canvas.getByText(/Only loaded mail is searched/)).toBeVisible()
+    await expect(canvas.getByRole('button', { name: 'Reset filters' })).toBeVisible()
   },
 }
 
@@ -745,7 +861,7 @@ export const SharedMarkerMailboxes: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByRole('heading', { level: 1, name: 'Recent mail' })).toBeVisible()
     await expect(canvas.getByText('4 results')).toBeVisible()
-    await expect(queueContext(canvasElement)).toHaveTextContent(/^All accounts$/)
+    await expect(queueContext(canvasElement)).toHaveTextContent(/^All loaded mailboxes$/)
     await bodyShows(canvasElement, 'Hi Wesley,')
     await rail(canvasElement, 'second@mail.example')
     await expect(canvas.getByText('2 results')).toBeVisible()

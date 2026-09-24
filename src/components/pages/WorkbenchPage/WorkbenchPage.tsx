@@ -35,6 +35,7 @@ import {
 } from './classification'
 import { ReviewAction, type CheckReview, type SaveReview } from './ReviewAction'
 import { reviewableIn } from './review'
+import { emptyScopeText, scopeText, type QueueScope } from './scope'
 import { useMessageBody } from './useMessageBody'
 import { shortcutLegend, useWorkbenchShortcuts } from './useWorkbenchShortcuts'
 import {
@@ -111,9 +112,19 @@ type WorkbenchPageProps = Readonly<{
   workflows: readonly SidebarItem[]
   /**
    * The mailbox filters, one per mailbox. Each id is the `mailbox` its
-   * messages carry. "All accounts" is added in front; counts are filled in.
+   * messages carry. A loaded-mailboxes filter is added in front; counts are
+   * filled in. Only loaded mailboxes are filters: the list is not every
+   * mailbox that exists.
    */
   mailboxes: readonly SidebarItem[]
+  /**
+   * What the page actually holds: the loaded mailboxes and counts, the
+   * bounds that may have cut them, and when they were last read. It is
+   * shown under the queue title, so a bounded reading never reads as a whole
+   * mailbox. Left out, e.g. for fixtures, the header says nothing about
+   * reach and the page claims none.
+   */
+  scope?: QueueScope | undefined
   /**
    * What triage stored about the rows of one reading, and which reading that
    * was. A row with an entry shows that state instead of its own status and,
@@ -523,8 +534,8 @@ function PageTopBar({ topBar, state, searchId, root }: PageTopBarProps) {
     <TopBar
       {...topBar}
       searchId={searchId}
-      searchLabel="Search current results"
-      searchPlaceholder="Search current results"
+      searchLabel="Search loaded mail"
+      searchPlaceholder="Search loaded mail"
       searchValue={state.filter.query}
       onSearchChange={(query) => {
         state.filterBy({ query })
@@ -558,11 +569,21 @@ function PageRail({ state, canComplete, workflows, mailboxes }: PageRailProps) {
 
 type PaneProps = Readonly<{ state: PageState; title: string }>
 
-type QueueProps = PaneProps & Pick<PageInput, 'mailboxes'> & Readonly<{ evidence: Evidence }>
+type QueueProps = PaneProps &
+  Pick<PageInput, 'mailboxes'> &
+  Readonly<{ evidence: Evidence; scope: QueueScope | undefined }>
 
-/** The queue, headed by the workflow and the applied mailbox filter. */
-function Queue({ state, title, mailboxes, evidence }: QueueProps) {
+/**
+ * The queue, headed by the workflow, the applied mailbox filter and what the
+ * reading holds. The count is of loaded rows the filter kept, never of a
+ * mailbox, and the scope line under it says so. The queue header shows in
+ * the mobile queue pane too, so that line is not desktop-only.
+ */
+function Queue({ state, title, mailboxes, evidence, scope }: QueueProps) {
   const count = state.shown.length
+  // Nothing loaded is not a filter that matched nothing, so Reset is offered
+  // only where resetting could bring a row back.
+  const nothingLoaded = scope?.loaded === 0
   return (
     <MessageQueue
       header={{
@@ -570,6 +591,7 @@ function Queue({ state, title, mailboxes, evidence }: QueueProps) {
         headingLevel: 1,
         count: `${String(count)} ${count === 1 ? 'result' : 'results'}`,
         context: mailboxLabel(state.filter.mailbox, mailboxes),
+        ...(scope && { scope: scopeText(scope) }),
       }}
       messages={queueRows(state.shown, evidence)}
       currentId={state.open?.id}
@@ -577,9 +599,8 @@ function Queue({ state, title, mailboxes, evidence }: QueueProps) {
       empty={
         <EmptyState
           icon="inbox"
-          title="No results in this filter"
-          description="Choose another workflow or mailbox, or clear the search."
-          action={{ label: 'Reset filters', onClick: state.reset }}
+          {...emptyScopeText(scope)}
+          action={nothingLoaded ? undefined : { label: 'Reset filters', onClick: state.reset }}
         />
       }
     />
@@ -829,7 +850,15 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             mailboxes={mailboxes}
           />
         }
-        queue={<Queue state={state} title={title} mailboxes={mailboxes} evidence={evidence} />}
+        queue={
+          <Queue
+            state={state}
+            title={title}
+            mailboxes={mailboxes}
+            evidence={evidence}
+            scope={props.scope}
+          />
+        }
         reader={
           <Reader
             state={state}
