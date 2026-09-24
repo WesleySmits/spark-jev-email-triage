@@ -7,6 +7,9 @@ import { connectionView } from '../components/pages/ConnectionPage/connection'
 import { useReconnect } from '../components/pages/ConnectionPage/useReconnect'
 import { WorkbenchPage } from '../components/pages/WorkbenchPage/WorkbenchPage'
 import { syncScopeLabel } from '../components/pages/WorkbenchPage/scope'
+import { InboxZeroStatusBar } from '../components/molecules/InboxZeroStatusBar/InboxZeroStatusBar'
+import { coverageFromInboxScope } from '../app/inbox-coverage-adapter'
+import { failedCoverage, inboxCoverage, type InboxCoverage } from '../app/inbox-coverage'
 import { ReviewDesk, type DeskReason, type DeskView } from '../app/review-desk'
 import type { InboxListRequest, InboxScope } from '../app/live-inbox'
 
@@ -110,6 +113,7 @@ type PageProps = Readonly<{
   onReady: () => Promise<void>
   onRefresh: () => Promise<void>
   onChange: (request: InboxListRequest) => Promise<void>
+  coverage: InboxCoverage | undefined
   loading: boolean
 }>
 
@@ -179,7 +183,7 @@ function InboxViewBar({
 }
 
 /** The page for what the loader found: waiting, no mailboxes or the inbox. */
-function Page({ inbox, root, onReady, onRefresh, onChange, loading }: PageProps) {
+function Page({ inbox, root, onReady, onRefresh, onChange, coverage, loading }: PageProps) {
   const reread = () => {
     void onRefresh()
   }
@@ -217,7 +221,12 @@ function Page({ inbox, root, onReady, onRefresh, onChange, loading }: PageProps)
           workflows={ReviewDesk.workflows}
           mailboxes={inbox.mailboxes}
           scope={inbox.scope}
-          queueControls={<InboxViewBar scope={inbox.scope} loading={loading} onChange={onChange} />}
+          queueControls={
+            <>
+              <InboxViewBar scope={inbox.scope} loading={loading} onChange={onChange} />
+              {coverage && <InboxZeroStatusBar coverage={coverage} />}
+            </>
+          }
           completion={{ mode: 'read-only' }}
           review={{
             mode: 'enabled',
@@ -252,29 +261,63 @@ function Page({ inbox, root, onReady, onRefresh, onChange, loading }: PageProps)
 // store. The separate Done panel may approve and execute one guarded Spark
 // message-ID action when the server kill switch is enabled. Inbox refresh and
 // body reads remain read-only and never start an action.
-function Home() {
-  const initial = Route.useLoaderData()
+const initialCoverage = (initial: DeskView) =>
+  initial.status === 'ready'
+    ? inboxCoverage(undefined, coverageFromInboxScope(initial.scope))
+    : undefined
+
+function coverageUpdate(
+  result: DeskView,
+  view: InboxListRequest['view'],
+  startedAt: string,
+  finishedAt: string,
+) {
+  return result.status === 'ready'
+    ? coverageFromInboxScope(result.scope, startedAt)
+    : failedCoverage(view, startedAt, finishedAt)
+}
+
+function useDeskReading(initial: DeskView) {
   const [inbox, setInbox] = useState<DeskView>(initial)
+  const [coverage, setCoverage] = useState<InboxCoverage | undefined>(() =>
+    initialCoverage(initial),
+  )
   const [loading, setLoading] = useState(false)
   const request = useRef<InboxListRequest>({ view: 'unread' })
   const sequence = useRef(0)
   const read = async (next: InboxListRequest) => {
     const current = ++sequence.current
+    const startedAt = new Date().toISOString()
     request.current = next
     setLoading(true)
     const result = await ReviewDesk.open(next)
     if (current === sequence.current) {
+      const update = coverageUpdate(result, next.view, startedAt, new Date().toISOString())
       setInbox(result)
+      setCoverage((previous) => inboxCoverage(previous, update))
       setLoading(false)
     }
   }
+  return { inbox, coverage, loading, read, request } as const
+}
+
+function loadedMessageSummary(inbox: DeskView) {
+  const count = inbox.status === 'ready' ? inbox.messages.length : 0
+  const kind = inbox.status === 'ready' && inbox.scope.view === 'other' ? 'read' : 'unread'
+  return {
+    count,
+    label: `${String(count)} ${kind} ${count === 1 ? 'message' : 'messages'}`,
+  } as const
+}
+
+function Home() {
+  const initial = Route.useLoaderData()
+  const { inbox, coverage, loading, read, request } = useDeskReading(initial)
   const root = useRef<HTMLDivElement>(null)
   // Set once Spark answered after the page waited, so the inbox says so.
   const [waited, setWaited] = useState(false)
-  const count = inbox.status === 'ready' ? inbox.messages.length : 0
+  const { count, label: messages } = loadedMessageSummary(inbox)
   const notice = useConnectedNotice(root, waited && count > 0)
-  const kind = inbox.status === 'ready' && inbox.scope.view === 'other' ? 'read' : 'unread'
-  const messages = `${String(count)} ${kind} ${count === 1 ? 'message' : 'messages'}`
   return (
     <>
       <Page
@@ -289,6 +332,7 @@ function Home() {
           read({ view: inbox.status === 'ready' ? inbox.scope.view : request.current.view })
         }
         onChange={read}
+        coverage={coverage}
         loading={loading}
       />
       <LocalStatusToast
