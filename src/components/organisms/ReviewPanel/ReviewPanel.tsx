@@ -30,6 +30,11 @@ type ReviewPanelProps<Value extends string> = Readonly<{
   score: number
   reasonTitle: string
   reason: string
+  /**
+   * One line per ground under `reason`, e.g. why review was asked for. Every
+   * line is the caller's own copy and shown as text; leave it out for none.
+   */
+  reasons?: readonly string[] | undefined
   originalLabel: string
   /** The model's first category. Stays visible after any correction. */
   originalSuggestion: string
@@ -59,7 +64,14 @@ function formatScore(score: number) {
 type ContextProps = Pick<
   ReviewPanelProps<string>,
   'scoreLabel' | 'score' | 'reasonTitle' | 'reason' | 'originalLabel' | 'originalSuggestion'
-> & { Subheading: (typeof subheadings)[HeadingLevel]; originalNote: string | undefined }
+> & {
+  Subheading: (typeof subheadings)[HeadingLevel]
+  originalNote: string | undefined
+  reasons: readonly string[]
+}
+
+/** The lead sits closer to its own grounds than to what follows them. */
+const leadWithGrounds = 'review-panel__reason review-panel__reason--leads-grounds'
 
 function ReviewContext({ Subheading, ...props }: ContextProps) {
   return (
@@ -69,7 +81,16 @@ function ReviewContext({ Subheading, ...props }: ContextProps) {
         {props.scoreLabel} · {formatScore(props.score)}
       </p>
       <Subheading className="review-panel__subheading">{props.reasonTitle}</Subheading>
-      <p className="review-panel__reason">{props.reason}</p>
+      <p className={props.reasons.length > 0 ? leadWithGrounds : 'review-panel__reason'}>
+        {props.reason}
+      </p>
+      {props.reasons.length > 0 && (
+        <ul className="review-panel__grounds">
+          {props.reasons.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      )}
       <dl className="review-panel__original">
         <dt>{props.originalLabel}</dt>
         <dd>{props.originalSuggestion}</dd>
@@ -138,8 +159,8 @@ function ReviewControls<Value extends string>({ Subheading, ...props }: Controls
 
 /**
  * The amber review panel for an uncertain classification: why it needs a
- * person, the model score, the preserved original AI suggestion, a category
- * radiogroup and one save action. It is fully controlled and presentational:
+ * person, with one line per ground the caller gives, the model score, the
+ * preserved original AI suggestion, a category radiogroup and one save action. It is fully controlled and presentational:
  * the caller owns the expanded state, the selection, saving, the result copy
  * and any live announcement. Below 560px of container width it stacks.
  *
@@ -155,6 +176,7 @@ function ReviewControls<Value extends string>({ Subheading, ...props }: Controls
  *   score={58}
  *   reasonTitle="Waarom controleren?"
  *   reason="De afzender vraagt expliciet om een antwoord en een besluit."
+ *   reasons={['Modelscore voor deze categorie bleef onder de drempel.']}
  *   originalLabel="Originele AI-suggestie"
  *   originalSuggestion="Nieuwsbrief"
  *   categoriesTitle="Kies de juiste categorie"
@@ -176,6 +198,7 @@ export function ReviewPanel<Value extends string>({
   score,
   reasonTitle,
   reason,
+  reasons = [],
   originalLabel,
   originalSuggestion,
   originalNote,
@@ -222,6 +245,7 @@ export function ReviewPanel<Value extends string>({
           score={score}
           reasonTitle={reasonTitle}
           reason={reason}
+          reasons={reasons}
           originalLabel={originalLabel}
           originalSuggestion={originalSuggestion}
           originalNote={originalNote}

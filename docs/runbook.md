@@ -126,10 +126,13 @@ reviewer account names, review timestamps and save-request records as well
 as mail metadata. Treat the database and backups as private.
 
 A review does not complete or mutate mail. Its category choice preserves the
-model judgment and priority. The panel's "Model score" is raw category
-confidence, not calibrated certainty. Current limitations include hiding the
-priority-uncertainty note after a review and generic review-reason copy.
-There is no app control to launch classification or execute mailbox actions.
+model judgment and priority, and leaves the model's other signals showing. The
+panel's "Model score" is raw category confidence, not calibrated certainty.
+The panel and the reader name the grounds the run recorded for asking a
+person; a record that stored none says so instead of naming a reason. A
+suspicion signal is shown as a scored possibility, because policy admits one
+from a deliberately low floor. There is no app control to launch
+classification or execute mailbox actions.
 
 ## Upgrade an existing shadow database to schema 3
 

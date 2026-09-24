@@ -15,18 +15,31 @@
  * Every row is checked against the domain schema. One this build cannot
  * read, such as a category its rubric no longer knows, is skipped rather
  * than guessed at; the copy then reads as unclassified.
+ *
+ * The grounds a run recorded for asking a person are read back here too, from
+ * the two JSON code lists the store keeps. They are the run's own codes and
+ * never text, so no mail or model wording travels out of the store with them.
+ * A row whose grounds this build cannot read, or that has none while saying a
+ * person was asked, reads as `unknown` grounds rather than as none: the
+ * judgment itself is still readable, and the explanation simply is not there
+ * to be given. See `reviewGroundsFor`.
  */
 import type { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod'
 import type { MailboxCopyRef } from '../domain/mailbox-copy'
-import { storedJudgmentSchema, type StoredJudgment } from '../domain/stored-classification'
+import {
+  reviewGroundsFor,
+  storedJudgmentSchema,
+  type StoredJudgment,
+} from '../domain/stored-classification'
 import { readByCopy } from './by-copy'
 
 /** Every judgment that covered one mailbox copy, newest first. */
 const query = `
   SELECT j.thread_id, j.latest_message_id, j.rubric, j.requested_model, j.status,
          j.category, j.priority, j.category_confidence, j.priority_uncertain,
-         j.review, j.review_priority, j.error_code, j.judged_at,
+         j.review, j.review_priority, j.reasons, j.suspicion_signals,
+         j.error_code, j.judged_at,
          t.latest_message_id AS thread_latest_message_id
   FROM judgment_messages m
   JOIN judgments j ON j.id = m.judgment_id
@@ -48,6 +61,10 @@ const rowsSchema = z.array(
     priority_uncertain: z.int().nullable(),
     review: z.string(),
     review_priority: z.string(),
+    /** A JSON list of policy-rule codes, as the run wrote it. */
+    reasons: z.string(),
+    /** A JSON list of suspicion-signal codes, as the run wrote it. */
+    suspicion_signals: z.string(),
     error_code: z.string().nullable(),
     judged_at: z.string(),
     thread_latest_message_id: z.string(),
@@ -55,6 +72,15 @@ const rowsSchema = z.array(
 )
 
 type Row = z.infer<typeof rowsSchema>[number]
+
+/** What one JSON column holds, or nothing at all when it does not parse. */
+const jsonIn = (text: string): unknown => {
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    return null
+  }
+}
 
 /** A classification, or the failed attempt that produced none. */
 const verdictOf = (row: Row) =>
@@ -68,6 +94,11 @@ const verdictOf = (row: Row) =>
           priorityUncertain: row.priority_uncertain === 1,
           review: row.review,
           reviewPriority: row.review_priority,
+          grounds: reviewGroundsFor(
+            row.review === 'needs_review',
+            jsonIn(row.reasons),
+            jsonIn(row.suspicion_signals),
+          ),
         },
       }
     : { status: 'provider_failure', errorCode: row.error_code }

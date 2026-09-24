@@ -31,6 +31,11 @@ const labels: ClassificationLabels = {
   priorityUncertain: false,
   review: 'needs_review',
   reviewPriority: 'normal',
+  grounds: {
+    state: 'recorded',
+    reasons: ['low_category_confidence'],
+    suspicionSignals: [],
+  },
 }
 
 const subject = {
@@ -293,25 +298,43 @@ describe('reviewAnnouncement', () => {
 })
 
 describe('reviewPanelCopy', () => {
-  it('asks for a person where the model was unsure, and says why', () => {
+  it('asks for a person, and gives the ground the run actually recorded', () => {
     const copy = reviewPanelCopy(labels)
 
     expect(copy.title).toBe('Needs review')
-    expect(copy.reason).toBe('The model was unsure of this category, so it asked for a person.')
+    expect(copy.reason).toMatch(/^Triage policy asked for a person on the grounds below\./)
+    expect(copy.reasons).toEqual([
+      "The model's score for this category stayed under the level triage accepts on its own.",
+    ])
     expect(copy.originalSuggestion).toBe('Newsletter')
     expect(copy.score).toBeCloseTo(58)
   })
 
+  it('attributes the decision to policy rather than to the model itself', () => {
+    // The model scored; ordinary code decided. Saying "the model asked for a
+    // person" would credit it with a decision it never made.
+    const { reason } = reviewPanelCopy(labels)
+
+    expect(reason).toContain("rule over the model's scores")
+    expect(reason).toContain("not the model's own account of itself")
+    expect(reason).toContain('none of them says whether this triage still describes the mail')
+  })
+
   it('still offers a review where the model accepted its own labels', () => {
-    const copy = reviewPanelCopy({ ...labels, review: 'auto_accepted' })
+    const copy = reviewPanelCopy({
+      ...labels,
+      review: 'auto_accepted',
+      grounds: { state: 'recorded', reasons: [], suspicionSignals: [] },
+    })
 
     expect(copy.title).toBe('Review this triage')
     expect(copy.reason).toMatch(/Nothing is a person's decision until a review says so\./)
+    expect(copy.reasons).toEqual([])
   })
 
-  it('says when the model marked a row as more urgent to look at', () => {
-    expect(reviewPanelCopy({ ...labels, reviewPriority: 'elevated' }).reason).toMatch(
-      /marked as more urgent to look at/,
+  it('says when policy raised how urgent a look is, as its own ground', () => {
+    expect(reviewPanelCopy({ ...labels, reviewPriority: 'elevated' }).reasons).toContain(
+      'Triage raised how urgent a look is, which asks for attention sooner and nothing else.',
     )
   })
 

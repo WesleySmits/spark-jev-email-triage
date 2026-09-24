@@ -17,6 +17,7 @@ const labels: ClassificationLabels = {
   priorityUncertain: false,
   review: 'auto_accepted',
   reviewPriority: 'normal',
+  grounds: { state: 'recorded', reasons: [], suspicionSignals: [] },
 }
 
 const subject = {

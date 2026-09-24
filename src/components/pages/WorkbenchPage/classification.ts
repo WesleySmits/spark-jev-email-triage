@@ -30,6 +30,7 @@ import type {
   StoredClassification,
 } from '../../../domain/stored-classification'
 import type { Badge } from '../../atoms/Badge/Badge'
+import { reviewGroundsFact, suspicionWarning } from './review-grounds'
 
 type BadgeTone = NonNullable<Parameters<typeof Badge>[0]['tone']>
 
@@ -260,11 +261,22 @@ export type ClassificationView = Readonly<{
   note?: string | undefined
 }>
 
-/** Review need, as labels the model produced: `auto_accepted` is no review by a person. */
+/**
+ * Review need, as labels the model produced: `auto_accepted` is no review by a
+ * person. Why it says that is the `Why review` value below, from the grounds
+ * the run recorded; this one says who asked, which is triage policy and never
+ * the model's own account of itself.
+ */
 function modelReviewFact({ review, reviewPriority }: ClassificationLabels): ClassificationFact {
   const raised = reviewPriorityNote(reviewPriority)
   if (review === 'needs_review') {
-    return { term: 'Review', value: 'Needs a person', note: `The model was unsure.${raised}` }
+    return {
+      term: 'Review',
+      value: 'Needs a person',
+      // Deliberately not "not by a person": a reader scanning this strip for
+      // who decided must not meet that phrase where nobody has reviewed.
+      note: `Triage policy asked for this. No person has reviewed it.${raised}`,
+    }
   }
   return {
     term: 'Review',
@@ -317,6 +329,24 @@ function categoryFact(
   }
 }
 
+/**
+ * What the row says besides its labels: why review was asked for, and any
+ * independent warning.
+ *
+ * Both survive a review, and the warning above all. A category review decides
+ * one field; a mail that asked for a password asked for one whatever it is
+ * filed as, so nothing a person chooses may take that off the page. Each is
+ * left out only where the record itself holds nothing to say.
+ */
+function groundFacts(labels: ClassificationLabels): readonly ClassificationFact[] {
+  const grounds = reviewGroundsFact(labels)
+  const warning = suspicionWarning(labels)
+  return [
+    ...(grounds === undefined ? [] : [{ term: 'Why review', ...grounds }]),
+    ...(warning === undefined ? [] : [{ term: 'Warning', ...warning }]),
+  ]
+}
+
 function factsOf(
   labels: ClassificationLabels,
   review: RowReview | undefined,
@@ -330,6 +360,7 @@ function factsOf(
       ...(labels.priorityUncertain && { note: 'The model was not sure of this priority.' }),
     },
     review === undefined ? modelReviewFact(labels) : personReviewFact(review, labels),
+    ...groundFacts(labels),
   ]
 }
 

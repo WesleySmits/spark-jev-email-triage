@@ -17,6 +17,38 @@ export const categorySchema = z.enum(triageCategories)
 export const prioritySchema = z.enum(triagePriorities)
 
 /**
+ * Why triage policy asks a person to look at one judgment.
+ *
+ * Each is a rule in ordinary code over the classifier's own scores, so it is a
+ * decision policy made, not an account the classifier gave of itself. None of
+ * them says anything about whether a judgment still describes the mail as it
+ * stands now, and none of them is a person's decision.
+ */
+export const reviewReasonSchema = z.enum([
+  'low_category_confidence',
+  'ambiguous_category',
+  'suspicious',
+])
+
+/**
+ * The narrow suspicion judgments policy may cite for the `suspicious` reason.
+ *
+ * They are codes from a closed set and never text. Whatever a sender wrote —
+ * a claimed label, or an instruction addressed to an automated reader — can
+ * reach a reader only as one of these codes, which this application wrote, so
+ * no mail or model text travels with a reason.
+ */
+export const suspicionSignalSchema = z.enum([
+  'credential_request',
+  'sender_impersonation',
+  'payment_redirect',
+  'automated_reader_instructions',
+])
+
+export type ReviewReason = z.infer<typeof reviewReasonSchema>
+export type SuspicionSignal = z.infer<typeof suspicionSignalSchema>
+
+/**
  * Only the current rubric. `email-triage.v1` (support-desk categories) was
  * dropped before anything was stored; once decisions are persisted, keep old
  * ids here so stored decisions and corrections stay parseable.

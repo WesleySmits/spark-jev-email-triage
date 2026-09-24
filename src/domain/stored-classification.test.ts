@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   projectClassification,
+  reviewGroundsFor,
   storedJudgmentSchema,
   verifyClassification,
   type ClassificationLabels,
@@ -21,6 +22,7 @@ const labels: ClassificationLabels = {
   priorityUncertain: false,
   review: 'auto_accepted',
   reviewPriority: 'normal',
+  grounds: { state: 'recorded', reasons: [], suspicionSignals: [] },
 }
 
 type Overrides = Readonly<{
@@ -202,5 +204,69 @@ describe('verifyClassification', () => {
     expect(
       verifyClassification({ state: 'unavailable', reason: 'unreadable' }, observed()),
     ).toEqual({ state: 'unavailable', reason: 'unreadable' })
+  })
+})
+
+describe('reviewGroundsFor', () => {
+  it('reads the grounds a run recorded for asking a person', () => {
+    expect(
+      reviewGroundsFor(true, ['low_category_confidence', 'suspicious'], ['payment_redirect']),
+    ).toEqual({
+      state: 'recorded',
+      reasons: ['low_category_confidence', 'suspicious'],
+      suspicionSignals: ['payment_redirect'],
+    })
+  })
+
+  it('reads an accepted judgment as recorded with no grounds at all', () => {
+    expect(reviewGroundsFor(false, [], [])).toEqual({
+      state: 'recorded',
+      reasons: [],
+      suspicionSignals: [],
+    })
+  })
+
+  it('reads a record that gives no ground for asking a person as unknown', () => {
+    // An older or foreign run may have stored none. Reading that as "no
+    // grounds" would present a review nobody can account for as if the model
+    // had simply been unsure of itself.
+    expect(reviewGroundsFor(true, [], [])).toEqual({ state: 'unknown' })
+  })
+
+  it('reads grounds that contradict the review need beside them as unknown', () => {
+    expect(reviewGroundsFor(false, ['low_category_confidence'], [])).toEqual({ state: 'unknown' })
+  })
+
+  it('reads a code this build does not know as unknown, never as a partial set', () => {
+    // A judgment from a build with another rule is not a judgment on the rules
+    // this one happens to recognise in it.
+    expect(reviewGroundsFor(true, ['low_category_confidence', 'an_unknown_rule'], [])).toEqual({
+      state: 'unknown',
+    })
+    expect(reviewGroundsFor(true, ['suspicious'], ['an_unknown_signal'])).toEqual({
+      state: 'unknown',
+    })
+  })
+
+  it('reads anything that is not a list of codes as unknown', () => {
+    // `provider_failure` is a ground of the failed attempt, which proposes no
+    // labels: it can never be a classification's own.
+    for (const reasons of [null, undefined, 'suspicious', [1], [['suspicious']], {}, ['']]) {
+      expect(reviewGroundsFor(true, reasons, [])).toEqual({ state: 'unknown' })
+    }
+    expect(reviewGroundsFor(true, ['provider_failure'], [])).toEqual({ state: 'unknown' })
+    expect(reviewGroundsFor(false, [], 'none')).toEqual({ state: 'unknown' })
+  })
+
+  it('keeps grounds out of a judgment that proposed no labels', () => {
+    // A failure carries no labels, so it carries no grounds either.
+    const failed = projectClassification([judgment({ verdict: failure })], judge)
+
+    expect(failed).toEqual({
+      subject: judgment().subject,
+      judgedAt: judgment().judgedAt,
+      state: 'provider_failure',
+      errorCode: 'timeout',
+    })
   })
 })
