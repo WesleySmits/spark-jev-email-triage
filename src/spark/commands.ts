@@ -23,7 +23,7 @@ const mailboxIdSchema = z
   .brand<'SparkMailboxId'>()
 
 const listLimitSchema = z.int().min(1).max(maxListLimit).brand<'SparkListLimit'>()
-const pageSchema = z.int().min(1).max(20).brand<'SparkPage'>()
+const pageSchema = z.int().positive().brand<'SparkPage'>()
 
 type SparkMessageId = z.infer<typeof messageIdSchema>
 type SparkMailboxId = z.infer<typeof mailboxIdSchema>

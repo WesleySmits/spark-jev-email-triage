@@ -84,9 +84,13 @@ describe('Spark commands', () => {
     )
   })
 
-  it.each([0, -1, 1.5, 21])('rejects %d as a page', (page) => {
+  it.each([0, -1, 1.5])('rejects %d as a page', (page) => {
     expect(() => emailsCommand('support@example.com', 10, page)).toThrow(
       expect.objectContaining({ code: 'invalid_input', detail: 'page' }),
     )
+  })
+
+  it('does not impose a silent provider page ceiling', () => {
+    expect(sparkArguments(emailsCommand('support@example.com', 10, 21))).toContain('21')
   })
 })

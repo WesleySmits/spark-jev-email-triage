@@ -27,6 +27,8 @@ export const inboxSummarySchema = z.strictObject({
   id,
   /** The provider's id for the message in `mailbox`. Sample mail has none. */
   messageId: id.optional(),
+  /** Provider page that listed this live row, used only for a cold body recheck. */
+  sourcePage: z.int().positive().optional(),
   /** Id of the workflow the message is in, e.g. `review`. */
   workflow: id,
   /** Id of the mailbox the message was listed in. `account` only shows it. */
