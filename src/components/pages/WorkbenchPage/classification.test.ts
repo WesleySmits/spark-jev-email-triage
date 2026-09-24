@@ -429,18 +429,23 @@ describe('classificationView, once a person has reviewed', () => {
 
     expect(fact?.value).toBe('Corrected by a person')
     expect(fact?.note).toMatch(/^By wesley on /)
-    expect(fact?.note).toMatch(/Labels only: your mail is unchanged\.$/)
+    expect(fact?.term).toBe('Category review')
+    expect(fact?.note).toContain('This review covers the category only.')
+    expect(fact?.note).toMatch(/Your mail is unchanged\.$/)
     expect(classificationView(current, confirmed).facts[2]?.value).toBe('Confirmed by a person')
   })
 
-  it("no longer offers the model's own review need, or its priority doubt", () => {
+  it("resolves the category review need and retains the model's priority doubt", () => {
     const unsure = { ...labels, priorityUncertain: true, review: 'needs_review' } as const
     const facts = classificationView({ ...current, labels: unsure }, corrected).facts
 
     expect(JSON.stringify(facts)).not.toContain('Needs a person')
     expect(JSON.stringify(facts)).not.toContain('No person has reviewed this')
-    // The person chose the priority too, so the model's doubt is spent.
-    expect(facts[1]).toEqual({ term: 'Priority', value: 'Urgent' })
+    expect(facts[1]).toEqual({
+      term: 'Priority',
+      value: 'Urgent',
+      note: 'The model was not sure of this priority.',
+    })
   })
 
   it('leaves the state beside the labels alone: reviewing makes nothing current', () => {
