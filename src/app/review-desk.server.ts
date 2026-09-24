@@ -14,12 +14,15 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { ReadOptions } from '../domain/mail-reader'
-import type { ClassifiedInbox } from './live-inbox'
+import type { ClassifiedInbox, InboxListRequest } from './live-inbox'
 import { sparkInbox } from './spark-inbox.server'
 import { storedRowsFor } from './stored-classifications.server'
 
-export async function deskReading(options?: ReadOptions): Promise<ClassifiedInbox> {
-  const inbox = await sparkInbox().list(options)
+export async function deskReading(
+  options?: ReadOptions,
+  request?: InboxListRequest,
+): Promise<ClassifiedInbox> {
+  const inbox = await sparkInbox().list(options, request)
   if (inbox.status !== 'ready') return inbox
   // One id per reading, minted here because this is where a listing and the
   // judgments stored for it become one reading. It lets a browser tell a

@@ -25,14 +25,12 @@ export type WorkbenchFilter = Readonly<{ workflow: string; mailbox: string; quer
 /** The mailbox filter that shows every loaded mailbox. */
 export const allMailboxes = 'all'
 
-// It shows every loaded mailbox, not every mailbox or every message in one,
-// so both names say loaded: the page has only ever read a bounded selection.
-// The rail's is short enough to show whole in its 156px column; the queue
-// header has the room for the full phrase.
-const allAccounts: SidebarItem = { id: allMailboxes, icon: 'inbox', label: 'All loaded' }
-const allLoaded = 'All loaded mailboxes'
+// This filter includes every readable mailbox in the current listing, even
+// when only a bounded selection of messages has been loaded from each.
+const allAccounts: SidebarItem = { id: allMailboxes, icon: 'inbox', label: 'All mailboxes' }
+const allLoaded = 'All readable mailboxes'
 
-/** The applied mailbox filter's name, e.g. "All loaded mailboxes" or the mailbox's label. */
+/** The applied mailbox filter's name, e.g. "All readable mailboxes". */
 export function mailboxLabel(mailbox: string, mailboxes: readonly SidebarItem[]) {
   return mailboxes.find((item) => item.id === mailbox)?.label ?? allLoaded
 }

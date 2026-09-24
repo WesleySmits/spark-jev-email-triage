@@ -90,10 +90,10 @@ export function createSparkMailReader({
         signal: options?.signal,
       }),
 
-    listRecentEmails: ({ mailboxId, limit }, options) =>
+    listRecentEmails: ({ mailboxId, limit, page, filter }, options) =>
       call({
         name: 'emails',
-        build: () => emailsCommand(mailboxId, limit),
+        build: () => emailsCommand(mailboxId, limit, page, filter),
         parse: (stdout) => parseEmailList(stdout, { mailboxId, limit, localTime }),
         count: (listings) => listings.length,
         signal: options?.signal,

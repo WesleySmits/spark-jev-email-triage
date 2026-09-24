@@ -17,6 +17,7 @@
  * this module keeps no knowledge of what is stored about a row, and asks the
  * provider for nothing extra.
  */
+import { randomUUID } from 'node:crypto'
 import type { z } from 'zod'
 import type { emailListingSchema, threadSchema } from '../domain/email'
 import type { MailReader, ReadOptions } from '../domain/mail-reader'
@@ -25,14 +26,18 @@ import type { ObservedThread, StoredClassification } from '../domain/stored-clas
 import type { RowReview } from './desk-review'
 import { SparkError } from '../spark/errors'
 import { inboxSummarySchema, messageBodySchema, type InboxSummary, type MessageBody } from './inbox'
-import type { BodyRequest, InboxScope, LiveInbox, MailboxFailure } from './live-inbox'
+import type {
+  BodyRequest,
+  InboxListRequest,
+  InboxScope,
+  LiveInbox,
+  MailboxFailure,
+} from './live-inbox'
 
 type Listing = z.infer<typeof emailListingSchema>
 type Thread = z.infer<typeof threadSchema>
 type Marker = InboxSummary['account']['marker']
 
-/** Mailboxes listed at most, in the order the provider gives them. */
-export const maxMailboxes = 5
 /** Recent messages listed per mailbox. */
 export const perMailbox = 10
 
@@ -60,6 +65,23 @@ export type VerifiedRow = Readonly<{
   classification: StoredClassification
   review?: RowReview | undefined
 }>
+
+type PageListing = Readonly<{ listing: Listing; page: number }>
+interface MailboxProgress {
+  listings: PageListing[]
+  nextPage: number
+  bounded: boolean
+  failed?: MailboxFailure['reason'] | undefined
+  incomplete?: MailboxFailure['reason'] | undefined
+}
+interface ReadingProgress {
+  cursor: string
+  view: InboxListRequest['view']
+  pages: number
+  readable: number
+  mailboxes: ShownMailbox[]
+  progress: Map<string, MailboxProgress>
+}
 
 /**
  * Why a read failed, without anything the provider said. It is the reason a
@@ -97,58 +119,57 @@ export function createLiveInbox({
   const format = timeFormats(timeZone)
   /** The mailbox copies the last list offered, by copy id. Bodies are read only for these. */
   let offered = new Set<string>()
+  let reading: ReadingProgress | undefined
   /** Counts list reads, so only the latest one decides what is offered. */
   let reads = 0
 
-  const list = async (options?: ReadOptions): Promise<LiveInbox> => {
+  const list = async (
+    options?: ReadOptions,
+    request: InboxListRequest = { view: 'unread' },
+  ): Promise<LiveInbox> => {
     // Nothing is offered while a list reads, and a list that fails offers
     // nothing, so an older list's bodies stay closed.
     const read = ++reads
     offered = new Set()
     try {
-      const readable = (await reader.listMailboxes(options)).filter((access) => access.canRead)
-      const mailboxes = readable.slice(0, maxMailboxes).map(({ mailbox }, index) => ({
-        id: mailbox.id,
-        account: markerAt(index),
-        label: mailbox.address,
-      }))
-      const listed: Listed[] = []
-      // Whether a mailbox gave back as many messages as it was asked for, so
-      // the bound may have cut it. Counted per mailbox, before anything drops.
-      const atLimit = new Map<string, boolean>()
-      const failed: MailboxFailure[] = []
-      // Still one mailbox at a time: isolating a failure must not turn these
-      // reads into concurrent Spark commands. One that fails costs its own
-      // rows and nothing else, so the mailboxes after it are still read.
-      for (const mailbox of mailboxes) {
-        const request = { mailboxId: mailbox.id, limit: perMailbox }
-        try {
-          const listings = await reader.listRecentEmails(request, options)
-          atLimit.set(mailbox.id, listings.length >= perMailbox)
-          listed.push(...listings.map((listing) => ({ listing, mailbox })))
-        } catch (error) {
-          // A caller that gave up wants no more commands run for it, so an
-          // abort ends the whole read rather than being reported as a mailbox
-          // that could not be read.
-          if (options?.signal?.aborted === true) throw error
-          failed.push({ id: mailbox.id, label: mailbox.label, reason: reasonFor(error) })
-        }
-      }
+      const selected = await selectReading(reader, reading, request, options)
+      const { current } = selected
+      // A stale/replayed cursor returns the current honest snapshot. It never
+      // skips pages or turns one request into an unbounded provider loop.
+      if (selected.advance) await advanceReading(reader, current, options)
+      current.pages = Math.max(
+        1,
+        ...[...current.progress.values()].map((progress) => progress.nextPage - 1),
+      )
       const at = now()
-      const messages = newestFirst(unique(listed)).map(({ listing, mailbox }) =>
-        summarize(listing, mailbox, format.listed(listing.date, at)),
+      current.cursor = randomUUID()
+      reading = current
+      const listed = listedFrom(current)
+      const messages = newestFirst(unique(listed)).map(({ listing, mailbox, page }) =>
+        summarize(listing, mailbox, page, current.view, format.listed(listing.date, at)),
       )
       if (read === reads) offered = new Set(messages.map((message) => message.id))
+      const failed = failuresOf(current, 'failed')
+      const incomplete = failuresOf(current, 'incomplete')
       const scope = scopeOf({
-        mailboxes,
+        mailboxes: current.mailboxes,
         messages,
-        readable: readable.length,
-        atLimit,
+        readable: current.readable,
+        view: current.view,
+        pages: current.pages,
+        cursor: current.cursor,
+        atLimit: new Map(
+          current.mailboxes.map((mailbox) => [
+            mailbox.id,
+            current.progress.get(mailbox.id)?.bounded ?? false,
+          ]),
+        ),
         failed,
+        incomplete,
         at,
         format,
       })
-      return { status: 'ready', scope, mailboxes, messages }
+      return { status: 'ready', scope, mailboxes: current.mailboxes, messages }
     } catch (error) {
       return { status: 'unavailable', reason: reasonFor(error) }
     }
@@ -162,11 +183,17 @@ export function createLiveInbox({
    * read returns is also what `verify` judges the stored classification
    * against, so opening a row costs no extra provider call.
    */
-  const body = async ({ mailbox, id }: BodyRequest, options?: ReadOptions) => {
+  const body = async ({ mailbox, id, selection }: BodyRequest, options?: ReadOptions) => {
     try {
       const ref: MailboxCopyRef = { mailboxId: mailbox, messageId: id }
       const copyId = mailboxCopyId(ref)
-      if (!offered.has(copyId)) await list(options)
+      if (!offered.has(copyId)) {
+        if (selection) {
+          if (await selectedPageOffers(reader, ref, selection, options)) offered.add(copyId)
+        } else {
+          await list(options)
+        }
+      }
       if (!offered.has(copyId)) throw new BodyUnavailableError()
       return bodyOf(await reader.readThread(ref, options), ref, verify)
     } catch {
@@ -175,6 +202,144 @@ export function createLiveInbox({
   }
 
   return { list, body } as const
+}
+
+async function selectReading(
+  reader: MailReader,
+  reading: ReadingProgress | undefined,
+  request: InboxListRequest,
+  options?: ReadOptions,
+) {
+  const active = reading?.view === request.view ? reading : undefined
+  if (request.cursor === undefined || active === undefined) {
+    return { current: await startReading(reader, request.view, options), advance: true } as const
+  }
+  return { current: cloneReading(active), advance: active.cursor === request.cursor } as const
+}
+
+async function selectedPageOffers(
+  reader: MailReader,
+  ref: MailboxCopyRef,
+  selection: NonNullable<BodyRequest['selection']>,
+  options?: ReadOptions,
+) {
+  const readable = (await reader.listMailboxes(options)).some(
+    (access) => access.canRead && access.mailbox.id === ref.mailboxId,
+  )
+  if (!readable) return false
+  const rows = await reader.listRecentEmails(
+    {
+      mailboxId: ref.mailboxId,
+      limit: perMailbox,
+      page: selection.page,
+      filter: selection.view === 'unread' ? 'is:unread' : 'is:read',
+    },
+    options,
+  )
+  return rows.some((row) => row.messageId === ref.messageId)
+}
+
+async function startReading(
+  reader: MailReader,
+  view: InboxListRequest['view'],
+  options?: ReadOptions,
+): Promise<ReadingProgress> {
+  const readable = (await reader.listMailboxes(options)).filter((access) => access.canRead)
+  const mailboxes = readable.map(({ mailbox }, index) => ({
+    id: mailbox.id,
+    account: markerAt(index),
+    label: mailbox.address,
+  }))
+  return {
+    cursor: randomUUID(),
+    view,
+    pages: 1,
+    readable: readable.length,
+    mailboxes,
+    progress: new Map(
+      mailboxes.map((mailbox) => [
+        mailbox.id,
+        { listings: [], nextPage: 1, bounded: true } satisfies MailboxProgress,
+      ]),
+    ),
+  }
+}
+
+const cloneReading = (reading: ReadingProgress): ReadingProgress => ({
+  ...reading,
+  progress: new Map(
+    [...reading.progress].map(([id, progress]) => [
+      id,
+      { ...progress, listings: [...progress.listings] },
+    ]),
+  ),
+})
+
+/** Read at most one next page per mailbox and retain every completed page. */
+async function advanceReading(reader: MailReader, reading: ReadingProgress, options?: ReadOptions) {
+  for (const mailbox of reading.mailboxes) {
+    const progress = reading.progress.get(mailbox.id)
+    if (progress) await advanceMailbox(reader, reading.view, mailbox.id, progress, options)
+  }
+}
+
+async function advanceMailbox(
+  reader: MailReader,
+  view: InboxListRequest['view'],
+  mailboxId: string,
+  progress: MailboxProgress,
+  options?: ReadOptions,
+) {
+  if (!progress.bounded || progress.failed) return
+  const page = progress.nextPage
+  try {
+    const rows = await reader.listRecentEmails(
+      {
+        mailboxId,
+        limit: perMailbox,
+        page,
+        filter: view === 'unread' ? 'is:unread' : 'is:read',
+      },
+      options,
+    )
+    progress.listings.push(...rows.map((listing) => ({ listing, page })))
+    progress.nextPage = page + 1
+    progress.bounded = rows.length >= perMailbox
+    progress.incomplete = undefined
+  } catch (error) {
+    if (options?.signal?.aborted) throw error
+    recordPageFailure(progress, page, reasonFor(error))
+  }
+}
+
+function recordPageFailure(
+  progress: MailboxProgress,
+  page: number,
+  reason: MailboxFailure['reason'],
+) {
+  if (page === 1) {
+    progress.failed = reason
+    progress.bounded = false
+    return
+  }
+  progress.incomplete = reason
+  progress.bounded = true
+}
+
+const listedFrom = (reading: ReadingProgress): Listed[] =>
+  reading.mailboxes.flatMap((mailbox) =>
+    (reading.progress.get(mailbox.id)?.listings ?? []).map(({ listing, page }) => ({
+      listing,
+      mailbox,
+      page,
+    })),
+  )
+
+function failuresOf(reading: ReadingProgress, kind: 'failed' | 'incomplete') {
+  return reading.mailboxes.flatMap((mailbox): MailboxFailure[] => {
+    const reason = reading.progress.get(mailbox.id)?.[kind]
+    return reason ? [{ id: mailbox.id, label: mailbox.label, reason }] : []
+  })
 }
 
 /**
@@ -219,10 +384,14 @@ type ScopeInput = Readonly<{
   messages: readonly InboxSummary[]
   /** Readable mailboxes the provider offered, before the mailbox bound. */
   readable: number
+  view: InboxListRequest['view']
+  pages: number
+  cursor: string
   /** Per mailbox: whether its listing came back at the per-mailbox bound. */
   atLimit: ReadonlyMap<string, boolean>
   /** The listed mailboxes whose listing failed, so they hold no rows here. */
   failed: readonly MailboxFailure[]
+  incomplete: readonly MailboxFailure[]
   at: Date
   format: ReturnType<typeof timeFormats>
 }>
@@ -241,8 +410,12 @@ function scopeOf({
   mailboxes,
   messages,
   readable,
+  view,
+  pages,
+  cursor,
   atLimit,
   failed,
+  incomplete,
   at,
   format,
 }: ScopeInput): InboxScope {
@@ -253,13 +426,17 @@ function scopeOf({
     bounded: atLimit.get(mailbox.id) ?? false,
   }))
   return {
+    view,
+    pages,
+    cursor,
     mailboxes: scoped,
     failed,
+    incomplete,
     readable,
-    mailboxLimit: maxMailboxes,
-    messageLimit: perMailbox,
+    mailboxLimit: mailboxes.length,
+    messageLimit: perMailbox * pages,
     loaded: messages.length,
-    bounded: readable > maxMailboxes || scoped.some((mailbox) => mailbox.bounded),
+    bounded: scoped.some((mailbox) => mailbox.bounded),
     readAt: format.clock(at),
     refreshedAt: at.toISOString(),
   }
@@ -267,7 +444,7 @@ function scopeOf({
 
 type ShownMailbox = Readonly<{ id: string; account: Marker; label: string }>
 /** A listing with the mailbox it was listed in. */
-type Listed = Readonly<{ listing: Listing; mailbox: ShownMailbox }>
+type Listed = Readonly<{ listing: Listing; mailbox: ShownMailbox; page: number }>
 
 /** Listed text as the row shows it: a cut value ends in `…`, a missing one is `null`. */
 const shown = (value: Listing['subject']) => value && (value.cut ? `${value.text}…` : value.text)
@@ -276,11 +453,14 @@ const shown = (value: Listing['subject']) => value && (value.cut ? `${value.text
 function summarize(
   listing: Listing,
   mailbox: ShownMailbox,
+  page: number,
+  view: InboxListRequest['view'],
   time: Pick<InboxSummary, 'time' | 'dateTime'>,
 ): InboxSummary {
   return inboxSummarySchema.parse({
     id: mailboxCopyId({ mailboxId: mailbox.id, messageId: listing.messageId }),
     messageId: listing.messageId,
+    sourcePage: page,
     workflow: 'inbox',
     mailbox: mailbox.id,
     sender: shown(listing.sender) ?? 'Sender unavailable',
@@ -290,6 +470,7 @@ function summarize(
     snippet: '',
     account: { marker: mailbox.account, label: mailbox.label },
     status,
+    unread: view === 'unread',
   })
 }
 

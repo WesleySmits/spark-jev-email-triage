@@ -22,6 +22,51 @@ body {
   overflow: hidden;
 }
 
+.app-root--inbox {
+  display: flex;
+  flex-direction: column;
+}
+
+.inbox-view__workbench {
+  flex: 1;
+  min-height: 0;
+}
+
+.inbox-view {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: var(--s2) 0 0;
+  background: transparent;
+}
+
+.inbox-view__tabs {
+  display: flex;
+  gap: 0.25rem;
+}
+.inbox-view button {
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--ink);
+  padding: 0.35rem 0.65rem;
+  cursor: pointer;
+  font: inherit;
+}
+.inbox-view button[aria-current='page'] {
+  background: var(--ink);
+  color: var(--canvas);
+}
+.inbox-view button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.inbox-view__note {
+  color: var(--muted);
+  font: var(--text-meta);
+}
+
 :focus-visible {
   outline: var(--focus-width) solid var(--focus);
   outline-offset: var(--focus-offset);

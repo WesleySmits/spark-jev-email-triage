@@ -4,53 +4,45 @@ TanStack Start app with React, Vite, and strict TypeScript.
 
 ## Current product status
 
-The root route reads a bounded recent inbox from the local Spark CLI and
-shows classifications previously stored by the shadow CLI. `shadow --apply`
+The root route reads unread mail first from the local Spark CLI and shows
+classifications previously stored by the shadow CLI. `shadow --apply`
 stores classifications and the app saves human category reviews in the same
 SQLite database. Neither classification nor review changes mail. A separate,
 default-off Done panel can archive one message after explicit approval and
 confirmation.
 
-The inbox includes the first five readable mailboxes in provider order and
-up to ten recent Inbox messages per mailbox, sorted newest first (at most
-50 rows before deduplication). It has no pagination or complete-history
-view. Search and mailbox filtering operate on those loaded rows. A failure
-is isolated to the mailbox it happened in: the mailboxes that answered are
-still delivered, and only discovering the mailboxes at all makes the whole
-inbox unavailable. Copies in different mailboxes remain distinct even when
-message ids, subjects or contents match.
+The inbox starts with the ten newest unread messages from every readable
+mailbox, sorted newest first. "Load older" adds another ten-message page per
+mailbox that still has more, with no application page ceiling. Completed pages
+are retained rather than requested again. "Other Inbox" reads the same bounded set for
+messages Spark reports as read. Search and mailbox filtering operate on the
+selected view's loaded rows. A failure is isolated to the mailbox and page it
+happened in: mailboxes that answered are still delivered, and completed pages
+remain visible if a later page fails. Only discovering the mailboxes at all
+makes the whole inbox unavailable. Copies in different mailboxes remain
+distinct even when message ids, subjects or contents match.
 
 That reach is stated on the page rather than left to be inferred. Every
-reading carries a scope: the mailboxes it listed with their counts, how
-many readable mailboxes the provider offered, the two bounds, and when the
-last successful refresh finished. The queue header shows it under the title
-in both the desktop and the mobile queue pane, marked when a bound may have
-cut the reading. The figures are counted from the rows that were kept, never
-estimated: a mailbox whose listing came back full is reported as possibly
-cut, because a full listing only proves more was never asked for. The two
-bounds are stated apart, because they leave out different mail: a mailbox
-the mailbox bound never reached is missing whole, newest mail included,
-while the per-mailbox bound only cuts off older mail in a mailbox that was
-read. The
-mailbox filter is named "All loaded", the search says it searches loaded
-mail, and a reading that loaded nothing reads differently from a filter that
-matched nothing.
+reading carries a scope: its unread or read view, requested page count, the
+mailboxes it listed with their counts, how many readable mailboxes Spark
+offered, and when the refresh finished. The queue header shows it under the
+title in both the desktop and the mobile queue pane, marked when another page
+may exist. The figures are counted from the rows that were kept, never
+estimated: a mailbox whose last listing page came back full is reported as
+possibly cut, because a full page only proves more was never asked for. The
+mailbox filter is named "All mailboxes", the search says it searches loaded mail,
+and a reading that loaded nothing reads differently from a filter that matched
+nothing. Neither an empty unread view nor an empty read view claims Inbox Zero.
 
 The scope also names the mailboxes the reading could not read, so a partial
-failure is visible rather than silent. Such a mailbox contributes no rows
-and is counted as unread, never as empty and never as bounded: a listing
-that never arrived says nothing about how much mail is behind it. A mailbox
-that answered with nothing is a real, empty reading of it, and reads
-differently. Failed, partly failed and fully read readings are therefore
-distinguishable, as is an inbox where every listed mailbox failed, which
-says so instead of showing an empty queue. The failed mailbox keeps its
-place in the rail, so a chosen mailbox filter survives the failure. An open
-message remains available when its own mailbox answered. Retrying is Refresh,
-which reads every mailbox again; there is
-no per-mailbox retry, because a reading is delivered and dated as a whole.
-Nothing older is kept when a mailbox fails, so no row is ever shown as
-fresher than the reading it came from, and a failure carries the mailbox
-address and a coarse reason only, never mail content.
+failure is visible rather than silent. A first-page failure contributes no
+rows and is never treated as empty or bounded. If a later page fails, completed
+pages from that mailbox remain visible and the view offers a retry. A mailbox
+that answered with nothing is a real, empty reading of the selected view and
+reads differently. Failed, partly failed and fully read readings are therefore
+distinguishable, as is an inbox where every listed mailbox failed, which says
+so instead of showing an empty queue. A failure carries the mailbox address
+and a coarse reason only, never mail content.
 
 The filters are reachable at every supported width. Above 900px they are the
 navigation rail beside the queue. At 900px and below the rail would leave the
@@ -242,11 +234,14 @@ pnpm readback:spark                      # whether Spark answers on this host
   Everything below it stays behind that module, so the route imports no
   server, Spark, Jev or persistence code.
 - `ReviewDesk.open` calls `getLiveInbox` in `src/app/live-inbox.functions.ts`,
-  a server function: it discovers the readable mailboxes (at most 5), lists
-  the 10 most recent Inbox messages in each, one Spark call at a time, and
-  returns strict summaries without a body, newest first. A mailbox whose
-  listing fails is recorded in the reading's scope and costs only its own
-  rows; the remaining mailboxes are still listed, still one call at a time.
+  a server function: it discovers every readable mailbox and lists unread or
+  read Inbox messages in ten-message pages, one Spark call at a time. It
+  returns strict summaries without a body, newest first. A mailbox whose first
+  page fails is recorded in the reading's scope and costs only its own rows; a
+  later-page failure keeps completed pages and is recorded as incomplete. The
+  remaining mailboxes are still listed, still one call at a time. An opaque,
+  single-step continuation advances each still-bounded mailbox once, so a
+  replay cannot skip pages or start an unbounded provider loop.
   An app server that doesn't answer is reported as `unreachable`, not as an
   error. Opening a
   message calls `getLiveBody` for that message only; it returns that

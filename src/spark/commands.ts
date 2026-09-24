@@ -23,7 +23,7 @@ const mailboxIdSchema = z
   .brand<'SparkMailboxId'>()
 
 const listLimitSchema = z.int().min(1).max(maxListLimit).brand<'SparkListLimit'>()
-const pageSchema = z.int().min(1).max(20).brand<'SparkPage'>()
+const pageSchema = z.int().positive().brand<'SparkPage'>()
 
 type SparkMessageId = z.infer<typeof messageIdSchema>
 type SparkMailboxId = z.infer<typeof mailboxIdSchema>
@@ -37,6 +37,7 @@ export type SparkCommand =
       readonly mailboxId: SparkMailboxId
       readonly limit: SparkListLimit
       readonly page: SparkPage
+      readonly filter?: 'is:unread' | 'is:read'
     }
   | { readonly name: 'thread'; readonly messageId: SparkMessageId }
 
@@ -53,11 +54,17 @@ export const accountsCommand = (): SparkCommand => ({ name: 'accounts' })
 export const validateMailboxId = (mailboxId: string): SparkMailboxId =>
   validate(mailboxIdSchema, mailboxId, 'mailboxId')
 
-export const emailsCommand = (mailboxId: string, limit: number, page = 1): SparkCommand => ({
+export const emailsCommand = (
+  mailboxId: string,
+  limit: number,
+  page = 1,
+  filter?: 'is:unread' | 'is:read',
+): SparkCommand => ({
   name: 'emails',
   mailboxId: validateMailboxId(mailboxId),
   limit: validate(listLimitSchema, limit, 'limit'),
   page: validate(pageSchema, page, 'page'),
+  ...(filter && { filter }),
 })
 
 export const threadCommand = (messageId: string): SparkCommand => ({
@@ -73,6 +80,7 @@ export function sparkArguments(command: SparkCommand): readonly string[] {
     case 'emails':
       return [
         'emails',
+        ...(command.filter ? ['--filter', command.filter] : []),
         '--page-size',
         String(command.limit),
         ...(command.page === 1 ? [] : ['--page', String(command.page)]),

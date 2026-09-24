@@ -33,6 +33,22 @@ describe('Spark commands', () => {
         'Support@Example.com:Inbox',
       ],
     ],
+    [
+      emailsCommand('Support@Example.com', 10, 2, 'is:unread'),
+      [
+        'emails',
+        '--filter',
+        'is:unread',
+        '--page-size',
+        '10',
+        '--page',
+        '2',
+        '--order',
+        'descending',
+        '--',
+        'Support@Example.com:Inbox',
+      ],
+    ],
     [threadCommand('1001'), ['thread', '--', '1001']],
   ])('builds the argument vector for %o', (command, expected) => {
     expect(sparkArguments(command)).toEqual(expected)
@@ -68,9 +84,13 @@ describe('Spark commands', () => {
     )
   })
 
-  it.each([0, -1, 1.5, 21])('rejects %d as a page', (page) => {
+  it.each([0, -1, 1.5])('rejects %d as a page', (page) => {
     expect(() => emailsCommand('support@example.com', 10, page)).toThrow(
       expect.objectContaining({ code: 'invalid_input', detail: 'page' }),
     )
+  })
+
+  it('does not impose a silent provider page ceiling', () => {
+    expect(sparkArguments(emailsCommand('support@example.com', 10, 21))).toContain('21')
   })
 })
