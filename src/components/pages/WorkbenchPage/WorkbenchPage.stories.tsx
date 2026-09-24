@@ -204,6 +204,11 @@ const meta = {
     topBar: { control: 'object' },
   },
   parameters: { layout: 'fullscreen' },
+  // The shortcut preference lives in this browser's local storage, which every
+  // story here shares. Each one starts from the default: the keys on.
+  beforeEach: () => {
+    localStorage.removeItem(shortcutKey)
+  },
   render: (args) => <WithData {...args} />,
   // A bounded frame, like the app's 100dvh root, so the panes scroll.
   decorators: [
@@ -218,6 +223,15 @@ const meta = {
 export default meta
 
 type Story = StoryObj<typeof meta>
+
+// Where the page keeps the shortcut preference, as `shortcut-preference.ts` says.
+const shortcutKey = 'spark:single-key-shortcuts:v1'
+
+const settingName = 'Single-key shortcuts'
+
+// The rail's shortcut help: the legend rows, if any, and the setting's note.
+const shortcutHelp = (root: HTMLElement) =>
+  root.querySelector('.shortcut-legend')?.textContent ?? ''
 
 const rail = (root: HTMLElement, name: string) =>
   userEvent.click(within(root).getByRole('button', { name: new RegExp(`^${name}`) }))
@@ -407,6 +421,99 @@ export const KeyboardNavigation: Story = {
     await userEvent.keyboard('kj')
     await expect(subject(canvasElement)).toHaveTextContent('No message open')
     await expect(canvas.getByRole('heading', { name: 'No results in this filter' })).toBeVisible()
+  },
+}
+
+/**
+ * The keys turned off, as they come back from an earlier visit. No single
+ * character acts: K, J, E and / do nothing, and nothing in the page claims
+ * they do. Tab, Enter, the buttons and the rows keep working, and the box in
+ * the rail turns the keys back on.
+ */
+export const ShortcutsTurnedOff: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  beforeEach: () => {
+    localStorage.setItem(shortcutKey, 'off')
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const box = canvas.getByRole('checkbox', { name: settingName })
+    await expect(box).not.toBeChecked()
+    // The help offers no key, and neither does the search or Complete.
+    await expect(shortcutHelp(canvasElement)).not.toContain('Next / previous')
+    await expect(shortcutHelp(canvasElement)).toContain('Tab, Enter and Escape still work.')
+    await expect(canvas.getByRole('searchbox')).not.toHaveAttribute('aria-keyshortcuts')
+    await expect(canvas.getByRole('button', { name: 'Complete' })).not.toHaveAttribute(
+      'aria-keyshortcuts',
+    )
+
+    // K, J and E leave the open message and the focused row as they are.
+    const row = canvas.getByRole('button', { name: firstReview })
+    await userEvent.click(row)
+    await keysChangeNothing(canvasElement, 'kjeKJE', row)
+    await expect(canvas.getByRole('button', { name: /^Done/ })).toHaveTextContent('1')
+    // / types nowhere and moves no focus.
+    blurFocus()
+    await userEvent.keyboard('/')
+    await expect(canvas.getByRole('searchbox')).not.toHaveFocus()
+    await expect(canvas.getByRole('searchbox')).toHaveValue('')
+
+    // Typing still reaches the field, letters and all.
+    await userEvent.type(canvas.getByRole('searchbox'), 'kje')
+    await expect(canvas.getByRole('searchbox')).toHaveValue('kje')
+    await userEvent.clear(canvas.getByRole('searchbox'))
+
+    // Tab reaches the rows and Enter opens one, which is all the page needs.
+    row.focus()
+    await userEvent.keyboard('{Tab}')
+    await expect(row).not.toHaveFocus()
+    await userEvent.click(canvas.getByRole('button', { name: lastReview }))
+    await expect(subject(canvasElement)).toHaveTextContent('Move Friday dinner?')
+    canvas.getByRole('button', { name: firstReview }).focus()
+    await userEvent.keyboard('{Enter}')
+    await expect(subject(canvasElement)).toHaveTextContent('Can delivery move a week earlier?')
+
+    // Turning the keys back on brings the help and the keys back at once.
+    await userEvent.click(box)
+    await expect(box).toBeChecked()
+    await expect(shortcutHelp(canvasElement)).toContain('Next / previous')
+    await expect(canvas.getByRole('searchbox')).toHaveAttribute('aria-keyshortcuts', '/')
+    await expect(localStorage.getItem(shortcutKey)).toBe('on')
+    blurFocus()
+    await userEvent.keyboard('k')
+    await expect(subject(canvasElement)).toHaveTextContent('Move Friday dinner?')
+  },
+}
+
+/**
+ * The keys left on, which is how they arrive without a stored choice. The box
+ * says so, and the help names every key that acts.
+ */
+export const ShortcutsTurnedOffAndOnAgain: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const box = canvas.getByRole('checkbox', { name: settingName })
+    await expect(box).toBeChecked()
+    await expect(shortcutHelp(canvasElement)).toContain('Next / previous')
+    await expect(shortcutHelp(canvasElement)).toContain('Complete')
+
+    // Off from here: the choice is stored, so the next visit starts that way.
+    await userEvent.click(box)
+    await expect(localStorage.getItem(shortcutKey)).toBe('off')
+    await expect(shortcutHelp(canvasElement)).not.toContain('Next / previous')
+    const row = canvas.getByRole('button', { name: firstReview })
+    await userEvent.click(row)
+    await keysChangeNothing(canvasElement, 'kj', row)
+
+    // And on again, without a reload in between.
+    await userEvent.click(box)
+    await expect(localStorage.getItem(shortcutKey)).toBe('on')
+    // The box itself keeps its own keys, so the page's act from the row again.
+    await keysChangeNothing(canvasElement, 'k', box)
+    row.focus()
+    await userEvent.keyboard('k')
+    await expect(subject(canvasElement)).toHaveTextContent('Move Friday dinner?')
   },
 }
 

@@ -45,7 +45,8 @@ import { ReviewAction, type CheckReview, type SaveReview } from './ReviewAction'
 import { reviewableIn } from './review'
 import { emptyScopeText, scopeText, type QueueScope } from './scope'
 import { useMessageBody } from './useMessageBody'
-import { shortcutLegend, useWorkbenchShortcuts } from './useWorkbenchShortcuts'
+import { useShortcutPreference } from './useShortcutPreference'
+import { legendFor, useWorkbenchShortcuts } from './useWorkbenchShortcuts'
 import {
   afterRemoval,
   appliedFilter,
@@ -199,6 +200,18 @@ type WorkbenchPageProps = Readonly<{
     | 'searchId'
   >
 }>
+
+/** The single-key shortcut preference of this browser, as the page reads it. */
+type Preference = ReturnType<typeof useShortcutPreference>
+
+const shortcutSetting = {
+  label: 'Single-key shortcuts',
+  /** What the current value means, so the help never only says "on" or "off". */
+  note: {
+    on: 'K, J, E and / act on their own.',
+    off: 'Letters and / do nothing here. Tab, Enter and Escape still work.',
+  },
+} as const
 
 const readerContent = '.workbench__reader [role="region"][tabindex]'
 const currentRow = '.workbench__queue [aria-current="true"]'
@@ -477,8 +490,21 @@ function useFollowCurrentRow(root: Root, openId: string | undefined) {
   }, [root, openId])
 }
 
-/** K opens the next message, J the previous one, E completes and / searches. */
-function useShortcuts(root: Root, state: PageState, complete: () => void, searchId: string) {
+type ShortcutsInput = Readonly<{
+  root: Root
+  state: PageState
+  complete: () => void
+  searchId: string
+  /** Whether the user left the single-key shortcuts on. */
+  singleKeys: boolean
+}>
+
+/**
+ * K opens the next message, J the previous one, E completes and / searches,
+ * while the user leaves them on. Turned off, the page listens for no key of
+ * one character and says so wherever it named one.
+ */
+function useShortcuts({ root, state, complete, searchId, singleKeys }: ShortcutsInput) {
   useWorkbenchShortcuts(
     {
       next: () => {
@@ -495,7 +521,7 @@ function useShortcuts(root: Root, state: PageState, complete: () => void, search
         document.getElementById(searchId)?.focus()
       },
     },
-    queueRow,
+    { actsFrom: queueRow, singleKeys },
   )
 }
 
@@ -562,14 +588,17 @@ type PageTopBarProps = Readonly<{
   state: PageState
   searchId: string
   root: Root
+  /** The `/` hint shows only while the key does something. */
+  singleKeys: boolean
 }>
 
 /** The top bar with the page's search. Enter moves focus to the results. */
-function PageTopBar({ topBar, state, searchId, root }: PageTopBarProps) {
+function PageTopBar({ topBar, state, searchId, root, singleKeys }: PageTopBarProps) {
   return (
     <TopBar
       {...topBar}
       searchId={searchId}
+      searchShortcut={singleKeys}
       searchLabel="Search loaded mail"
       searchPlaceholder="Search loaded mail"
       searchValue={state.filter.query}
@@ -584,11 +613,16 @@ function PageTopBar({ topBar, state, searchId, root }: PageTopBarProps) {
 }
 
 type PageRailProps = Readonly<
-  { state: PageState; canComplete: boolean } & Pick<PageInput, 'workflows' | 'mailboxes'>
+  {
+    state: PageState
+    canComplete: boolean
+    /** The preference: which keys the legend lists, and what the box shows. */
+    shortcuts: Preference
+  } & Pick<PageInput, 'workflows' | 'mailboxes'>
 >
 
-/** The rail with the applied filters, counts and the shortcut legend. */
-function PageRail({ state, canComplete, workflows, mailboxes }: PageRailProps) {
+/** The rail with the applied filters, counts, the legend and its setting. */
+function PageRail({ state, canComplete, shortcuts, workflows, mailboxes }: PageRailProps) {
   return (
     <Sidebar
       label="Filters"
@@ -596,9 +630,13 @@ function PageRail({ state, canComplete, workflows, mailboxes }: PageRailProps) {
       onSelect={(groupId, itemId) => {
         state.filterBy({ [groupId]: itemId })
       }}
-      shortcuts={
-        canComplete ? shortcutLegend : shortcutLegend.filter((item) => item.label !== 'Complete')
-      }
+      shortcuts={legendFor({ singleKeys: shortcuts.on, canComplete })}
+      shortcutSetting={{
+        label: shortcutSetting.label,
+        on: shortcuts.on,
+        note: shortcuts.on ? shortcutSetting.note.on : shortcutSetting.note.off,
+        onChange: shortcuts.choose,
+      }}
     />
   )
 }
@@ -794,18 +832,34 @@ function mailboxNames(messages: readonly WorkbenchMessage[]): LabelOf {
 
 type ReaderActions = ComponentProps<typeof MessageReader>['actions']
 
-/** Complete when the page may offer it; read-only says so instead. */
-function readerActions(complete: (() => void) | undefined, guardedDone: boolean): ReaderActions {
-  return complete
-    ? { primaryAction: { label: 'Complete', icon: 'check', shortcut: 'E', onClick: complete } }
-    : guardedDone
-      ? {
-          note: {
-            title: 'Guarded Done',
-            detail: 'Use the proposal panel below to approve and run Spark Done.',
-          },
-        }
-      : { note: { title: 'Read only', detail: 'Nothing here changes your mail.' } }
+/**
+ * Complete when the page may offer it. The E hint shows only while its key
+ * acts; guarded Done remains a separate proposal.
+ */
+function readerActions(
+  complete: (() => void) | undefined,
+  singleKeys: boolean,
+  guardedDone: boolean,
+): ReaderActions {
+  if (complete) {
+    return {
+      primaryAction: {
+        label: 'Complete',
+        icon: 'check',
+        ...(singleKeys && { shortcut: 'E' }),
+        onClick: complete,
+      },
+    }
+  }
+  if (guardedDone) {
+    return {
+      note: {
+        title: 'Guarded Done',
+        detail: 'Use the proposal panel below to approve and run Spark Done.',
+      },
+    }
+  }
+  return { note: { title: 'Read only', detail: 'Nothing here changes your mail.' } }
 }
 
 type ReaderProps = PaneProps &
@@ -822,6 +876,8 @@ type ReaderProps = PaneProps &
     /** The mailbox action panel for the open row, or none when none is offered. */
     proposal: ReactNode
     guardedDone?: boolean | undefined
+    /** Whether the single-key shortcuts are on, which the E hint follows. */
+    singleKeys: boolean
   }>
 
 function Reader({
@@ -835,6 +891,7 @@ function Reader({
   review,
   proposal,
   guardedDone = false,
+  singleKeys,
 }: ReaderProps) {
   const { shown, open } = state
   if (!open) {
@@ -868,7 +925,7 @@ function Reader({
       evidence={readerEvidence(evidence, reviewed)}
       review={review}
       proposal={proposal}
-      actions={readerActions(complete, guardedDone)}
+      actions={readerActions(complete, singleKeys, guardedDone)}
     >
       <ReaderBody body={body} retry={retry} />
     </MessageReader>
@@ -883,7 +940,8 @@ function useWorkbench(props: WorkbenchPageProps) {
   const restoreRef = useRef<Place | null>(null)
   const notice = useCompletedNotice(state, restoreRef)
   const complete = useComplete(state, notice, restoreRef)
-  useShortcuts(root, state, complete, searchId)
+  const shortcuts = useShortcutPreference()
+  useShortcuts({ root, state, complete, searchId, singleKeys: shortcuts.on })
   useKeepFocus(root, restoreRef, state, notice.message !== undefined)
   useFollowCurrentRow(root, state.open?.id)
   const { body, retry } = useMessageBody(
@@ -893,7 +951,18 @@ function useWorkbench(props: WorkbenchPageProps) {
   )
   const reviews = useRecordedReviews(props.review)
   const evidence = evidenceIn(props.classifications, state.open?.id, body, reviews.recorded)
-  return { state, searchId, root, notice, complete, body, retry, evidence, reviews } as const
+  return {
+    state,
+    searchId,
+    root,
+    notice,
+    complete,
+    body,
+    retry,
+    evidence,
+    reviews,
+    shortcuts,
+  } as const
 }
 
 /**
@@ -904,8 +973,12 @@ function useWorkbench(props: WorkbenchPageProps) {
  * which message is open, the mobile pane, focus on pane switches, and the
  * K (next), J (previous), E and / shortcuts shown in the rail and search
  * field. The keys do nothing on a field, button, checkbox or link, except
- * the queue's rows, nor with Ctrl, Alt or Cmd. It also owns the
- * Completed notice with its optional Undo. The caller owns the data: it
+ * the queue's rows, nor with Ctrl, Alt or Cmd. The rail's Single-key
+ * shortcuts box turns them off for this browser: then no key of one
+ * character acts, nothing claims one, and Tab, Enter and Escape are all the
+ * page needs. That choice is kept in local storage, without any mail, and
+ * the rail is hidden below a 600px viewport, so the box is too. It also owns
+ * the Completed notice with its optional Undo. The caller owns the data: it
  * passes the messages without bodies, a loader for one body at a time, and
  * decides whether Complete is offered and what it and Undo do. The page
  * asks only for the open message's body, shows its loading, missing and
@@ -940,7 +1013,7 @@ function useWorkbench(props: WorkbenchPageProps) {
  */
 export function WorkbenchPage(props: WorkbenchPageProps) {
   const { workflows, mailboxes, completion } = props
-  const { state, searchId, root, notice, complete, body, retry, evidence, reviews } =
+  const { state, searchId, root, notice, complete, body, retry, evidence, reviews, shortcuts } =
     useWorkbench(props)
   const title = workflows.find((item) => item.id === state.filter.workflow)?.label ?? ''
   const canComplete = completion.mode === 'enabled'
@@ -948,11 +1021,20 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
     <div ref={root} className="workbench-page">
       <WorkbenchTemplate
         mobilePane={state.pane}
-        topBar={<PageTopBar topBar={props.topBar} state={state} searchId={searchId} root={root} />}
+        topBar={
+          <PageTopBar
+            topBar={props.topBar}
+            state={state}
+            searchId={searchId}
+            root={root}
+            singleKeys={shortcuts.on}
+          />
+        }
         sidebar={
           <PageRail
             state={state}
             canComplete={canComplete}
+            shortcuts={shortcuts}
             workflows={workflows}
             mailboxes={mailboxes}
           />
@@ -975,6 +1057,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             retry={retry}
             evidence={evidence.open}
             reviewed={evidence.openReview}
+            singleKeys={shortcuts.on}
             review={readerReview(
               reviews.save,
               reviews.resolve,

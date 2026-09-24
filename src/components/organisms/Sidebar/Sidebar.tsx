@@ -41,6 +41,11 @@ type SidebarProps = Readonly<{
   onSelect: (groupId: string, itemId: string) => void
   /** Shown in the fixed help area at the bottom. Empty or left out: no help area. */
   shortcuts?: ComponentProps<typeof ShortcutLegend>['shortcuts'] | undefined
+  /**
+   * A checkbox in the help area that turns the shortcuts off and on. The
+   * caller owns the choice and the keys; the rail only shows it.
+   */
+  shortcutSetting?: ComponentProps<typeof ShortcutLegend>['setting'] | undefined
   className?: string | undefined
 }>
 
@@ -101,7 +106,14 @@ function Group({ group, onSelect }: GroupProps) {
  *   shortcuts={[{ label: 'Next / previous', keys: ['K', 'J'] }]}
  * />
  */
-export function Sidebar({ label, groups, onSelect, shortcuts = [], className }: SidebarProps) {
+export function Sidebar({
+  label,
+  groups,
+  onSelect,
+  shortcuts = [],
+  shortcutSetting,
+  className,
+}: SidebarProps) {
   const classes = ['sidebar', className].filter(Boolean).join(' ')
   const visible = groups.filter((group) => group.items.length > 0 || group.emptyLabel)
   return (
@@ -111,9 +123,9 @@ export function Sidebar({ label, groups, onSelect, shortcuts = [], className }: 
           <Group key={group.id} group={group} onSelect={onSelect} />
         ))}
       </div>
-      {shortcuts.length > 0 && (
+      {(shortcuts.length > 0 || shortcutSetting !== undefined) && (
         <div className="sidebar__help">
-          <ShortcutLegend shortcuts={shortcuts} />
+          <ShortcutLegend shortcuts={shortcuts} setting={shortcutSetting} />
         </div>
       )}
     </aside>
