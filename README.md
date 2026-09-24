@@ -30,7 +30,7 @@ title in both the desktop and the mobile queue pane, marked when another page
 may exist. The figures are counted from the rows that were kept, never
 estimated: a mailbox whose last listing page came back full is reported as
 possibly cut, because a full page only proves more was never asked for. The
-mailbox filter is named "All loaded", the search says it searches loaded mail,
+mailbox filter is named "All mailboxes", the search says it searches loaded mail,
 and a reading that loaded nothing reads differently from a filter that matched
 nothing. Neither an empty unread view nor an empty read view claims Inbox Zero.
 

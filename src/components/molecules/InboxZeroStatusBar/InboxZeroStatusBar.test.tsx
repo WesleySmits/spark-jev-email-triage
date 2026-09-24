@@ -101,6 +101,6 @@ describe('InboxZeroStatusBar', () => {
     expect(coverage.zero).toBe('confirmed')
     expect(textContent(root)).toContain('Inbox Zero verification pending')
     expect(textContent(root)).not.toContain('Inbox Zero confirmed')
-    expect(root.props['aria-busy']).toBe(true)
+    expect(root.props).not.toHaveProperty('aria-busy')
   })
 })

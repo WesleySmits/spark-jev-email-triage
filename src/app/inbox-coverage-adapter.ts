@@ -1,16 +1,14 @@
-import type { InboxScope } from './live-inbox'
+import type { InboxListRequest, InboxScope } from './live-inbox'
 import {
   failedCoverage,
   viewCoverage,
   type CoverageView,
+  type InboxCoverage,
   type InboxViewCoverage,
 } from './inbox-coverage'
 
 /** Browser-safe adapter: it only reshapes one read-only Inbox scope. */
-export function coverageFromInboxScope(
-  scope: InboxScope,
-  startedAt = scope.refreshedAt,
-): InboxViewCoverage {
+export function coverageFromInboxScope(scope: InboxScope, startedAt: string): InboxViewCoverage {
   return viewCoverage({
     view: scope.view,
     mailboxes: scope.mailboxes,
@@ -22,6 +20,29 @@ export function coverageFromInboxScope(
     startedAt,
     refreshedAt: scope.refreshedAt,
   })
+}
+
+/** Capture a real start before the first provider command begins. */
+export async function readWithStart<T>(
+  read: () => Promise<T>,
+  now = () => new Date().toISOString(),
+) {
+  const startedAt = now()
+  return { value: await read(), startedAt } as const
+}
+
+/**
+ * A cursor continues the same accumulated view scan. Fresh reads, including
+ * refreshes and the first read of another view, begin a new interval.
+ */
+export function startedAtForRequest(
+  previous: InboxCoverage | undefined,
+  request: InboxListRequest,
+  now: string,
+) {
+  if (!request.cursor) return now
+  const view = request.view === 'unread' ? previous?.unread : previous?.read
+  return view?.startedAt ?? now
 }
 
 type CoveredRead<T> =

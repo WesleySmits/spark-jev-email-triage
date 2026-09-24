@@ -53,6 +53,8 @@ type TopBarProps = Readonly<{
    * reconnect. Left out, the status shows as plain text instead of a button.
    */
   onSyncClick?: (() => void) | undefined
+  /** Keeps the sync button mounted and focusable while its action is unavailable. */
+  syncDisabled?: boolean | undefined
   /** Names the avatar, e.g. "Profiel Wesley Smits". */
   profileLabel: string
   /** One or two letters, e.g. "WS". */
@@ -119,10 +121,19 @@ function searchElement({
   )
 }
 
-type SyncProps = Pick<TopBarProps, 'syncStatus' | 'syncLabel' | 'syncActionLabel' | 'onSyncClick'>
+type SyncProps = Pick<
+  TopBarProps,
+  'syncStatus' | 'syncLabel' | 'syncActionLabel' | 'onSyncClick' | 'syncDisabled'
+>
 
 /** The sync status: a button when a click does something, plain text otherwise. */
-function syncElement({ syncStatus, syncLabel, syncActionLabel, onSyncClick }: SyncProps) {
+function syncElement({
+  syncStatus,
+  syncLabel,
+  syncActionLabel,
+  onSyncClick,
+  syncDisabled,
+}: SyncProps) {
   if (!onSyncClick) {
     return (
       <SyncStatusText status={syncStatus} className="top-bar__sync">
@@ -135,7 +146,8 @@ function syncElement({ syncStatus, syncLabel, syncActionLabel, onSyncClick }: Sy
       status={syncStatus}
       className="top-bar__sync"
       aria-label={syncActionLabel}
-      onClick={onSyncClick}
+      aria-disabled={syncDisabled ? true : undefined}
+      onClick={syncDisabled ? undefined : onSyncClick}
     >
       {syncLabel}
     </SyncStatusButton>

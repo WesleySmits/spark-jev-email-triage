@@ -151,6 +151,15 @@ describe('TopBar', () => {
     expect(onSyncClick).not.toHaveBeenCalled()
   })
 
+  it('keeps a busy sync action mounted and focusable without activating it', () => {
+    const onSyncClick = vi.fn()
+    const { sync } = render({ onSyncClick, syncDisabled: true })
+
+    expect(sync.type).toBe(SyncStatusButton)
+    expect(sync.props).toMatchObject({ 'aria-disabled': true })
+    expect(sync.props['onClick']).toBeUndefined()
+  })
+
   it('styles with tokens only', () => {
     const values: string[] = []
     css().walkDecls((declaration) => {

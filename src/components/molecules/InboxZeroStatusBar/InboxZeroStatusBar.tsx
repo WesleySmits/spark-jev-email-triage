@@ -95,7 +95,6 @@ export function InboxZeroStatusBar({
     <section
       className={`inbox-zero-status inbox-zero-status--${status.tone}`}
       aria-label="Inbox Zero scan status"
-      aria-busy={refreshing}
     >
       <div className="inbox-zero-status__verdict" role="status">
         <strong>{status.title}</strong>

@@ -8,13 +8,20 @@ import { useReconnect } from '../components/pages/ConnectionPage/useReconnect'
 import { WorkbenchPage } from '../components/pages/WorkbenchPage/WorkbenchPage'
 import { syncScopeLabel } from '../components/pages/WorkbenchPage/scope'
 import { InboxZeroStatusBar } from '../components/molecules/InboxZeroStatusBar/InboxZeroStatusBar'
-import { coverageFromInboxScope, readWithCoverage } from '../app/inbox-coverage-adapter'
+import { InboxViewBar } from '../components/molecules/InboxViewBar/InboxViewBar'
+import { useInboxReadFocus, type InboxReadFocus } from '../app/inbox-read-focus'
+import {
+  coverageFromInboxScope,
+  readWithCoverage,
+  readWithStart,
+  startedAtForRequest,
+} from '../app/inbox-coverage-adapter'
 import { failedCoverage, inboxCoverage, type InboxCoverage } from '../app/inbox-coverage'
 import { ReviewDesk, type DeskReason, type DeskView } from '../app/review-desk'
-import type { InboxListRequest, InboxScope } from '../app/live-inbox'
+import type { InboxListRequest } from '../app/live-inbox'
 
 export const Route = createFileRoute('/')({
-  loader: (): Promise<DeskView> => ReviewDesk.open(),
+  loader: () => readWithStart(() => ReviewDesk.open()),
   component: Home,
   errorComponent: Unreachable,
 })
@@ -117,75 +124,19 @@ type PageProps = Readonly<{
   loading: boolean
 }>
 
-function ViewTab({
-  label,
-  selected,
-  disabled,
-  onClick,
-}: Readonly<{ label: string; selected: boolean; disabled: boolean; onClick: () => void }>) {
-  return (
-    <button
-      type="button"
-      aria-current={selected ? 'page' : undefined}
-      disabled={disabled}
-      onClick={onClick}
-    >
-      {label}
-    </button>
-  )
-}
-
-function InboxViewBar({
-  scope,
-  loading,
-  onChange,
-}: Readonly<{
-  scope: InboxScope
-  loading: boolean
-  onChange: PageProps['onChange']
-}>) {
-  const { view } = scope
-  const retry = (scope.incomplete?.length ?? 0) > 0
-  const canLoad = scope.bounded
-  const kind = view === 'unread' ? 'unread' : 'read'
-  return (
-    <nav className="inbox-view" aria-label="Inbox views">
-      <div className="inbox-view__tabs">
-        <ViewTab
-          label="Unread"
-          selected={view === 'unread'}
-          disabled={loading}
-          onClick={() => void onChange({ view: 'unread' })}
-        />
-        <ViewTab
-          label="Other Inbox"
-          selected={view === 'other'}
-          disabled={loading}
-          onClick={() => void onChange({ view: 'other' })}
-        />
-      </div>
-      <span className="inbox-view__note" role="status">
-        {loading
-          ? 'Loading…'
-          : `Showing ${String(scope.loaded)} loaded ${kind} messages · ${String(scope.readable)} readable mailboxes`}
-      </span>
-      {canLoad && (
-        <button
-          type="button"
-          disabled={loading}
-          onClick={() => void onChange({ view, cursor: scope.cursor })}
-        >
-          {retry ? 'Retry older' : 'Load older'} {kind} messages
-        </button>
-      )}
-    </nav>
-  )
-}
-
 /** The page for what the loader found: waiting, no mailboxes or the inbox. */
 function Page({ inbox, root, onReady, onRefresh, onChange, coverage, loading }: PageProps) {
+  const rememberReadFocus = useInboxReadFocus(root, loading)
   const reread = () => {
-    void onRefresh()
+    if (!loading) void onRefresh()
+  }
+  const refresh = () => {
+    rememberReadFocus('refresh')
+    reread()
+  }
+  const change = (request: InboxListRequest, focus: InboxReadFocus) => {
+    rememberReadFocus(focus)
+    return onChange(request)
   }
   if (inbox.status === 'unavailable') return <Connection reason={inbox.reason} onReady={onReady} />
   if (inbox.mailboxes.length === 0) {
@@ -208,7 +159,7 @@ function Page({ inbox, root, onReady, onRefresh, onChange, coverage, loading }: 
   const { view } = inbox.scope
   return (
     <div ref={root} className="app-root app-root--inbox">
-      <div className="inbox-view__workbench" inert={loading} aria-busy={loading}>
+      <div className="inbox-view__workbench">
         <WorkbenchPage
           key={view}
           messages={inbox.messages}
@@ -223,7 +174,7 @@ function Page({ inbox, root, onReady, onRefresh, onChange, coverage, loading }: 
           scope={inbox.scope}
           queueControls={
             <>
-              <InboxViewBar scope={inbox.scope} loading={loading} onChange={onChange} />
+              <InboxViewBar scope={inbox.scope} loading={loading} onChange={change} />
               {coverage && <InboxZeroStatusBar coverage={coverage} refreshing={loading} />}
             </>
           }
@@ -248,7 +199,8 @@ function Page({ inbox, root, onReady, onRefresh, onChange, coverage, loading }: 
             syncStatus: 'connected',
             syncLabel,
             syncActionLabel: `Refresh mail · ${syncLabel}`,
-            onSyncClick: reread,
+            onSyncClick: refresh,
+            syncDisabled: loading,
             ...profile,
           }}
         />
@@ -261,9 +213,9 @@ function Page({ inbox, root, onReady, onRefresh, onChange, coverage, loading }: 
 // store. The separate Done panel may approve and execute one guarded Spark
 // message-ID action when the server kill switch is enabled. Inbox refresh and
 // body reads remain read-only and never start an action.
-const initialCoverage = (initial: DeskView) =>
+const initialCoverage = (initial: DeskView, startedAt: string) =>
   initial.status === 'ready'
-    ? inboxCoverage(undefined, coverageFromInboxScope(initial.scope))
+    ? inboxCoverage(undefined, coverageFromInboxScope(initial.scope, startedAt))
     : undefined
 
 function coverageUpdate(
@@ -277,17 +229,17 @@ function coverageUpdate(
     : failedCoverage(view, startedAt, finishedAt)
 }
 
-function useDeskReading(initial: DeskView) {
+function useDeskReading(initial: DeskView, initialStartedAt: string) {
   const [inbox, setInbox] = useState<DeskView>(initial)
   const [coverage, setCoverage] = useState<InboxCoverage | undefined>(() =>
-    initialCoverage(initial),
+    initialCoverage(initial, initialStartedAt),
   )
   const [loading, setLoading] = useState(false)
   const request = useRef<InboxListRequest>({ view: 'unread' })
   const sequence = useRef(0)
   const read = async (next: InboxListRequest) => {
     const current = ++sequence.current
-    const startedAt = new Date().toISOString()
+    const startedAt = startedAtForRequest(coverage, next, new Date().toISOString())
     request.current = next
     setLoading(true)
     const result = await readWithCoverage(
@@ -315,8 +267,9 @@ function loadedMessageSummary(inbox: DeskView) {
 }
 
 function Home() {
-  const initial = Route.useLoaderData()
-  const { inbox, coverage, loading, read, request } = useDeskReading(initial)
+  const initialRead = Route.useLoaderData()
+  const initial = initialRead.value
+  const { inbox, coverage, loading, read, request } = useDeskReading(initial, initialRead.startedAt)
   const root = useRef<HTMLDivElement>(null)
   // Set once Spark answered after the page waited, so the inbox says so.
   const [waited, setWaited] = useState(false)
