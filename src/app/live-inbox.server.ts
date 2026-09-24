@@ -125,6 +125,8 @@ export function createLiveInbox({
   let offered = new Set<string>()
   let reading: ReadingProgress | undefined
   let discovery: (ReadingProgress & { query: string }) | undefined
+  /** Serializes cursor claims before any discovery provider I/O begins. */
+  let searches: Promise<void> = Promise.resolve()
   /** Counts list reads, so only the latest one decides what is offered. */
   let reads = 0
 
@@ -211,7 +213,7 @@ export function createLiveInbox({
    * most one provider page per still-bounded mailbox. Search text never goes
    * to Spark or the reader log, and no thread/body is read.
    */
-  const search = async (
+  const runSearch = async (
     request: InboxDiscoveryRequest,
     options?: ReadOptions,
   ): Promise<InboxDiscovery> => {
@@ -247,6 +249,15 @@ export function createLiveInbox({
     }
   }
 
+  const search = (request: InboxDiscoveryRequest, options?: ReadOptions) => {
+    const result = searches.then(() => runSearch(request, options))
+    searches = result.then(
+      () => undefined,
+      () => undefined,
+    )
+    return result
+  }
+
   return { list, search, body } as const
 }
 
@@ -272,7 +283,9 @@ async function selectDiscovery(
   }
   return {
     current: { ...(await startReading(reader, request.view, options)), query: request.query },
-    advance: true,
+    // A query without a same-view reading only establishes its empty scope.
+    // Its returned cursor must be presented before page 1 is fetched.
+    advance: false,
   }
 }
 
