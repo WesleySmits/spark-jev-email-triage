@@ -19,6 +19,20 @@ describe('Spark commands', () => {
       emailsCommand('Support@Example.com', 25),
       ['emails', '--page-size', '25', '--order', 'descending', '--', 'Support@Example.com:Inbox'],
     ],
+    [
+      emailsCommand('Support@Example.com', 25, 2),
+      [
+        'emails',
+        '--page-size',
+        '25',
+        '--page',
+        '2',
+        '--order',
+        'descending',
+        '--',
+        'Support@Example.com:Inbox',
+      ],
+    ],
     [threadCommand('1001'), ['thread', '--', '1001']],
   ])('builds the argument vector for %o', (command, expected) => {
     expect(sparkArguments(command)).toEqual(expected)
@@ -51,6 +65,12 @@ describe('Spark commands', () => {
   it.each([0, -1, 1.5, maxListLimit + 1])('rejects %d as a list limit', (limit) => {
     expect(() => emailsCommand('support@example.com', limit)).toThrow(
       expect.objectContaining({ code: 'invalid_input', detail: 'limit' }),
+    )
+  })
+
+  it.each([0, -1, 1.5, 21])('rejects %d as a page', (page) => {
+    expect(() => emailsCommand('support@example.com', 10, page)).toThrow(
+      expect.objectContaining({ code: 'invalid_input', detail: 'page' }),
     )
   })
 })
