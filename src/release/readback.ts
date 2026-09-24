@@ -17,8 +17,7 @@
  * It reads: one mailbox listing, which is `spark accounts`, through the same
  * probe the app uses. The listing is proof that Spark answered and is then
  * dropped, so no address, subject, count or body is ever kept or printed.
- * Output is one line: the host it speaks for, a status and, where it failed,
- * a coarse reason.
+ * Failures include fixed recovery guidance, never provider output or configuration values.
  */
 import type { SparkReadiness } from '../app/spark-readiness'
 import { createSparkReadiness } from '../app/spark-readiness.server'
@@ -34,6 +33,32 @@ const usage = 'usage: pnpm readback:spark'
  * cannot be taken for the connectivity of a host it never reached.
  */
 const scope = 'spark on this host'
+
+const recovery = {
+  missing:
+    'Install or enable the Spark Desktop CLI on this Mac and make spark available on PATH in this terminal; then retry.',
+  failed:
+    'Open Spark Desktop, check that you are signed in, and retry from the same macOS user session. Check CLI permissions if it still fails.',
+  malformed:
+    'Check that PATH selects the Spark Desktop CLI and that its version is compatible; then retry. Do not share raw account output.',
+  'local-only':
+    'Run the app and this check on the Mac running Spark, and open the app through 127.0.0.1.',
+} satisfies Record<Extract<SparkReadiness, { status: 'unavailable' }>['reason'], string>
+
+async function check(probe: SparkProbe | undefined): Promise<SparkReadiness | null> {
+  let ask: SparkProbe
+  try {
+    ask = probe ?? liveSparkProbe()
+  } catch {
+    // Reader construction can reject unusable local configuration (e.g. time zone).
+    return null
+  }
+  try {
+    return await ask()
+  } catch {
+    return { status: 'unavailable', reason: 'failed' }
+  }
+}
 
 /** One readiness answer, however it was obtained. */
 export type SparkProbe = () => Promise<SparkReadiness>
@@ -54,17 +79,25 @@ function liveSparkProbe(): SparkProbe {
 export async function main(
   args: readonly string[],
   print: (line: string) => void,
-  probe: SparkProbe = liveSparkProbe(),
+  probe?: SparkProbe,
 ): Promise<number> {
   if (args.length > 0) {
     print(usage)
     return exitCodes.usage
   }
-  const answer = await probe()
+  const answer = await check(probe)
+  if (answer === null) {
+    print(`${scope}: unavailable (configuration)`)
+    print(
+      'Check the local system time zone and remove an invalid TZ override; restart from the Spark macOS user session and retry.',
+    )
+    return exitCodes.unavailable
+  }
   if (answer.status === 'ready') {
     print(`${scope}: ready`)
     return exitCodes.ok
   }
   print(`${scope}: unavailable (${answer.reason})`)
+  print(recovery[answer.reason])
   return exitCodes.unavailable
 }

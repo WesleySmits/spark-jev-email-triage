@@ -1,3 +1,5 @@
+# Web-server packaging only: no Spark Desktop/CLI or host-session bridge.
+# For live mail use the native macOS procedure in docs/runbook.md.
 FROM node:24-alpine AS build
 
 WORKDIR /app
