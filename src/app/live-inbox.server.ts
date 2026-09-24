@@ -234,8 +234,11 @@ export function createLiveInbox({
       if (read === reads) {
         discovery = current
         // Pages found while searching become part of the loaded reading too,
-        // so the next discovery begins at the reached depth.
-        reading = cloneReading(current)
+        // so the next discovery begins at the reached depth. Keep a list's
+        // cursor valid, and never replace a reading of another view.
+        if (reading === undefined || reading.view === current.view) {
+          reading = { ...cloneReading(current), cursor: reading?.cursor ?? current.cursor }
+        }
         offered = new Set(messages.map((message) => message.id))
       }
       return {
