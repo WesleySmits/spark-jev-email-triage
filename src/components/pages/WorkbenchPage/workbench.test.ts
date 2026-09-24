@@ -107,7 +107,7 @@ describe('railGroups', () => {
     expect(mailbox?.items[0]).toEqual({
       id: allMailboxes,
       icon: 'inbox',
-      label: 'All loaded',
+      label: 'All mailboxes',
       count: 3,
     })
   })
@@ -127,7 +127,7 @@ describe('railGroups', () => {
 describe('mailboxLabel', () => {
   it('names the applied mailbox, or every loaded mailbox', () => {
     expect(mailboxLabel('atelier', mailboxes)).toBe('Atelier Linden')
-    expect(mailboxLabel(allMailboxes, mailboxes)).toBe('All loaded mailboxes')
+    expect(mailboxLabel(allMailboxes, mailboxes)).toBe('All readable mailboxes')
   })
 })
 

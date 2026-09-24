@@ -25,14 +25,19 @@ import type { ObservedThread, StoredClassification } from '../domain/stored-clas
 import type { RowReview } from './desk-review'
 import { SparkError } from '../spark/errors'
 import { inboxSummarySchema, messageBodySchema, type InboxSummary, type MessageBody } from './inbox'
-import type { BodyRequest, InboxScope, LiveInbox, MailboxFailure } from './live-inbox'
+import type {
+  BodyRequest,
+  InboxListRequest,
+  InboxScope,
+  LiveInbox,
+  MailboxFailure,
+} from './live-inbox'
+import { maxInboxPages } from './live-inbox'
 
 type Listing = z.infer<typeof emailListingSchema>
 type Thread = z.infer<typeof threadSchema>
 type Marker = InboxSummary['account']['marker']
 
-/** Mailboxes listed at most, in the order the provider gives them. */
-export const maxMailboxes = 5
 /** Recent messages listed per mailbox. */
 export const perMailbox = 10
 
@@ -97,17 +102,22 @@ export function createLiveInbox({
   const format = timeFormats(timeZone)
   /** The mailbox copies the last list offered, by copy id. Bodies are read only for these. */
   let offered = new Set<string>()
+  let lastRequest: InboxListRequest = { view: 'unread', pages: 1 }
   /** Counts list reads, so only the latest one decides what is offered. */
   let reads = 0
 
-  const list = async (options?: ReadOptions): Promise<LiveInbox> => {
+  const list = async (
+    options?: ReadOptions,
+    request: InboxListRequest = { view: 'unread', pages: 1 },
+  ): Promise<LiveInbox> => {
     // Nothing is offered while a list reads, and a list that fails offers
     // nothing, so an older list's bodies stay closed.
     const read = ++reads
     offered = new Set()
+    lastRequest = request
     try {
       const readable = (await reader.listMailboxes(options)).filter((access) => access.canRead)
-      const mailboxes = readable.slice(0, maxMailboxes).map(({ mailbox }, index) => ({
+      const mailboxes = readable.map(({ mailbox }, index) => ({
         id: mailbox.id,
         account: markerAt(index),
         label: mailbox.address,
@@ -117,15 +127,23 @@ export function createLiveInbox({
       // the bound may have cut it. Counted per mailbox, before anything drops.
       const atLimit = new Map<string, boolean>()
       const failed: MailboxFailure[] = []
+      const incomplete: MailboxFailure[] = []
       // Still one mailbox at a time: isolating a failure must not turn these
       // reads into concurrent Spark commands. One that fails costs its own
       // rows and nothing else, so the mailboxes after it are still read.
+      const pages = Math.min(Math.max(Math.trunc(request.pages), 1), maxInboxPages)
       for (const mailbox of mailboxes) {
-        const request = { mailboxId: mailbox.id, limit: perMailbox }
         try {
-          const listings = await reader.listRecentEmails(request, options)
-          atLimit.set(mailbox.id, listings.length >= perMailbox)
-          listed.push(...listings.map((listing) => ({ listing, mailbox })))
+          const result = await readMailboxPages(reader, mailbox.id, pages, request.view, options)
+          listed.push(...result.listings.map((listing) => ({ listing, mailbox })))
+          atLimit.set(mailbox.id, result.bounded)
+          if (result.error) {
+            incomplete.push({
+              id: mailbox.id,
+              label: mailbox.label,
+              reason: reasonFor(result.error),
+            })
+          }
         } catch (error) {
           // A caller that gave up wants no more commands run for it, so an
           // abort ends the whole read rather than being reported as a mailbox
@@ -143,8 +161,11 @@ export function createLiveInbox({
         mailboxes,
         messages,
         readable: readable.length,
+        view: request.view,
+        pages,
         atLimit,
         failed,
+        incomplete,
         at,
         format,
       })
@@ -162,11 +183,11 @@ export function createLiveInbox({
    * read returns is also what `verify` judges the stored classification
    * against, so opening a row costs no extra provider call.
    */
-  const body = async ({ mailbox, id }: BodyRequest, options?: ReadOptions) => {
+  const body = async ({ mailbox, id, selection }: BodyRequest, options?: ReadOptions) => {
     try {
       const ref: MailboxCopyRef = { mailboxId: mailbox, messageId: id }
       const copyId = mailboxCopyId(ref)
-      if (!offered.has(copyId)) await list(options)
+      if (!offered.has(copyId)) await list(options, selection ?? lastRequest)
       if (!offered.has(copyId)) throw new BodyUnavailableError()
       return bodyOf(await reader.readThread(ref, options), ref, verify)
     } catch {
@@ -175,6 +196,33 @@ export function createLiveInbox({
   }
 
   return { list, body } as const
+}
+
+/** Keep completed pages if a later page fails, without hiding the incomplete read. */
+async function readMailboxPages(
+  reader: MailReader,
+  mailboxId: string,
+  pages: number,
+  view: InboxListRequest['view'],
+  options?: ReadOptions,
+) {
+  const listings: Listing[] = []
+  let bounded = false
+  for (let page = 1; page <= pages; page += 1) {
+    try {
+      const rows = await reader.listRecentEmails(
+        { mailboxId, limit: perMailbox, page, filter: view === 'unread' ? 'is:unread' : 'is:read' },
+        options,
+      )
+      listings.push(...rows)
+      bounded = rows.length >= perMailbox
+      if (!bounded) break
+    } catch (error) {
+      if (page === 1 || options?.signal?.aborted) throw error
+      return { listings, bounded: true, error }
+    }
+  }
+  return { listings, bounded, error: undefined }
 }
 
 /**
@@ -219,10 +267,13 @@ type ScopeInput = Readonly<{
   messages: readonly InboxSummary[]
   /** Readable mailboxes the provider offered, before the mailbox bound. */
   readable: number
+  view: InboxListRequest['view']
+  pages: number
   /** Per mailbox: whether its listing came back at the per-mailbox bound. */
   atLimit: ReadonlyMap<string, boolean>
   /** The listed mailboxes whose listing failed, so they hold no rows here. */
   failed: readonly MailboxFailure[]
+  incomplete: readonly MailboxFailure[]
   at: Date
   format: ReturnType<typeof timeFormats>
 }>
@@ -241,8 +292,11 @@ function scopeOf({
   mailboxes,
   messages,
   readable,
+  view,
+  pages,
   atLimit,
   failed,
+  incomplete,
   at,
   format,
 }: ScopeInput): InboxScope {
@@ -253,13 +307,16 @@ function scopeOf({
     bounded: atLimit.get(mailbox.id) ?? false,
   }))
   return {
+    view,
+    pages,
     mailboxes: scoped,
     failed,
+    incomplete,
     readable,
-    mailboxLimit: maxMailboxes,
-    messageLimit: perMailbox,
+    mailboxLimit: mailboxes.length,
+    messageLimit: perMailbox * pages,
     loaded: messages.length,
-    bounded: readable > maxMailboxes || scoped.some((mailbox) => mailbox.bounded),
+    bounded: scoped.some((mailbox) => mailbox.bounded),
     readAt: format.clock(at),
     refreshedAt: at.toISOString(),
   }

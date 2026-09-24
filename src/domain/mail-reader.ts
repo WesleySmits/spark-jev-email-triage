@@ -17,6 +17,9 @@ export interface ListRecentEmailsRequest {
   mailboxId: string
   /** Number of messages to list, from 1 up to the provider's maximum. */
   limit: number
+  /** A page of one Inbox state; the provider does the filtering. */
+  page?: number
+  filter?: 'is:unread' | 'is:read'
 }
 
 /**

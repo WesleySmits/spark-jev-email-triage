@@ -1,4 +1,4 @@
-import type { ComponentProps } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import { Button } from '../../atoms/Button/Button'
 import { Icon } from '../../atoms/Icon/Icon'
 import './QueueHeader.css'
@@ -56,6 +56,8 @@ type QueueHeaderProps = Readonly<{
    * machine-readable time.
    */
   scope?: QueueHeaderScope | undefined
+  /** View controls under the scope, when this queue can load another selection. */
+  controls?: ReactNode
   /** One optional action beside the title. The caller owns what it does. */
   action?: QueueHeaderAction | undefined
   className?: string | undefined
@@ -89,6 +91,7 @@ export function QueueHeader({
   count,
   context,
   scope,
+  controls,
   action,
   className,
 }: QueueHeaderProps) {
@@ -124,6 +127,7 @@ export function QueueHeader({
             </time>
           </p>
         )}
+        {controls}
       </div>
       {action && (
         <Button
