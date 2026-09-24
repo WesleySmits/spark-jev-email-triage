@@ -50,6 +50,24 @@ describe('viewCoverage', () => {
     })
   })
 
+  it('is incomplete when fewer mailboxes are listed than the readable scope', () => {
+    expect(viewCoverage(scope({ readable: 2 }))).toMatchObject({
+      result: 'incomplete',
+      reasons: ['mailbox-scope'],
+    })
+  })
+
+  it('is incomplete for duplicate or absent mailbox IDs in a non-empty scope', () => {
+    expect(viewCoverage(scope({ mailboxes: [mailbox(), mailbox()] }))).toMatchObject({
+      result: 'incomplete',
+      reasons: ['mailbox-scope'],
+    })
+    expect(viewCoverage(scope({ mailboxes: [] }))).toMatchObject({
+      result: 'incomplete',
+      reasons: ['mailbox-scope'],
+    })
+  })
+
   it('keeps partial rows and distinguishes failed from incomplete mailboxes', () => {
     const failure = { id: 'one@mail.example', label: 'one@mail.example', reason: 'failed' as const }
     const later = {
@@ -62,6 +80,7 @@ describe('viewCoverage', () => {
         mailboxes: [mailbox(), mailbox({ id: later.id, label: later.label, loaded: 10 })],
         failed: [failure],
         incomplete: [later],
+        readable: 2,
         loaded: 10,
         bounded: true,
       }),
