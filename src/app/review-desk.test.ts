@@ -69,11 +69,15 @@ vi.mock('../jev/classifier', () => ({ createJevClassifier: jev.createJevClassifi
 const lost = () => Promise.reject(new Error('The app server did not answer'))
 
 vi.mock('./live-inbox.functions', async () => {
-  const { bodyRequestSchema } = await import('./live-inbox')
-  const { deskReading } = await import('./review-desk.server')
+  const { bodyRequestSchema, inboxDiscoveryRequestSchema } = await import('./live-inbox')
+  const { deskDiscovery, deskReading } = await import('./review-desk.server')
   const { sparkInbox } = await import('./spark-inbox.server')
   return {
     getLiveInbox: () => (spark.unreachable ? lost() : deskReading()),
+    searchLiveInbox: ({ data }: { data: unknown }) =>
+      spark.unreachable
+        ? lost()
+        : deskDiscovery(inboxDiscoveryRequestSchema.parse(data), undefined),
     getLiveBody: ({ data, signal }: { data: unknown; signal: AbortSignal }) =>
       spark.unreachable ? lost() : sparkInbox().body(bodyRequestSchema.parse(data), { signal }),
   }
@@ -245,6 +249,38 @@ describe('ReviewDesk.open', () => {
     spark.unreachable = true
 
     await expect(ReviewDesk.open()).resolves.toEqual({
+      status: 'unavailable',
+      reason: 'unreachable',
+    })
+    expect(spark.run).not.toHaveBeenCalled()
+  })
+})
+
+describe('ReviewDesk.search', () => {
+  it('finds matching mailbox copies from listed metadata without a thread or Jev call', async () => {
+    const result = await ReviewDesk.search({ view: 'unread', query: 'shared' })
+    if (result.status !== 'ready') throw new Error('Expected discovery')
+
+    expect(result.messages.map(({ id, mailbox }) => ({ id, mailbox }))).toEqual([
+      { id: copy(one, '11'), mailbox: one },
+      { id: copy(two, '11'), mailbox: two },
+    ])
+    expect(result.scope).toMatchObject({
+      query: 'shared',
+      fields: ['sender', 'subject'],
+      valuesMayBeTruncated: true,
+      scanned: 3,
+      matched: 2,
+    })
+    expect(threadIds()).toEqual([])
+    expect(jev.createSdkTransport).not.toHaveBeenCalled()
+    expect(jev.createJevClassifier).not.toHaveBeenCalled()
+  })
+
+  it('reports an unreachable app server without starting Spark', async () => {
+    spark.unreachable = true
+
+    await expect(ReviewDesk.search({ view: 'unread', query: 'shared' })).resolves.toEqual({
       status: 'unavailable',
       reason: 'unreachable',
     })

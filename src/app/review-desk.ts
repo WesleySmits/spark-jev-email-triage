@@ -20,10 +20,12 @@ import type { BodyLoader } from './inbox'
 import {
   liveBodyLoader,
   liveWorkflows,
+  type ClassifiedDiscovery,
   type ClassifiedInbox,
+  type InboxDiscoveryRequest,
   type InboxListRequest,
 } from './live-inbox'
-import { getLiveBody, getLiveInbox } from './live-inbox.functions'
+import { getLiveBody, getLiveInbox, searchLiveInbox } from './live-inbox.functions'
 import type { ConnectionReason } from './reconnect'
 import { checkReview, saveReview } from './review.functions'
 import type { SparkReadiness } from './spark-readiness'
@@ -42,6 +44,8 @@ export type DeskReason = ConnectionReason
  * comes with messages.
  */
 export type DeskView = ClassifiedInbox | Readonly<{ status: 'unavailable'; reason: 'unreachable' }>
+type DeskDiscovery =
+  ClassifiedDiscovery | Readonly<{ status: 'unavailable'; reason: 'unreachable' }>
 
 /** No rows to focus in: an unavailable desk lists nothing, sample or otherwise. */
 const rowsOf = (view: DeskView) => (view.status === 'ready' ? view.messages : [])
@@ -64,6 +68,15 @@ export const ReviewDesk = {
    */
   open: (request: InboxListRequest = { view: 'unread' }): Promise<DeskView> =>
     getLiveInbox({ data: request }).catch(
+      () => ({ status: 'unavailable', reason: 'unreachable' }) as const,
+    ),
+
+  /**
+   * Searches sender and subject metadata through the controlled page range.
+   * A continuation advances at most one page per still-bounded mailbox.
+   */
+  search: (request: InboxDiscoveryRequest): Promise<DeskDiscovery> =>
+    searchLiveInbox({ data: request }).catch(
       () => ({ status: 'unavailable', reason: 'unreachable' }) as const,
     ),
 

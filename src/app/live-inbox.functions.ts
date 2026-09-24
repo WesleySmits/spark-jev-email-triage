@@ -5,9 +5,14 @@
 import { createServerFn } from '@tanstack/react-start'
 import { getRequest, getRequestIP, setResponseHeaders } from '@tanstack/react-start/server'
 import { z } from 'zod'
-import { bodyRequestSchema, type ClassifiedInbox } from './live-inbox'
+import {
+  bodyRequestSchema,
+  inboxDiscoveryRequestSchema,
+  type ClassifiedDiscovery,
+  type ClassifiedInbox,
+} from './live-inbox'
 import { BodyUnavailableError, isLoopback } from './live-inbox.server'
-import { deskReading } from './review-desk.server'
+import { deskDiscovery, deskReading } from './review-desk.server'
 import { sparkInbox } from './spark-inbox.server'
 
 /**
@@ -31,6 +36,18 @@ export const getLiveInbox = createServerFn({ method: 'GET' })
     const { allowed, signal } = mailRequest()
     if (!allowed) return { status: 'unavailable', reason: 'local-only' }
     return deskReading({ signal }, data)
+  })
+
+/**
+ * Searches listed sender/subject metadata. POST keeps the query out of URLs
+ * and access logs; the provider reader's coarse log never receives it.
+ */
+export const searchLiveInbox = createServerFn({ method: 'POST' })
+  .validator(inboxDiscoveryRequestSchema)
+  .handler(async ({ data }): Promise<ClassifiedDiscovery> => {
+    const { allowed, signal } = mailRequest()
+    if (!allowed) return { status: 'unavailable', reason: 'local-only' }
+    return deskDiscovery(data, { signal })
   })
 
 /**
