@@ -633,11 +633,17 @@ type PageRailProps = Readonly<
 >
 
 /**
- * The filters with their counts and the shortcut legend. It holds the one
- * filter model the page has: the rail and the compact sheet render this same
- * element, so neither can drift from the other.
+ * The filters with their counts and the shortcut legend. The rail and the
+ * compact sheet use this same component and filter state.
  */
-function PageRail({ state, canComplete, shortcuts, workflows, mailboxes, onChoose }: PageRailProps) {
+function PageRail({
+  state,
+  canComplete,
+  shortcuts,
+  workflows,
+  mailboxes,
+  onChoose,
+}: PageRailProps) {
   return (
     <Sidebar
       label="Filters"
@@ -1018,7 +1024,6 @@ function useWorkbench(props: WorkbenchPageProps) {
   )
   const reviews = useRecordedReviews(props.review)
   const evidence = evidenceIn(props.classifications, state.open?.id, body, reviews.recorded)
-  const sheet = useFilterSheet()
   return {
     state,
     searchId,
@@ -1030,7 +1035,6 @@ function useWorkbench(props: WorkbenchPageProps) {
     evidence,
     reviews,
     shortcuts,
-    sheet,
   } as const
 }
 
@@ -1089,12 +1093,21 @@ function useWorkbench(props: WorkbenchPageProps) {
  */
 export function WorkbenchPage(props: WorkbenchPageProps) {
   const { workflows, mailboxes, completion } = props
-  const { state, searchId, root, notice, complete, body, retry, evidence, reviews, shortcuts, sheet } =
+  const { state, searchId, root, notice, complete, body, retry, evidence, reviews, shortcuts } =
     useWorkbench(props)
+  const sheet = useFilterSheet()
   const title = workflows.find((item) => item.id === state.filter.workflow)?.label ?? ''
   const canComplete = completion.mode === 'enabled'
-  // One element for both places: the rail shows it where there is room, the
-  // sheet where there is not. Only one of the two is ever reachable.
+  const closeSheet = () => {
+    sheet.close()
+    if (window.matchMedia(compactQuery).matches) return
+    const rail = root.current?.querySelector<HTMLElement>('.workbench__sidebar')
+    const active = rail?.querySelector<HTMLElement>('button[aria-pressed="true"]')
+    const focusTarget = active ?? rail?.querySelector<HTMLElement>('button')
+    focusTarget?.focus()
+  }
+  // Both places use the same filter state and rail props. Only one is
+  // reachable at a given width.
   const rail = (
     <PageRail
       state={state}
@@ -1121,7 +1134,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
         }
         sidebar={rail}
         filters={
-          <FilterSheet label="Filters" open={sheet.open} onClose={sheet.close}>
+          <FilterSheet label="Filters" open={sheet.open} onClose={closeSheet}>
             {rail}
           </FilterSheet>
         }

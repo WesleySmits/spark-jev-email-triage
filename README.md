@@ -44,8 +44,9 @@ that answered with nothing is a real, empty reading of it, and reads
 differently. Failed, partly failed and fully read readings are therefore
 distinguishable, as is an inbox where every listed mailbox failed, which
 says so instead of showing an empty queue. The failed mailbox keeps its
-place in the rail, so a chosen mailbox filter and the open message survive
-the failure. Retrying is Refresh, which reads every mailbox again; there is
+place in the rail, so a chosen mailbox filter survives the failure. An open
+message remains available when its own mailbox answered. Retrying is Refresh,
+which reads every mailbox again; there is
 no per-mailbox retry, because a reading is delivered and dated as a whole.
 Nothing older is kept when a mailbox fails, so no row is ever shown as
 fresher than the reading it came from, and a failure carries the mailbox

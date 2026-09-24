@@ -5,6 +5,7 @@ import {
   type StoryObj,
 } from '@storybook/react-vite'
 import type { Globals } from 'storybook/internal/types'
+import { waitFor } from 'storybook/test'
 import { beforeAll, describe, expect, test } from 'vitest'
 import { page } from 'vitest/browser'
 import main from './main'
@@ -53,3 +54,24 @@ for (const [path, file] of Object.entries(files)) {
     }
   })
 }
+
+test('moves focus to the visible rail when an open filter sheet becomes desktop width', async () => {
+  const file = files['../src/components/pages/WorkbenchPage/WorkbenchPage.stories.tsx']
+  if (!file) throw new Error('Workbench stories are missing')
+  const stories = composeStories(file)
+  const story = stories['CompactTabletFilters']
+  if (!story) throw new Error('Compact tablet story is missing')
+  await page.viewport(768, 1024)
+  await story.run()
+  await page.getByRole('button', { name: 'Filters' }).click()
+  expect(page.getByRole('dialog', { name: 'Filters' })).toBeVisible()
+
+  await page.viewport(1024, 768)
+  await waitFor(() => {
+    expect(page.getByRole('dialog', { name: 'Filters' })).not.toBeInTheDocument()
+  })
+  expect(page.getByRole('complementary', { name: 'Filters' })).toBeVisible()
+  await waitFor(() => {
+    expect(document.activeElement?.closest('.workbench__sidebar')).not.toBeNull()
+  })
+})
