@@ -42,6 +42,12 @@ refreshing and reviewing in the app make no model calls. There is no UI
 triage-run control, priority/reply/deadline editor, persisted completion/Undo,
 or mailbox-action workflow on `main`.
 
+The workbench's single-key shortcuts (K, J, E and `/`) can be turned off in
+the rail, under the shortcut help. The choice is kept in that browser's local
+storage, holds after a reload, and carries no mail. With the keys off nothing
+in the page claims one, and Tab, Enter and Escape keep working. The rail, and
+with it the setting, is hidden below a 600px viewport.
+
 The web process needs the local Spark CLI to read mail. A successful build
 or `/health` response does not prove Spark readiness. See
 [the runbook](docs/runbook.md) for separate deployment and host-local checks.

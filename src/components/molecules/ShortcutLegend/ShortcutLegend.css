@@ -2,10 +2,15 @@
  * sidebar footer's padding and top border belong to its container. */
 .shortcut-legend {
   display: grid;
-  gap: var(--s2);
-  margin: 0;
+  gap: var(--s3);
   color: var(--muted);
   font: var(--text-meta);
+}
+
+.shortcut-legend__list {
+  display: grid;
+  gap: var(--s2);
+  margin: 0;
 }
 
 .shortcut-legend__row {
@@ -27,4 +32,16 @@
   flex: none;
   margin: 0 0 0 auto;
   white-space: nowrap;
+}
+
+/* The setting reads as one block: the box with its label, then the line that
+ * says what the current value means. */
+.shortcut-legend__setting {
+  display: grid;
+  gap: var(--s1);
+}
+
+.shortcut-legend__note {
+  margin: 0;
+  overflow-wrap: anywhere;
 }

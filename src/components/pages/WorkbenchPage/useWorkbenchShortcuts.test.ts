@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { shortcutFor } from './useWorkbenchShortcuts'
+import { legendFor, shortcutFor, shortcutLegend } from './useWorkbenchShortcuts'
 
 type KeyEvent = Parameters<typeof shortcutFor>[0]
+type Context = NonNullable<Parameters<typeof shortcutFor>[1]>
 
 const row = '.workbench__queue .message-row__button'
 
@@ -20,7 +21,7 @@ function focused(...own: string[]) {
 
 const region = focused('[tabindex]')
 
-function press(key: string, overrides: Partial<KeyEvent> = {}, actsFrom?: string) {
+function press(key: string, overrides: Partial<KeyEvent> = {}, context: Context = {}) {
   return shortcutFor(
     {
       key,
@@ -32,9 +33,13 @@ function press(key: string, overrides: Partial<KeyEvent> = {}, actsFrom?: string
       target: region,
       ...overrides,
     },
-    actsFrom,
+    context,
   )
 }
+
+const singleKeys = ['k', 'j', 'e', '/']
+// Keys the browser and the controls own. They are no shortcut in either mode.
+const ownKeys = ['Tab', 'Enter', 'Escape', 'ArrowDown', ' ']
 
 describe('shortcutFor', () => {
   it.each([
@@ -79,10 +84,10 @@ describe('shortcutFor', () => {
 
   it('acts from the controls named in actsFrom, and only those', () => {
     const queueRow = focused('button', row)
-    expect(press('k', { target: queueRow }, row)).toBe('next')
-    expect(press('j', { target: queueRow }, row)).toBe('previous')
+    expect(press('k', { target: queueRow }, { actsFrom: row })).toBe('next')
+    expect(press('j', { target: queueRow }, { actsFrom: row })).toBe('previous')
     expect(press('k', { target: queueRow })).toBeNull()
-    expect(press('j', { target: focused('button') }, row)).toBeNull()
+    expect(press('j', { target: focused('button') }, { actsFrom: row })).toBeNull()
   })
 
   it.each([
@@ -97,8 +102,68 @@ describe('shortcutFor', () => {
 
   it('ignores modifiers even on the controls named in actsFrom', () => {
     const target = focused('button', row)
-    expect(press('k', { target, ctrlKey: true }, row)).toBeNull()
-    expect(press('j', { target, altKey: true }, row)).toBeNull()
-    expect(press('k', { target, metaKey: true }, row)).toBeNull()
+    expect(press('k', { target, ctrlKey: true }, { actsFrom: row })).toBeNull()
+    expect(press('j', { target, altKey: true }, { actsFrom: row })).toBeNull()
+    expect(press('k', { target, metaKey: true }, { actsFrom: row })).toBeNull()
+  })
+
+  it('leaves Tab, Enter and Escape alone in either mode', () => {
+    for (const key of ownKeys) {
+      expect(press(key)).toBeNull()
+      expect(press(key, {}, { singleKeys: false })).toBeNull()
+    }
+  })
+})
+
+describe('shortcutFor with the single keys turned off', () => {
+  const off = { singleKeys: false } as const
+
+  it('means nothing for a key of one character, capital or not', () => {
+    for (const key of [...singleKeys, 'K', 'J', 'E']) {
+      expect(press(key, {}, off)).toBeNull()
+    }
+  })
+
+  it('means nothing on the controls the keys otherwise act from', () => {
+    const queueRow = focused('button', row)
+    for (const key of singleKeys) {
+      expect(press(key, { target: queueRow }, { ...off, actsFrom: row })).toBeNull()
+    }
+  })
+
+  it('leaves typing in a field to the field, as it does when on', () => {
+    for (const key of singleKeys) {
+      expect(press(key, { target: focused('input') }, off)).toBeNull()
+      expect(press(key, { target: focused('input') })).toBeNull()
+    }
+  })
+
+  it('means nothing during IME composition either', () => {
+    for (const key of singleKeys) {
+      expect(press(key, { isComposing: true }, off)).toBeNull()
+      expect(press(key, { isComposing: true })).toBeNull()
+    }
+  })
+
+  it('acts again once the keys are back on', () => {
+    expect(press('k', {}, { singleKeys: true })).toBe('next')
+    expect(press('k')).toBe('next')
+  })
+})
+
+describe('legendFor', () => {
+  it('lists nothing while the keys are off', () => {
+    expect(legendFor({ singleKeys: false, canComplete: true })).toEqual([])
+    expect(legendFor({ singleKeys: false, canComplete: false })).toEqual([])
+  })
+
+  it('lists every shortcut where Complete is offered', () => {
+    expect(legendFor({ singleKeys: true, canComplete: true })).toEqual(shortcutLegend)
+  })
+
+  it('leaves out Complete where the page cannot complete', () => {
+    expect(legendFor({ singleKeys: true, canComplete: false }).map((item) => item.label)).toEqual([
+      'Next / previous',
+    ])
   })
 })
