@@ -62,6 +62,9 @@ const paths = {
       <path d="M12 11v5M12 8v.1" />
     </>
   ),
+  // Added for compact filter access, in the same 24px line style.
+  filter: <path d="M4 5h16l-6 7v7l-4-2v-5z" />,
+  close: <path d="m6 6 12 12M18 6 6 18" />,
 } satisfies Record<string, ReactElement>
 
 type IconName = keyof typeof paths

@@ -34,6 +34,15 @@ mailbox filter is named "All loaded", the search says it searches loaded
 mail, and a reading that loaded nothing reads differently from a filter that
 matched nothing.
 
+The filters are reachable at every supported width. Above 900px they are the
+navigation rail beside the queue. At 900px and below the rail would leave the
+reader too narrow, so it goes and a button in the top bar opens the same rail
+as a modal sheet: one filter model and one set of counts, never a second
+mobile one. Choosing there applies the filter, closes the sheet and shows the
+list; Escape, the close button and the backdrop close it and hand focus back
+to the button. What was open, where back leads and what was searched all stay
+as they were.
+
 Supported: reading mail, refreshing, opening one body, viewing stored triage,
 and confirming or correcting its category locally. Classification starts
 through `pnpm shadow --mailbox <mailbox> --apply`, not from the UI; it sends
@@ -133,7 +142,10 @@ Git hooks:
 `pnpm test-storybook` renders every story and runs its play function in
 headless Chromium through Vitest browser mode and Storybook's portable
 stories (`.storybook/stories.test.ts`). It starts no Storybook server. A
-story's `viewport` global sets the window size; other stories get 1280×1024.
+story's `viewport` global sets the window size, from the map in
+`.storybook/preview.ts`; other stories get 1280×1024. Besides Storybook's own
+sizes that map holds the widths the workbench is checked at: 390, 600, 640
+(1280 at 200% zoom), 768 and 1024.
 The first local run needs `pnpm exec playwright install --only-shell chromium`.
 
 ## Releasing

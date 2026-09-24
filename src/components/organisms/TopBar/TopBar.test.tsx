@@ -29,10 +29,12 @@ const base: Props = {
 function render(overrides: Partial<Props> = {}) {
   const props = { ...base, ...overrides }
   const root = TopBar(props) as Element
-  const [brand, form, sync, avatar] = root.props['children'] as Element[]
-  if (!brand || !form || !sync || !avatar) throw new Error('Missing top bar part')
+  const [lead, form, sync, avatar] = root.props['children'] as Element[]
+  if (!lead || !form || !sync || !avatar) throw new Error('Missing top bar part')
+  const [filters, brand] = lead.props['children'] as Element[]
+  if (!brand) throw new Error('Missing brand')
   const search = form.props['children'] as Element
-  return { props, root, brand, form, search, sync, avatar }
+  return { props, root, lead, filters, brand, form, search, sync, avatar }
 }
 
 function css() {
@@ -41,9 +43,11 @@ function css() {
 
 describe('TopBar', () => {
   it('is a header with brand, search landmark, sync status and avatar in order', () => {
-    const { root, brand, form, search, sync, avatar } = render()
+    const { root, lead, filters, brand, form, search, sync, avatar } = render()
     expect(root.type).toBe('header')
     expect(root.props['className']).toBe('top-bar')
+    expect(lead.props['className']).toBe('top-bar__lead')
+    expect(filters).toBeUndefined()
     expect(brand.type).toBe(Brand)
     expect(brand.props).toMatchObject({ className: 'top-bar__brand' })
     expect(form).toMatchObject({ type: 'form', props: { role: 'search' } })
@@ -74,6 +78,13 @@ describe('TopBar', () => {
       className: 'top-bar__sync',
     })
     expect(avatar.props).toEqual({ initials: 'WS', label: 'Profiel Wesley Smits', size: 'sm' })
+  })
+
+  it('places an optional filters control before the brand', () => {
+    const control = <button type="button">Filters</button>
+    const { filters, brand } = render({ filters: control })
+    expect(filters).toBe(control)
+    expect(brand.type).toBe(Brand)
   })
 
   it('disables the search while there is nothing to search', () => {
@@ -161,6 +172,7 @@ describe('TopBar', () => {
       })
     })
     expect(rules.get('.top-bar')?.get('display')).toBe('grid')
+    expect(rules.get('.top-bar')?.get('grid-template-columns')).toBe('fit-content(50%) 1fr auto')
     expect(rules.get('.top-bar__search')?.get('grid-column')).toBe('1 / -1')
     expect(rules.get('.top-bar__search .search-input')?.get('height')).toBe('44px')
     expect(rules.get('.top-bar .top-bar__sync')?.get('min-height')).toBe('44px')

@@ -10,7 +10,9 @@ The default is `.data/shadow-triage.sqlite`; `--db` selects the CLI path and
 `SHADOW_DATABASE_PATH` selects the app path.
 
 The root inbox is bounded to five readable mailboxes and ten recent Inbox
-messages each, without pagination. Those bounds are visible: each reading
+messages each, without pagination. The rail that holds the workflow and
+mailbox filters gives way below 900px, where the same filters open as a modal
+sheet from the top bar, so no width is left without them. Those bounds are visible: each reading
 carries an inbox scope (loaded mailboxes and counts, readable mailboxes
 offered, both bounds, and the last successful refresh) that the queue header
 states on desktop and mobile, so a bounded selection never reads as a whole
