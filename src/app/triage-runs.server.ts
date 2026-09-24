@@ -21,6 +21,7 @@ import {
   finishManualRun,
   interruptManualRunIfDead,
   linkShadowRun,
+  manualRunStopRequested,
   manualRunForRequest,
   markManualRunItem,
   markManualRunRunning,
@@ -151,8 +152,6 @@ export function createTriageRunService(deps: TriageRunDependencies) {
     request: TriageRunStart,
     signal?: AbortSignal,
   ): Promise<TriageRunStartResult> => {
-    if (!safeEnabled(deps.enabled)) return { status: 'blocked', reason: 'disabled' }
-    if (deps.classifier() === null) return { status: 'blocked', reason: 'missing_credentials' }
     const requestPayload = JSON.stringify(request)
     const first = opened()
     if (first === null) return { status: 'blocked', reason: 'store_unavailable' }
@@ -162,6 +161,10 @@ export function createTriageRunService(deps: TriageRunDependencies) {
     } finally {
       first.close()
     }
+    // Configuration gates control new work, never durable readback of an
+    // already accepted request whose response may have been lost.
+    if (!safeEnabled(deps.enabled)) return { status: 'blocked', reason: 'disabled' }
+    if (deps.classifier() === null) return { status: 'blocked', reason: 'missing_credentials' }
     const selected = await selectItems(deps, request, signal)
     if (selected.status !== 'ready') return { status: 'blocked', reason: selected.reason }
     return accept({
@@ -176,8 +179,6 @@ export function createTriageRunService(deps: TriageRunDependencies) {
   }
 
   const restart = (request: TriageRunRestart): TriageRunStartResult => {
-    if (!safeEnabled(deps.enabled)) return { status: 'blocked', reason: 'disabled' }
-    if (deps.classifier() === null) return { status: 'blocked', reason: 'missing_credentials' }
     const requestPayload = JSON.stringify(request)
     const db = opened()
     if (db === null) return { status: 'blocked', reason: 'store_unavailable' }
@@ -186,6 +187,9 @@ export function createTriageRunService(deps: TriageRunDependencies) {
     try {
       const replayed = replay(db, request.requestId, requestPayload)
       if (replayed !== null) return replayed
+      // As with Start, gates apply only after an exact request-id replay miss.
+      if (!safeEnabled(deps.enabled)) return { status: 'blocked', reason: 'disabled' }
+      if (deps.classifier() === null) return { status: 'blocked', reason: 'missing_credentials' }
       previous = readFrom(db, request.runId)
       if (previous === null) return { status: 'blocked', reason: 'run_unavailable' }
       items = selectionForManualRun(db, request.runId)
@@ -301,7 +305,7 @@ async function processRunGroups(
   const groups = groupSelection(selectionForManualRun(db, runId))
   let remainingCalls = run.limits.maxJevCalls
   for (const group of groups) {
-    if (controller.signal.aborted) break
+    if (controller.signal.aborted || manualRunStopRequested(db, runId)) break
     const summary = await runShadowTriageSelection(
       {
         reader: deps.reader,
@@ -311,6 +315,7 @@ async function processRunGroups(
         processId: deps.processId,
         isProcessAlive: deps.isProcessAlive,
         signal: controller.signal,
+        stopRequested: () => manualRunStopRequested(db, runId),
         observer: {
           runStarted: (shadowRunId) => {
             linkShadowRun(db, runId, group.mailboxId, shadowRunId)
@@ -325,6 +330,7 @@ async function processRunGroups(
     )
     remainingCalls -= summary.classified + summary.providerFailures + summary.storeErrors
     if (summary.errorCode !== null) errors.push(summary.errorCode)
+    if (manualRunStopRequested(db, runId)) break
     if (remainingCalls <= 0) controller.abort('budget_exhausted')
   }
   return errors
@@ -335,8 +341,8 @@ function finalStatus(
   errors: readonly string[],
   signal: AbortSignal,
 ): Exclude<TriageRunStatus, 'queued' | 'running' | 'stopping' | 'interrupted'> {
-  const stopped = run.status === 'stopping' || signal.reason !== 'budget_exhausted'
-  if (stopped && signal.aborted) return 'stopped'
+  if (run.status === 'stopping') return 'stopped'
+  if (signal.aborted && signal.reason !== 'budget_exhausted') return 'stopped'
   if (errors.length > 0 && run.counts.deferred === run.counts.selected) return 'failed'
   return run.counts.errors > 0 || run.counts.deferred > 0 || errors.length > 0
     ? 'partial'

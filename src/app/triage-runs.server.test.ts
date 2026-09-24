@@ -73,6 +73,8 @@ function harness(
   const path = join(directory, 'triage.sqlite')
   let id = 0
   let clock = 0
+  let enabled = true
+  let configured = true
   const calls: string[] = []
   const counted: ReturnType<typeof createJevClassifier> = async (request, signal) => {
     calls.push(request.thread.id)
@@ -80,16 +82,24 @@ function harness(
   }
   const service = createTriageRunService({
     reader: reader(),
-    classifier: () => counted,
+    classifier: () => (configured ? counted : null),
     open: () => openDatabase(path),
     worklist: (candidate) => (candidate === reading ? selected : null),
-    enabled: () => true,
+    enabled: () => enabled,
     now: () => new Date(Date.UTC(2026, 8, 24, 9, 0, clock++)),
     newId: () => runIds[id++] ?? crypto.randomUUID(),
     processId: 4242,
     isProcessAlive: (pid) => pid === 4242,
   })
-  return { service, calls }
+  return {
+    service,
+    calls,
+    path,
+    configure: (next: { enabled?: boolean; configured?: boolean }) => {
+      enabled = next.enabled ?? enabled
+      configured = next.configured ?? configured
+    },
+  }
 }
 
 const worklistStart = {
@@ -158,6 +168,37 @@ describe('manual Jev run server', () => {
     expect(calls).toHaveLength(2)
   })
 
+  it('replays accepted Start and Restart ids before changed configuration gates', async () => {
+    const { service, calls, configure } = harness()
+    const first = await service.start(worklistStart)
+    expect(first.status).toBe('accepted')
+    if (first.status !== 'accepted') return
+    await service.settled(first.run.runId)
+    const callsAfterFirst = calls.length
+
+    configure({ enabled: false, configured: false })
+    expect(await service.start(worklistStart)).toMatchObject({
+      status: 'accepted',
+      run: { runId: first.run.runId },
+    })
+    expect(calls).toHaveLength(callsAfterFirst)
+
+    configure({ enabled: true, configured: true })
+    const restartRequest = { requestId: nextRequestId, runId: first.run.runId }
+    const restarted = service.restart(restartRequest)
+    expect(restarted.status).toBe('accepted')
+    if (restarted.status !== 'accepted') return
+    await service.settled(restarted.run.runId)
+    const callsAfterRestart = calls.length
+
+    configure({ enabled: false, configured: false })
+    expect(service.restart(restartRequest)).toMatchObject({
+      status: 'accepted',
+      run: { runId: restarted.run.runId },
+    })
+    expect(calls).toHaveLength(callsAfterRestart)
+  })
+
   it('keeps provider failure details content-free and retryable', async () => {
     const { service } = harness(({ thread }) => Promise.resolve(jevFailure(thread.id)))
     const started = await service.start({
@@ -177,6 +218,49 @@ describe('manual Jev run server', () => {
         items: [{ mailbox: mailbox.id, messageId: '4001', status: 'provider_failure' }],
       },
     })
+  })
+
+  it('never lends a later successful judgment to an older failed run item', async () => {
+    let failing = true
+    const { service } = harness(({ thread }) =>
+      Promise.resolve(
+        failing
+          ? jevFailure(thread.id)
+          : jevJudgment(thread.id, { category: 'purchase', priority: 'normal' }),
+      ),
+    )
+    const first = await service.start({
+      ...worklistStart,
+      limits: { maxMessages: 1, maxJevCalls: 1 },
+    })
+    expect(first.status).toBe('accepted')
+    if (first.status !== 'accepted') return
+    await service.settled(first.run.runId)
+    expect(service.read(first.run.runId)).toMatchObject({
+      status: 'found',
+      run: { items: [{ status: 'provider_failure', errorCode: 'timeout' }] },
+    })
+
+    failing = false
+    const later = await service.start({
+      ...worklistStart,
+      requestId: nextRequestId,
+      limits: { maxMessages: 1, maxJevCalls: 1 },
+    })
+    expect(later.status).toBe('accepted')
+    if (later.status !== 'accepted') return
+    await service.settled(later.run.runId)
+    expect(service.read(later.run.runId)).toMatchObject({
+      status: 'found',
+      run: { items: [{ status: 'classified', category: 'purchase', priority: 'normal' }] },
+    })
+
+    const historical = service.read(first.run.runId)
+    expect(historical.status).toBe('found')
+    if (historical.status !== 'found') return
+    expect(historical.run.items).toEqual([
+      { mailbox: mailbox.id, messageId: '4001', status: 'provider_failure' },
+    ])
   })
 
   it('stops cooperatively and never starts the remaining Jev calls', async () => {
@@ -212,6 +296,59 @@ describe('manual Jev run server', () => {
       run: { status: 'stopped', counts: { selected: 3, processed: 3, deferred: 2 } },
     })
     expect(calls).toHaveLength(1)
+  })
+
+  it('observes a durable stop from another service before the next dispatch', async () => {
+    let release: (() => void) | undefined
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let secondEntered: (() => void) | undefined
+    const twoInFlight = new Promise<void>((resolve) => {
+      secondEntered = resolve
+    })
+    let entered = 0
+    const {
+      service: owner,
+      calls,
+      path,
+    } = harness(async ({ thread }) => {
+      entered += 1
+      if (entered === 2) secondEntered?.()
+      await held
+      return jevFailure(thread.id)
+    })
+    const started = await owner.start({
+      ...worklistStart,
+      limits: { maxMessages: 3, maxJevCalls: 3 },
+    })
+    expect(started.status).toBe('accepted')
+    if (started.status !== 'accepted') return
+    await twoInFlight
+
+    const stopper = createTriageRunService({
+      reader: reader(),
+      classifier:
+        () =>
+        ({ thread }) =>
+          Promise.resolve(jevJudgment(thread.id)),
+      open: () => openDatabase(path),
+      worklist: () => selected,
+      enabled: () => true,
+      now: () => new Date('2026-09-24T09:10:00.000Z'),
+      newId: () => crypto.randomUUID(),
+      processId: 4343,
+      isProcessAlive: (pid) => pid === 4242 || pid === 4343,
+    })
+    expect(stopper.stop(started.run.runId).status).toBe('stopping')
+    release?.()
+    await owner.settled(started.run.runId)
+
+    expect(calls).toHaveLength(2)
+    expect(owner.read(started.run.runId)).toMatchObject({
+      status: 'found',
+      run: { status: 'stopped', counts: { selected: 3, processed: 3, deferred: 1 } },
+    })
   })
 
   it('selects a mailbox with the requested hard message bound', async () => {
