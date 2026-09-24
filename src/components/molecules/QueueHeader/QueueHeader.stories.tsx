@@ -63,7 +63,7 @@ export const BoundedScope: Story = {
     scope: {
       summary: 'Loaded: 50 recent messages from 5 of 7 readable mailboxes',
       detail:
-        'Older mail was not loaded (at most 5 mailboxes and 10 recent Inbox messages each). Search and filters cover only loaded mail.',
+        '2 readable mailboxes were not read at all, so even the newest mail in them is missing (at most 5 mailboxes). Older mail was left out of 5 loaded mailboxes (at most 10 recent Inbox messages each). Search and filters cover only loaded mail.',
       refreshed: { label: 'Last refreshed 09:42.', dateTime: '2026-09-24T07:42:00.000Z' },
       bounded: true,
     },
@@ -79,7 +79,7 @@ export const UnboundedScope: Story = {
     scope: {
       summary: 'Loaded: 7 recent messages from 2 mailboxes',
       detail:
-        'Nothing was cut by the at most 5 mailboxes and 10 recent Inbox messages each bound. Search and filters cover only loaded mail.',
+        'Every readable mailbox was loaded and none reached the 10 recent Inbox messages bound, so nothing was cut. Search and filters cover only loaded mail.',
       refreshed: { label: 'Last refreshed 09:42.', dateTime: '2026-09-24T07:42:00.000Z' },
       bounded: false,
     },

@@ -28,8 +28,8 @@ describe('scopeText', () => {
     expect(text.bounded).toBe(false)
     expect(text.summary).toBe('Loaded: 4 recent messages from 1 mailbox')
     expect(text.detail).toBe(
-      'Nothing was cut by the at most 5 mailboxes and 10 recent Inbox messages each bound. ' +
-        'Search and filters cover only loaded mail.',
+      'Every readable mailbox was loaded and none reached the 10 recent Inbox messages bound, ' +
+        'so nothing was cut. Search and filters cover only loaded mail.',
     )
     expect(text.refreshed).toEqual({
       label: 'Last refreshed 09:42.',
@@ -37,7 +37,7 @@ describe('scopeText', () => {
     })
   })
 
-  it('never reads as a whole mailbox: a bounded reading says older mail was left out', () => {
+  it('never reads as a whole mailbox: the message bound says older mail was left out', () => {
     const text = scopeText(
       scope({
         mailboxes: [mailbox('one@mail.example', 10, true)],
@@ -49,10 +49,59 @@ describe('scopeText', () => {
     expect(text.bounded).toBe(true)
     expect(text.summary).toBe('Loaded: 10 recent messages from 1 mailbox')
     expect(text.detail).toContain(
-      'Older mail was not loaded (at most 5 mailboxes and 10 recent Inbox messages each).',
+      'Older mail was left out of 1 loaded mailbox (at most 10 recent Inbox messages each).',
     )
     expect(text.detail).toContain('Search and filters cover only loaded mail.')
     expect(text.refreshed.label).toBe('Last refreshed 09:42.')
+  })
+
+  it('does not call skipped mailboxes older mail: their newest mail is missing too', () => {
+    // Two readable mailboxes were never read, and no loaded one hit the
+    // message bound, so nothing about this reading is merely "older".
+    const text = scopeText(
+      scope({
+        mailboxes: [mailbox('one@mail.example', 3), mailbox('two@mail.example', 2)],
+        readable: 4,
+        loaded: 5,
+        bounded: true,
+      }),
+    )
+
+    expect(text.bounded).toBe(true)
+    expect(text.detail).toContain(
+      '2 readable mailboxes were not read at all, so even the newest mail in them is missing ' +
+        '(at most 5 mailboxes).',
+    )
+    expect(text.detail).not.toContain('Older mail')
+  })
+
+  it('says one skipped mailbox in the singular', () => {
+    const text = scopeText(
+      scope({
+        mailboxes: [mailbox('one@mail.example', 3)],
+        readable: 2,
+        loaded: 3,
+        bounded: true,
+      }),
+    )
+
+    expect(text.detail).toContain(
+      '1 readable mailbox was not read at all, so even the newest mail in it is missing',
+    )
+  })
+
+  it('names both bounds when both left something out', () => {
+    const text = scopeText(
+      scope({
+        mailboxes: [mailbox('one@mail.example', 10, true), mailbox('two@mail.example', 10, true)],
+        readable: 7,
+        loaded: 20,
+        bounded: true,
+      }),
+    )
+
+    expect(text.detail).toContain('5 readable mailboxes were not read at all')
+    expect(text.detail).toContain('Older mail was left out of 2 loaded mailboxes')
   })
 
   it('names the mailboxes the bound left out rather than only the loaded ones', () => {

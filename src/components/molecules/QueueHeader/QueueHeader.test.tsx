@@ -69,7 +69,7 @@ describe('QueueHeader', () => {
     const { byClass } = render({
       scope: {
         summary: 'Loaded: 50 recent messages',
-        detail: 'Older mail was not loaded.',
+        detail: 'Older mail was left out of 1 loaded mailbox.',
         refreshed: { label: 'Last refreshed 09:42.', dateTime: '2026-09-24T07:42:00.000Z' },
         bounded: false,
       },
@@ -81,7 +81,7 @@ describe('QueueHeader', () => {
       'Loaded: 50 recent messages',
     )
     expect(byClass('queue-header__scope-detail')?.props['children']).toBe(
-      'Older mail was not loaded.',
+      'Older mail was left out of 1 loaded mailbox.',
     )
     // The refresh time carries its machine-readable instant beside the words.
     expect(byClass('queue-header__scope-refreshed')).toMatchObject({
@@ -94,7 +94,7 @@ describe('QueueHeader', () => {
     const { byClass } = render({
       scope: {
         summary: 'Loaded: 50 recent messages',
-        detail: 'Older mail was not loaded.',
+        detail: 'Older mail was left out of 1 loaded mailbox.',
         refreshed: { label: 'Last refreshed 09:42.', dateTime: '2026-09-24T07:42:00.000Z' },
         bounded: true,
       },

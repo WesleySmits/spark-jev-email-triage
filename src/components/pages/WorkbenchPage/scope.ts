@@ -66,23 +66,48 @@ function mailboxCount({ mailboxes, readable }: QueueScope) {
 }
 
 /**
+ * What each bound left out, as its own sentence. The two bounds cut different
+ * mail and are never said with one phrase: the per-mailbox bound stops at the
+ * oldest message it read, so what it leaves out is older, while a mailbox the
+ * mailbox bound never reached is missing whole, newest mail included. Saying
+ * "older mail" for a skipped mailbox would understate it.
+ */
+function cutBy(scope: QueueScope) {
+  const skipped = scope.readable - scope.mailboxes.length
+  const cut = scope.mailboxes.filter((mailbox) => mailbox.bounded).length
+  const said: string[] = []
+  if (skipped > 0) {
+    said.push(
+      `${plural(skipped, 'readable mailbox', 'readable mailboxes')} ${
+        skipped === 1 ? 'was' : 'were'
+      } not read at all, so even the newest mail in ${skipped === 1 ? 'it' : 'them'} is ` +
+        `missing (at most ${plural(scope.mailboxLimit, 'mailbox', 'mailboxes')}).`,
+    )
+  }
+  if (cut > 0) {
+    said.push(
+      `Older mail was left out of ${plural(cut, 'loaded mailbox', 'loaded mailboxes')} ` +
+        `(at most ${plural(scope.messageLimit, 'recent Inbox message')} each).`,
+    )
+  }
+  if (said.length > 0) return said
+  return [
+    `Every readable mailbox was loaded and none reached the ` +
+      `${plural(scope.messageLimit, 'recent Inbox message')} bound, so nothing was cut.`,
+  ]
+}
+
+/**
  * The scope line for a reading: what it holds, and what it does not claim.
- * The summary always counts, the detail always names the bounds and what the
- * search reaches, and the refresh always names when it was last read, so
- * nothing reads as a whole mailbox.
+ * The summary always counts, the detail always names whichever bound left
+ * something out and what the search reaches, and the refresh always names
+ * when it was last read, so nothing reads as a whole mailbox.
  */
 export function scopeText(scope: QueueScope): ScopeText {
   const loaded = plural(scope.loaded, 'recent message')
-  const bounds = `at most ${plural(scope.mailboxLimit, 'mailbox', 'mailboxes')} and ${plural(
-    scope.messageLimit,
-    'recent Inbox message',
-  )} each`
-  const cut = scope.bounded
-    ? `Older mail was not loaded (${bounds}).`
-    : `Nothing was cut by the ${bounds} bound.`
   return {
     summary: `Loaded: ${loaded} from ${mailboxCount(scope)}`,
-    detail: `${cut} Search and filters cover only loaded mail.`,
+    detail: [...cutBy(scope), 'Search and filters cover only loaded mail.'].join(' '),
     refreshed: { label: `Last refreshed ${scope.readAt}.`, dateTime: scope.refreshedAt },
     bounded: scope.bounded,
   }

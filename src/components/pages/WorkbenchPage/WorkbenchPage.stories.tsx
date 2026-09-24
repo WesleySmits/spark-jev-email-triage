@@ -464,7 +464,12 @@ export const BoundedScope: Story = {
     await expect(line).toHaveTextContent(
       'Loaded: 24 recent messages from 3 of 7 readable mailboxes',
     )
-    await expect(line).toHaveTextContent('Older mail was not loaded')
+    // The two bounds are said apart: skipped mailboxes are missing whole,
+    // while the loaded ones were only cut off at their oldest read message.
+    await expect(line).toHaveTextContent(
+      '4 readable mailboxes were not read at all, so even the newest mail in them is missing',
+    )
+    await expect(line).toHaveTextContent('Older mail was left out of 2 loaded mailboxes')
     await expect(line).toHaveTextContent('Search and filters cover only loaded mail')
     await expect(line).toHaveTextContent('Last refreshed 09:42')
     await expect(line).toHaveClass('queue-header__scope--bounded')

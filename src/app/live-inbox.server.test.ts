@@ -512,6 +512,26 @@ describe('createLiveInbox scope', () => {
     expect(result.scope.mailboxes).toHaveLength(maxMailboxes)
     expect(result.scope.bounded).toBe(true)
   })
+
+  it('is bounded by the mailbox bound alone, with no listing anywhere near its own bound', async () => {
+    // Every loaded mailbox answered with one message, far under the message
+    // bound, so only the mailbox bound cut this reading. What the two skipped
+    // mailboxes hold is unknown, and may be newer than anything loaded.
+    const readable = Array.from({ length: maxMailboxes + 2 }, (_, index) =>
+      access(`box${String(index)}@mail.example`),
+    )
+    const listings = Object.fromEntries(
+      readable.map(({ mailbox }) => [mailbox.id, [listing(mailbox.id, '11', null)]]),
+    )
+    const { live } = inbox({ mailboxes: readable, listings })
+    const result = await live.list()
+    if (result.status !== 'ready') throw new Error('Expected a list')
+
+    expect(result.scope.bounded).toBe(true)
+    expect(result.scope.mailboxes.every((mailbox) => !mailbox.bounded)).toBe(true)
+    expect(result.scope.loaded).toBe(maxMailboxes)
+    expect(result.scope.readable - result.scope.mailboxes.length).toBe(2)
+  })
 })
 
 describe('isLoopback', () => {
