@@ -57,10 +57,10 @@ describe('scopeText', () => {
     )
   })
 
-  it('names the separately loaded other Inbox and provider page limit', () => {
-    const text = scopeText(scope({ view: 'other', pages: 20, bounded: true }))
+  it('names the separately loaded other Inbox and offers unbounded continuation', () => {
+    const text = scopeText(scope({ view: 'other', pages: 21, bounded: true }))
     expect(text.summary).toContain('other Inbox messages')
-    expect(text.detail).toContain("Spark's page limit")
+    expect(text.detail).toContain('load more to continue')
     expect(syncScopeLabel(scope({ view: 'other', pages: 1 }))).toContain('Loaded other Inbox')
   })
 

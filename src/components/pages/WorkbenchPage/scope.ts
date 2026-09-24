@@ -1,7 +1,6 @@
-import {
-  maxInboxPages,
-  type MailboxFailure as LiveMailboxFailure,
-  type MailboxScope as LiveMailboxScope,
+import type {
+  MailboxFailure as LiveMailboxFailure,
+  MailboxScope as LiveMailboxScope,
 } from '../../../app/live-inbox'
 
 /**
@@ -161,9 +160,7 @@ export function scopeText(scope: QueueScope): ScopeText {
       : undefined
     const notices = [unread, incomplete].filter((notice) => notice !== undefined)
     const possible = scope.bounded
-      ? scope.pages === maxInboxPages
-        ? `Older ${kind} messages may remain beyond Spark's page limit.`
-        : `Older ${kind} messages may remain; load more to continue.`
+      ? `Older ${kind} messages may remain; load more to continue.`
       : `No further ${kind} messages were found in the pages read.`
     return {
       summary: `Loaded: ${plural(scope.loaded, `${kind} message`)} from ${mailboxCount(scope)}`,

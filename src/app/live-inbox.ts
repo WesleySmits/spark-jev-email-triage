@@ -15,8 +15,8 @@ export const liveWorkflows: readonly SidebarItem[] = [
 ]
 
 export type InboxView = 'unread' | 'other'
-export type InboxListRequest = Readonly<{ view: InboxView; pages: number }>
-export const maxInboxPages = 20
+/** No cursor starts a fresh reading; its returned cursor advances it one page per mailbox. */
+export type InboxListRequest = Readonly<{ view: InboxView; cursor?: string | undefined }>
 
 /**
  * How much of one mailbox a reading holds. Counted from the rows it kept,
@@ -66,8 +66,10 @@ export type MailboxFailure = Readonly<{
 export type InboxScope = Readonly<{
   /** The selected Inbox state. This is never an all-mail count. */
   view: InboxView
-  /** Number of pages requested per mailbox in this reading. */
+  /** Greatest number of completed pages held for any mailbox in this reading. */
   pages: number
+  /** Opaque, server-owned continuation for one safe incremental request. */
+  cursor: string
   /** Mailboxes whose earlier pages were kept after a later page failed. */
   incomplete?: readonly MailboxFailure[]
   /**
@@ -169,9 +171,9 @@ export const bodyRequestSchema = z.strictObject({
   mailbox: z.email(),
   /** Spark's message id, not the row's `id`. */
   id: z.string().regex(/^[1-9][0-9]{0,18}$/),
-  /** The listed selection to recheck if the server restarted before this body read. */
+  /** The one provider page to recheck if the server restarted before this body read. */
   selection: z
-    .strictObject({ view: z.enum(['unread', 'other']), pages: z.int().min(1).max(maxInboxPages) })
+    .strictObject({ view: z.enum(['unread', 'other']), page: z.int().positive() })
     .optional(),
 })
 
@@ -188,12 +190,21 @@ type FetchBody = (request: BodyRequest, signal: AbortSignal) => Promise<MessageB
 export function liveBodyLoader(
   messages: readonly InboxSummary[],
   fetchBody: FetchBody,
-  selection?: InboxListRequest,
 ): BodyLoader {
   const copies = new Map<string, BodyRequest>()
-  for (const { id, mailbox, messageId } of messages) {
+  for (const message of messages) {
+    const { id, mailbox, messageId } = message
     if (messageId !== undefined) {
-      copies.set(id, { mailbox, id: messageId, ...(selection && { selection }) })
+      copies.set(id, {
+        mailbox,
+        id: messageId,
+        ...(message.sourcePage && {
+          selection: {
+            view: message.unread === false ? ('other' as const) : ('unread' as const),
+            page: message.sourcePage,
+          },
+        }),
+      })
     }
   }
   return (id, { signal }) => {

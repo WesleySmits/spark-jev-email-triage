@@ -8,7 +8,7 @@ import { useReconnect } from '../components/pages/ConnectionPage/useReconnect'
 import { WorkbenchPage } from '../components/pages/WorkbenchPage/WorkbenchPage'
 import { syncScopeLabel } from '../components/pages/WorkbenchPage/scope'
 import { ReviewDesk, type DeskReason, type DeskView } from '../app/review-desk'
-import { maxInboxPages, type InboxListRequest, type InboxScope } from '../app/live-inbox'
+import type { InboxListRequest, InboxScope } from '../app/live-inbox'
 
 export const Route = createFileRoute('/')({
   loader: (): Promise<DeskView> => ReviewDesk.open(),
@@ -140,9 +140,9 @@ function InboxViewBar({
   loading: boolean
   onChange: PageProps['onChange']
 }>) {
-  const { view, pages } = scope
+  const { view } = scope
   const retry = (scope.incomplete?.length ?? 0) > 0
-  const canLoad = scope.bounded && (pages < maxInboxPages || retry)
+  const canLoad = scope.bounded
   const kind = view === 'unread' ? 'unread' : 'read'
   return (
     <nav className="inbox-view" aria-label="Inbox views">
@@ -151,13 +151,13 @@ function InboxViewBar({
           label="Unread"
           selected={view === 'unread'}
           disabled={loading}
-          onClick={() => void onChange({ view: 'unread', pages: 1 })}
+          onClick={() => void onChange({ view: 'unread' })}
         />
         <ViewTab
           label="Other Inbox"
           selected={view === 'other'}
           disabled={loading}
-          onClick={() => void onChange({ view: 'other', pages: 1 })}
+          onClick={() => void onChange({ view: 'other' })}
         />
       </div>
       <span className="inbox-view__note" role="status">
@@ -169,7 +169,7 @@ function InboxViewBar({
         <button
           type="button"
           disabled={loading}
-          onClick={() => void onChange({ view, pages: retry ? pages : pages + 1 })}
+          onClick={() => void onChange({ view, cursor: scope.cursor })}
         >
           {retry ? 'Retry older' : 'Load older'} {kind} messages
         </button>
@@ -256,7 +256,7 @@ function Home() {
   const initial = Route.useLoaderData()
   const [inbox, setInbox] = useState<DeskView>(initial)
   const [loading, setLoading] = useState(false)
-  const request = useRef<InboxListRequest>({ view: 'unread', pages: 1 })
+  const request = useRef<InboxListRequest>({ view: 'unread' })
   const sequence = useRef(0)
   const read = async (next: InboxListRequest) => {
     const current = ++sequence.current
@@ -283,9 +283,11 @@ function Home() {
         onReady={() => {
           setWaited(true)
           notice.reset()
-          return read(request.current)
+          return read({ view: request.current.view })
         }}
-        onRefresh={() => read(request.current)}
+        onRefresh={() =>
+          read({ view: inbox.status === 'ready' ? inbox.scope.view : request.current.view })
+        }
         onChange={read}
         loading={loading}
       />

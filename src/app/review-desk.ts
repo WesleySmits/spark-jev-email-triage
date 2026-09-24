@@ -62,7 +62,7 @@ export const ReviewDesk = {
    * stored judgment is unclassified, and judgments that cannot be read are
    * reported as unavailable rather than as absent.
    */
-  open: (request: InboxListRequest = { view: 'unread', pages: 1 }): Promise<DeskView> =>
+  open: (request: InboxListRequest = { view: 'unread' }): Promise<DeskView> =>
     getLiveInbox({ data: request }).catch(
       () => ({ status: 'unavailable', reason: 'unreachable' }) as const,
     ),
@@ -81,11 +81,7 @@ export const ReviewDesk = {
    * never holds up the body.
    */
   focus: (view: DeskView): BodyLoader =>
-    liveBodyLoader(
-      rowsOf(view),
-      (data, signal) => getLiveBody({ data, signal }),
-      view.status === 'ready' ? { view: view.scope.view, pages: view.scope.pages } : undefined,
-    ),
+    liveBodyLoader(rowsOf(view), (data, signal) => getLiveBody({ data, signal })),
 
   /**
    * Whether Spark answers now, while the page waits for it. The answer holds
