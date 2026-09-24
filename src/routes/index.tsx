@@ -171,7 +171,6 @@ function Page({ inbox, root, onReady }: PageProps) {
   )
 }
 
-// Recent Spark mail beside what shadow triage last stored about it. The
 // Recent Spark mail and stored triage. Reviews change only the local review
 // store. The separate Done panel may approve and execute one guarded Spark
 // message-ID action when the server kill switch is enabled. Inbox refresh and
