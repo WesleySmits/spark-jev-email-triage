@@ -217,6 +217,15 @@ Fallow, both builds — plus commitlint and the Fallow changed-code audit on
 pull requests, and it fails on whitespace errors or uncommitted generated
 files.
 
+For pull requests, that job also runs `pnpm eval:gate --base "$BASE_SHA"`.
+It reads the base commit and current source offline. If the pinned Jev model
+changed, the command requires reviewed before/after evidence over the exact
+same fictitious set and applies the criterion documented in
+`src/eval/README.md`. It fails closed for absent, mismatched or regressed
+evidence. CI never receives `TYPESAFE_API_KEY`, never calls Jev or Spark and
+never reads or changes a mailbox. Passing this release gate says nothing is
+certain and authorizes no mailbox action.
+
 A branch can require one check by name, so CI ends in one job,
 `required-checks`, which waits for every other job and fails unless each
 succeeded. That name is what a branch requires; adding a CI job means adding

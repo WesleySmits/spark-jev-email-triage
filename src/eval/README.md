@@ -235,6 +235,46 @@ set's test until each case is read again under the new meanings.
 No threshold has been changed for this report. The figures it prints are the
 baseline a later run is compared with.
 
+## Model release gate
+
+CI runs `pnpm eval:gate --base <pull-request-base-sha>`. The command reads the
+pinned `jevModel` declaration from the base commit with `git show`. When the
+pin is unchanged it passes and explicitly says that no live evaluation ran.
+When the pin changed, it fails closed unless this exact file exists:
+
+```text
+src/eval/evidence/<old-version>--<new-version>.json
+```
+
+That file has schema version 1, the old and new classifier versions, the
+current rubric, a human reviewer and date, and two ordinary version-2 run
+snapshots under `baseline` and `candidate`. Both snapshots must cover every reviewed
+fixture exactly once under the named model and rubric. They contain answers,
+scores, fixture names and content-free failure codes, never mail.
+
+The two snapshots are made only after somebody explicitly chooses to run the
+live harness on the base and candidate versions. CI never invokes
+`pnpm eval:jev:live`, receives no API key and calls neither Jev nor Spark. A
+provider failure in either run blocks the comparison; rerun explicitly rather
+than treating an outage as model quality.
+
+`model-release-gate.ts` owns the versioned offline criterion:
+
+- category agreement at least 0.80, no overall regression and no category
+  losing an agreement;
+- priority agreement at least 0.75, no overall regression and no priority
+  losing an agreement;
+- handling agreement at least 0.80 and no regression;
+- at most one additional case sent to review;
+- expected calibration error at most 0.20 and no increase greater than 0.05;
+- zero provider failures in both runs.
+
+These are release criteria, not truth claims. A model score is a calibration
+input whose agreement with reviewed labels is measured; it is not certainty.
+The gate permits a code change to merge and nothing else. It imports no
+mailbox adapter, performs no mailbox mutation and never turns any score into
+authorization for an action.
+
 ## Provenance and privacy
 
 Every case records where its mail came from.

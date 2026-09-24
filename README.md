@@ -103,6 +103,7 @@ working Spark integration.
 | `pnpm fallow:audit`   | Fallow audit of changes against `origin/main`        |
 | `pnpm build`          | Production build                                     |
 | `pnpm check`          | Format check, lint, typecheck, tests, Fallow, builds |
+| `pnpm eval:gate`      | Check a model change against reviewed evidence       |
 
 `pnpm eval:jev:live` runs the live Jev evaluation over the reviewed
 evaluation set. It calls the TypeSafe API, needs `TYPESAFE_API_KEY`, reports
@@ -127,6 +128,15 @@ provider, no mailbox, no database and no writes. The snapshot holds the
 answers the run received, names its mail by fixture rather than copying any
 of it, and pins the labels the run was measured against, so a case read again
 since is refused rather than quietly counted another way.
+
+On pull requests, CI runs `pnpm eval:gate --base <base-sha>`. An unchanged
+pinned classifier passes without calling Jev. A changed classifier fails
+closed unless `src/eval/evidence/<old>--<new>.json` contains reviewed,
+content-free snapshots for both versions over the exact same evaluation set.
+The offline criterion is defined in `src/eval/model-release-gate.ts`; see
+`src/eval/README.md` for the figures and explicit live-run procedure. Model
+scores are calibration inputs, not certainty, and passing this code-release
+gate never authorizes a mailbox action.
 
 ## Shadow triage
 
@@ -405,10 +415,11 @@ pnpm readback:spark                      # whether Spark answers on this host
   sanitized threads triage is measured against, each with the category,
   priority, handling and the argument for them that a named reviewer settled on
   against the rubric. It covers ambiguous, suspicious, personal, purchase and
-  notification mail among the rest. An assistant proposed every case and a
-  named person then read all of them, keeping most and correcting two; each
-  case's `curation` says who proposed it, who read it, when, and whether that
-  reading changed it. Expectations are never taken from a classifier answer
+  notification mail among the rest. The original cases were read by Wesley;
+  Feature 8 additions identify their assistant review rather than claiming a
+  human review that did not happen. Each case's `curation` says who proposed
+  it, who read it, what kind of reviewer they were, and whether that reading
+  changed it. Expectations are never taken from a classifier answer
   or from policy, and the set calls nothing, so its tests run in CI with no
   provider, network or secret; only `pnpm eval:jev:live` reaches Jev. Each
   case names the thread it was written against by subject, latest message and
@@ -451,6 +462,14 @@ pnpm readback:spark                      # whether Spark answers on this host
   yardstick it was not measured with. The live run writes its snapshot under `.data/`, which Git
   ignores, named after the run's own timestamp, so no live answer is
   committed and no argument decides where anything is written.
+- `src/eval/model-release-gate.ts` compares a changed pinned classifier with
+  its predecessor over two replayable, content-free snapshots of the exact
+  same reviewed set. Category, priority and handling may not regress; review
+  load may increase by at most one case; calibration error may rise by at
+  most 0.05 and must stay at or below 0.20; neither run may contain a provider
+  failure. CI performs only this offline replay. A live Jev run happens only
+  when a person explicitly invokes it to prepare evidence, and no score or
+  passing gate can authorize a mailbox action.
 - `src/domain/rubric.ts` holds the opinionated default rubric for any Spark
   inbox, personal or work: the categories `personal`, `notification`,
   `security`, `purchase`, `newsletter`, `promotion`, `suspicious`, and
