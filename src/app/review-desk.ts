@@ -1,8 +1,8 @@
 /**
  * The review desk: the root route's one interface for reading live mail
- * deeply, and for recording what a person made of one reading of it. The
- * server boundary, Spark and the mail reader stay behind this module, so the
- * route itself imports no server, provider or classifier code.
+ * deeply, for recording a human review, and for the separately guarded Done
+ * action. Server boundaries and Spark stay behind this module, so the route
+ * imports no provider or server-only code.
  *
  * Nothing here starts a read on its own:
  * - `open` reads the desk once, for the route's loader.
@@ -10,11 +10,10 @@
  *   and with it what that read proves about the row's stored judgment.
  * - `probe` only asks whether Spark answers; it learns nothing about mail.
  * - `review` records one person's reading of one stored classification.
+ * - `approveDone` and `executeDone` call the local-only action server.
  *
- * Only `review` writes, and what it writes is a review: it is appended
- * beside the judgment it reviews, which stays as a run stored it. No mailbox
- * is ever read or changed by it, no Spark command runs and no classifier is
- * called, here or anywhere else in this module. Reviewing is not completing.
+ * Reviewing never completes a message. Only the explicit Done path can ask
+ * Spark to change one, and its server owns approval, receipts and readback.
  */
 import type { DeskReviewOutcome, DeskReviewReadback, DeskReviewRequest } from './desk-review'
 import type { BodyLoader } from './inbox'
@@ -24,6 +23,9 @@ import type { ConnectionReason } from './reconnect'
 import { checkReview, saveReview } from './review.functions'
 import type { SparkReadiness } from './spark-readiness'
 import { getSparkReadiness } from './spark-readiness.functions'
+import { approveDoneAction, executeDoneAction } from './done-action.functions'
+import type { DoneApprovalResult, DoneExecutionRequest, DoneExecutionResult } from './done-action'
+import type { MailboxActionProposal } from '../domain/mailbox-action'
 
 /** Why the desk waits: a reason the server gave, or an app server that didn't answer. */
 export type DeskReason = ConnectionReason
@@ -98,4 +100,12 @@ export const ReviewDesk = {
   /** Reads the local store only; a failed check remains unavailable. */
   check: (request: DeskReviewRequest): Promise<DeskReviewReadback> =>
     checkReview({ data: request }).catch(() => ({ status: 'unavailable' }) as const),
+
+  approveDone: (proposal: MailboxActionProposal): Promise<DoneApprovalResult> =>
+    approveDoneAction({ data: { proposal } }).catch(
+      () => ({ status: 'blocked', reason: 'journal_unavailable' }) as const,
+    ),
+
+  executeDone: (request: DoneExecutionRequest): Promise<DoneExecutionResult> =>
+    executeDoneAction({ data: request }).catch(() => ({ status: 'uncertain' }) as const),
 } as const

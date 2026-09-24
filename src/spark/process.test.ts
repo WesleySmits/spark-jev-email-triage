@@ -105,9 +105,12 @@ describe('createProcessTransport', () => {
   })
 
   it('kills the process when the call is cancelled', async () => {
-    const { child, transport } = setup()
+    const { child, spawn, transport } = setup()
     const controller = new AbortController()
     const result = failure(transport(accountsCommand(), controller.signal))
+    await vi.waitFor(() => {
+      expect(spawn).toHaveBeenCalledOnce()
+    })
     controller.abort()
 
     expect(await result).toMatchObject({ code: 'aborted' })
@@ -127,8 +130,11 @@ describe('createProcessTransport', () => {
     ['ENOENT', 'not_installed'],
     ['EACCES', 'spawn_failed'],
   ])('maps a %s start failure', async (code, expected) => {
-    const { child, transport } = setup()
+    const { child, spawn, transport } = setup()
     const result = failure(transport(accountsCommand()))
+    await vi.waitFor(() => {
+      expect(spawn).toHaveBeenCalledOnce()
+    })
     child.emit('error', Object.assign(new Error('spawn spark'), { code }))
 
     expect(await result).toMatchObject({ code: expected })

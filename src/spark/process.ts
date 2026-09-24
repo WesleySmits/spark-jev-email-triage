@@ -7,6 +7,7 @@ import { spawn as nodeSpawn } from 'node:child_process'
 import type { Readable } from 'node:stream'
 import { sparkArguments, type SparkCommand } from './commands'
 import { SparkError } from './errors'
+import { runSparkSerial } from './queue'
 
 /** Runs one Spark command and resolves with its stdout. */
 export type SparkTransport = (command: SparkCommand, signal?: AbortSignal) => Promise<string>
@@ -35,7 +36,8 @@ export function createProcessTransport({
   spawn = nodeSpawn,
   limits = defaultLimits,
 }: { spawn?: SpawnSpark; limits?: ProcessLimits } = {}): SparkTransport {
-  return (command, signal) => run(spawn, sparkArguments(command), limits, signal)
+  return (command, signal) =>
+    runSparkSerial(() => run(spawn, sparkArguments(command), limits, signal))
 }
 
 function run(

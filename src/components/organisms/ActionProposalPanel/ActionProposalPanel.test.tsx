@@ -37,13 +37,13 @@ const withClass = (elements: Element[], name: string) =>
 
 const base: Props = {
   title: 'Mailbox action',
-  summary: 'Proposed here, approved by you, and never carried out.',
+  summary: 'Spark Done acts on the message ID.',
   stages: [
     {
       id: 'proposal',
       name: 'Proposal',
       state: { label: 'Proposed', tone: 'review' },
-      detail: 'Mark as read, against the 1 mailbox copy named below.',
+      detail: 'Mark Spark message ID 11 as Done.',
     },
     {
       id: 'approval',
@@ -55,7 +55,7 @@ const base: Props = {
       id: 'execution',
       name: 'Execution',
       state: { label: 'Blocked', tone: 'neutral' },
-      detail: 'This app has no way to write to a mailbox.',
+      detail: 'Done actions are switched off in this fictional example.',
     },
   ],
   targetsTitle: 'Mailbox copies named',
@@ -67,11 +67,11 @@ const base: Props = {
       detail: 'Proposed against thread t-11, latest message 11.',
     },
   ],
-  targetsNote: 'Only the copies named here would be acted on.',
+  targetsNote: 'Spark receives only the message ID; other copies may change.',
   targetsEmpty: 'Nothing is proposed, so no mailbox copy is named.',
   effect: {
     title: 'What it would change',
-    statement: 'The intended effect is to mark only the copy named above as read.',
+    statement: 'Spark Done would move the message out of Inbox into Archive.',
     note: 'What a provider does when asked that is not verified here. Your mailbox is unchanged.',
   },
   preconditionsTitle: 'Before anything could run',
@@ -200,13 +200,13 @@ describe('ActionProposalPanel', () => {
     const buttons = rendered({
       ...base,
       actions: [
-        { id: 'propose', label: 'Propose marking as read', disabled: true, onClick: vi.fn() },
+        { id: 'propose', label: 'Propose Spark Done', disabled: true, onClick: vi.fn() },
         { id: 'withdraw', label: 'Withdraw', variant: 'quiet', onClick: vi.fn() },
       ],
     }).filter((element) => element.type === Button)
 
     expect(buttons.map((button) => button.props['children'])).toEqual([
-      'Propose marking as read',
+      'Propose Spark Done',
       'Withdraw',
     ])
     expect(buttons[0]?.props['disabled']).toBe(true)

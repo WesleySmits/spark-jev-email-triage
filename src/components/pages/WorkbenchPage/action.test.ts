@@ -36,6 +36,7 @@ const labels = {
   priorityUncertain: false,
   review: 'auto_accepted',
   reviewPriority: 'normal',
+  grounds: { state: 'recorded', reasons: [], suspicionSignals: [] },
 } as const
 
 const judgedAt = '2026-09-22T09:15:00.000Z'
@@ -47,10 +48,17 @@ const unverified: StoredClassification = {
   labels,
 }
 
-const current: StoredClassification = { ...unverified, state: 'current' }
+const current: StoredClassification = {
+  state: 'current',
+  subject: subjectOf(studio),
+  judgedAt,
+  labels,
+}
 
 const stale = (reason: 'newer_message' | 'other_snapshot' | 'rubric'): StoredClassification => ({
-  ...unverified,
+  subject: subjectOf(studio),
+  judgedAt,
+  labels,
   state: 'stale',
   reason,
 })
@@ -63,7 +71,8 @@ const targetOf = (mailboxId: string) => ({
 
 const proposalOf = (mailboxIds: readonly string[]): MailboxActionProposal =>
   proposeMailboxAction({
-    kind: 'markAsSeen',
+    kind: 'markAsDone',
+    scope: 'spark-message-id',
     targets: mailboxIds.map(targetOf),
     basis: { classification: subjectOf(studio) },
     proposedAt: judgedAt,
@@ -305,7 +314,7 @@ describe('actionPreconditions', () => {
 
     expect(views.at(-1)).toEqual({
       id: 'write_adapter_connected',
-      label: 'Something could carry the action out',
+      label: 'Spark action path and server switch',
       state: { label: 'Not connected', tone: 'neutral' },
     })
   })
@@ -351,31 +360,30 @@ describe('actionEffect', () => {
     expect(effect.note).toContain('Your mailbox is unchanged.')
   })
 
-  it('names the copies it would ask for, by their ids, and nothing else', () => {
+  it('names the selected source and the Spark message ID', () => {
     const effect = actionEffect(held([studio]), labelOf)
 
-    expect(effect.statement).toContain('mark only the copy named above as read')
+    expect(effect.statement).toContain('mark message ID 11 as Done')
+    expect(effect.statement).toContain('out of Inbox into Archive')
     expect(effect.statement).toContain(`Studio Noord (${studio} · message 11)`)
     expect(effect.statement).not.toContain(alias)
   })
 
-  it('names both copies where both were proposed against', () => {
+  it('names all selected sources without claiming mailbox scope', () => {
     const effect = actionEffect(held([studio, alias]), labelOf)
 
-    expect(effect.statement).toContain('the copies named above')
+    expect(effect.statement).toContain('Selected from:')
     expect(effect.statement).toContain(studio)
     expect(effect.statement).toContain(alias)
   })
 
-  it('claims nothing about what a provider would do, or about the thread', () => {
+  it('explains ID-only scope and the new-message race before execution', () => {
     const { statement, note } = actionEffect(held([studio]), labelOf)
 
-    expect(note).toContain('target these exact mailbox copies')
-    expect(note).toContain('effect on the rest of the thread is also unverified')
-    expect(note).toContain('No live write is connected')
-    // It describes a request nobody has made, never something that happened.
-    expect(`${statement} ${note}`).not.toMatch(/was marked as read|has been marked as read/i)
-    expect(statement).toMatch(/^The intended effect is/)
+    expect(note).toContain('does not limit Spark')
+    expect(note).toContain('A new message could arrive')
+    expect(note).toContain('Your mailbox is unchanged')
+    expect(`${statement} ${note}`).not.toMatch(/was marked as Done|has been marked as Done/i)
   })
 })
 

@@ -20,16 +20,14 @@ export type ActionStage = Readonly<{
   detail: string
 }>
 
-/** One named mailbox copy the action would be applied to. */
+/** One observed mailbox copy from which a Spark message ID was selected. */
 export type ActionTargetView = Readonly<{
   id: string
   /** How this workbench names the mailbox, for a reader, e.g. "Studio Noord". */
   label: string
   /**
-   * The copy itself, as a provider is given it: its mailbox id and its
-   * message id. Two mailboxes may be shown under one name, and one message
-   * id may be listed in both, so this is what tells the copies apart and it
-   * is always shown.
+   * The selected row's mailbox and message id. Spark's action command gets
+   * only the message id; the mailbox is context for the person and preflight.
    */
   identity: string
   /** The version it was proposed against, and where that copy stands now. */
@@ -58,8 +56,7 @@ type ActionProposalPanelProps = Readonly<{
   stages: readonly ActionStage[]
   targetsTitle: string
   /**
-   * Every mailbox copy the proposal names, and nothing else. Empty until
-   * something is proposed; nothing is ever added to it by this panel.
+   * Every selected row the proposal names. Empty until something is proposed.
    */
   targets: readonly ActionTargetView[]
   /** One line under the targets, e.g. what is deliberately not included. */
@@ -67,9 +64,8 @@ type ActionProposalPanelProps = Readonly<{
   /** Shown in place of the list while nothing is proposed. */
   targetsEmpty: string
   /**
-   * What the action would change if it were ever carried out, and what about
-   * that is not known. It is a statement about the named copies only; the
-   * caller must not let it imply anything about other copies or a thread.
+   * What the action would ask Spark to do and the scope limits of an ID-only
+   * command. The caller must state that other copies may change.
    */
   effect: Readonly<{ title: string; statement: string; note: string }>
   preconditionsTitle: string
@@ -86,10 +82,8 @@ const subheadings = { 2: 'h3', 3: 'h4', 4: 'h5' } as const
 /**
  * One proposed mailbox action, as three stages a reader can tell apart:
  * what is proposed, what a person approved, and where execution stands. It
- * lists every mailbox copy the proposal names, by the mailbox and message
- * ids a provider would be given, what the action would change about those
- * copies, and every precondition by name, so nothing about its scope is
- * left implicit.
+ * lists the selected rows, the Spark message IDs, the intended effect and
+ * the ID-only scope limits, plus every precondition by name.
  *
  * Presentational only. The caller owns every string, every state and every
  * button; nothing here proposes, approves, reads a mailbox or runs an
@@ -102,17 +96,17 @@ const subheadings = { 2: 'h3', 3: 'h4', 4: 'h5' } as const
  *
  * <ActionProposalPanel
  *   title="Mailbox action"
- *   summary="Proposed here, approved by you, and never carried out."
+ *   summary="Spark Done uses the selected message ID."
  *   stages={[
- *     { id: 'proposal', name: 'Proposal', state: { label: 'Proposed', tone: 'review' }, detail: 'Mark as read, against the copy named below.' },
- *     { id: 'approval', name: 'Approval', state: { label: 'Waiting for you', tone: 'review' }, detail: 'Approving records your decision here.' },
- *     { id: 'execution', name: 'Execution', state: { label: 'Blocked', tone: 'neutral' }, detail: 'Nothing here can change a mailbox.' },
+ *     { id: 'proposal', name: 'Proposal', state: { label: 'Proposed', tone: 'review' }, detail: 'Mark message ID 11 as Done.' },
+ *     { id: 'approval', name: 'Approval', state: { label: 'Waiting for you', tone: 'review' }, detail: 'A person approves this proposal.' },
+ *     { id: 'execution', name: 'Execution', state: { label: 'Waiting', tone: 'review' }, detail: 'A separate confirmation starts the guarded action.' },
  *   ]}
  *   targetsTitle="Mailbox copies named"
  *   targets={[{ id: 'c1', label: 'Studio Noord', identity: 'studio@mail.example · message 11', detail: 'Thread t-11, latest message 11.' }]}
- *   targetsNote="No other copy of this message is included."
+ *   targetsNote="Spark receives only the message ID; other copies may change."
  *   targetsEmpty="Nothing is proposed, so no copy is named."
- *   effect={{ title: 'What it would change', statement: 'The intended effect is to mark that one copy as read.', note: 'Provider scope is not verified, and nothing has been changed.' }}
+ *   effect={{ title: 'What it would change', statement: 'Spark Done moves the message out of Inbox into Archive.', note: 'A new message may arrive between check and action.' }}
  *   preconditionsTitle="Before anything could run"
  *   preconditions={[{ id: 'p1', label: 'A person approved it', state: { label: 'Not met', tone: 'neutral' } }]}
  *   actions={[{ id: 'approve', label: 'Approve', onClick: approve }]}

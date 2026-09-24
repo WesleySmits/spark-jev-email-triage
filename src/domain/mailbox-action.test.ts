@@ -34,7 +34,8 @@ const judged = {
 
 const proposal = (targets: ActionTarget[] = [target(studio)]) =>
   proposeMailboxAction({
-    kind: 'markAsSeen',
+    kind: 'markAsDone',
+    scope: 'spark-message-id',
     targets,
     basis: { classification: judged },
     proposedAt: '2026-09-22T09:15:00.000Z',
@@ -99,7 +100,8 @@ describe('proposeMailboxAction', () => {
   it('refuses a target whose thread version is missing', () => {
     expect(() =>
       proposeMailboxAction({
-        kind: 'markAsSeen',
+        kind: 'markAsDone',
+        scope: 'spark-message-id',
         targets: [
           { copy: { mailboxId: studio, messageId: '11' }, threadId: '', latestMessageId: '11' },
         ],

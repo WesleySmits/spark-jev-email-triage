@@ -32,8 +32,7 @@ const execution: ActionStage = {
   id: 'execution',
   name: 'Execution',
   state: { label: 'Blocked', tone: 'neutral' },
-  detail:
-    'This app has no way to write to a mailbox, so no proposal can be carried out. Your mailbox is unchanged.',
+  detail: 'Done actions are switched off in this fictional example. Your mailbox is unchanged.',
 }
 
 const stages = (proposal: ActionStage, approval: ActionStage): readonly ActionStage[] => [
@@ -46,28 +45,28 @@ const proposed: ActionStage = {
   id: 'proposal',
   name: 'Proposal',
   state: { label: 'Proposed', tone: 'review' },
-  detail: 'Mark as read, against the 1 mailbox copy named below.',
+  detail: 'Mark Spark message ID 11 as Done. The mailbox below is context.',
 }
 
 const waiting: ActionStage = {
   id: 'approval',
   name: 'Approval',
   state: { label: 'Waiting for you', tone: 'review' },
-  detail: 'Approving records your decision here. No mail provider is asked for anything.',
+  detail: 'Approving records your decision. A second confirmation would start execution.',
 }
 
 const approved: ActionStage = {
   id: 'approval',
   name: 'Approval',
   state: { label: 'Approved', tone: 'done' },
-  detail: 'Approved by you, at this computer. That decision is recorded here and nowhere else.',
+  detail: 'Approved by you, at this computer. Spark Done has not run yet.',
 }
 
 const effectOf = (copies: string) =>
   ({
     title: 'What it would change',
-    statement: `The intended effect is to mark only the ${copies} named above as read.`,
-    note: `Spark has not verified that this action can target these exact mailbox copies without changing others. Its effect on the rest of the thread is also unverified. No live write is connected, and your mailbox is unchanged.`,
+    statement: `Spark Done would move ${copies} out of Inbox into Archive.`,
+    note: `Spark receives message IDs, not mailbox IDs. Another visible copy may change. A new message could arrive between check and action. Your mailbox is unchanged.`,
   }) satisfies Props['effect']
 
 const adapter: PreconditionView = {
@@ -94,12 +93,11 @@ const meta = {
   args: {
     headingLevel: 2,
     title: 'Mailbox action',
-    summary: 'Proposed here, approved by you, and never carried out.',
+    summary: 'Spark Done acts on message IDs. Approval and execution are separate.',
     stages: stages(proposed, waiting),
     targetsTitle: 'Mailbox copies named',
     targets: [studioCopy],
-    targetsNote:
-      'Only the copies named here would be acted on, by the mailbox and message ids shown. The same message in another mailbox is a separate copy, and nothing adds it for you.',
+    targetsNote: 'Spark receives only the message ID. Other visible copies may change too.',
     targetsEmpty: 'Nothing is proposed, so no mailbox copy is named.',
     effect: effectOf('copy'),
     preconditionsTitle: 'Before anything could run',
@@ -136,9 +134,9 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 /**
- * One mark-as-read action proposed against one named mailbox copy, waiting for a person.
+ * One mark-as-done action proposed against one named mailbox copy, waiting for a person.
  * The three stages read apart: something is proposed, nobody has approved it,
- * and execution is blocked whatever happens above it.
+ * and execution is switched off in this fictional example.
  */
 export const Proposed: Story = {}
 
@@ -166,9 +164,7 @@ export const NothingProposed: Story = {
       note: 'Your mailbox is unchanged.',
     },
     preconditions: [approval('Not met'), adapter],
-    actions: [
-      { id: 'propose', label: 'Propose marking as read', variant: 'secondary', onClick: fn() },
-    ],
+    actions: [{ id: 'propose', label: 'Propose Spark Done', variant: 'secondary', onClick: fn() }],
     result: {
       title: 'Nothing proposed',
       detail: 'Proposing names this one mailbox copy and no other. Your mailbox is unchanged.',
@@ -179,7 +175,7 @@ export const NothingProposed: Story = {
 /**
  * Approved by a person, and still not carried out. The approval stage says
  * who decided; execution stays blocked, and the result never says a message
- * was marked as read.
+ * was marked as Done.
  */
 export const Approved: Story = {
   args: {
@@ -201,7 +197,7 @@ export const Approved: Story = {
   },
 }
 
-/** Fictional provider result after the same copy was read back as seen. */
+/** Fictional provider result after Archive/Inbox readback. */
 export const FictionalReadbackConfirmed: Story = {
   args: {
     summary: 'Fictional provider test. No Spark mailbox was changed.',
@@ -212,7 +208,7 @@ export const FictionalReadbackConfirmed: Story = {
         id: 'execution',
         name: 'Execution',
         state: { label: 'Confirmed in test', tone: 'done' },
-        detail: 'A fictional provider returned the same mailbox copy as read after one attempt.',
+        detail: 'A fictional provider returned the message in Archive and absent from Inbox.',
       },
     ],
     preconditions: [thread('Studio Noord', 'Met'), approval('Met')],
@@ -250,13 +246,13 @@ export const FictionalUncertainResult: Story = {
     result: {
       title: 'Test attempt held for review',
       detail:
-        'Receipt test-002 records an uncertain result. Reconcile it before considering any further action on this copy. No Spark mailbox was changed.',
+        'Receipt test-002 records an uncertain result. Check Spark manually before considering another action on message ID 11. No Spark mailbox was changed in this story.',
     },
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('Uncertain in test')).toBeVisible()
-    await expect(canvas.getByText(/Reconcile it before considering/)).toBeVisible()
+    await expect(canvas.getByText(/Check Spark manually before considering/)).toBeVisible()
     await expect(canvas.queryByRole('button')).not.toBeInTheDocument()
   },
 }
@@ -309,7 +305,7 @@ export const OutOfDate: Story = {
 export const TwoAliasCopies: Story = {
   args: {
     stages: stages(
-      { ...proposed, detail: 'Mark as read, against the 2 mailbox copies named below.' },
+      { ...proposed, detail: 'Mark as Done, against the 2 mailbox copies named below.' },
       waiting,
     ),
     targets: [studioCopy, aliasCopy],

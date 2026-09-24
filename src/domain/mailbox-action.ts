@@ -1,8 +1,7 @@
 /**
- * One proposed mailbox action: what would be done, to which mailbox copies,
+ * One proposed Spark action: what would be done, from which observed mailbox copies,
  * what must hold before anyone could do it, and how far it has got. Nothing
- * here does it. No provider is reached from this module, and no adapter that
- * could write to a mailbox exists in this build at all.
+ * here does it. No provider is reached from this module.
  *
  * A proposal, a person's approval of it and an execution are three separate
  * things, and this module keeps them separate:
@@ -13,18 +12,15 @@
  *   modelled and shown here; it is not a provider's permission, and no
  *   provider is told about it. An approval of a proposal whose targets have
  *   moved on is refused, and one that had been given stops holding.
- * - Execution has no ready form here. `ExecutionStanding` is always
- *   `blocked`, because no live Spark write adapter is connected. The separate
- *   guarded executor can exercise a fake provider in tests; this domain
- *   standing never reports a live mailbox action as carried out.
+ * - Execution has no ready form in this pure proposal model. The separate
+ *   guarded executor and durable journal determine whether a provider action
+ *   can run and whether its readback was confirmed.
  *
  * Invariants:
- * - A target is one mailbox copy, identified by mailbox and provider message
- *   id, and every target is named in the proposal. Nothing here derives,
- *   expands or adds one. Two copies of one delivery, e.g. to two aliases,
- *   are two targets and must both be named to be acted on; naming one never
- *   reaches the other, whatever a person believes about them. See
- *   `mailboxCopyId`.
+ * - A target records the mailbox copy from which a person selected one Spark
+ *   message id. Spark's action command accepts only that id. The mailbox is
+ *   context for preflight and readback, not an enforced write boundary; a
+ *   related copy may change too. Nothing expands the proposal's listed rows.
  * - Each target also names the thread version it was proposed against. A
  *   later message in that thread, or another thread for that copy, breaks
  *   the proposal, and with it any approval already given: `actionStanding`
@@ -47,22 +43,21 @@ import { judgedSubjectSchema } from './stored-classification'
 const id = z.string().trim().min(1)
 
 /**
- * The only action currently proposed. The separately guarded executor can
- * mark one exact copy as seen through a scoped provider port; no live Spark
- * write adapter is connected.
+ * The only action currently proposed. Spark Done removes a message from the
+ * Inbox and makes it available in Archive. Spark addresses the action by
+ * message id, not by an exact mailbox-copy reference.
  */
-const mailboxActionKindSchema = z.enum(['markAsSeen'])
+const mailboxActionKindSchema = z.enum(['markAsDone'])
 
 export type MailboxActionKind = z.infer<typeof mailboxActionKindSchema>
 
 /**
- * One target: the mailbox copy the action would be applied to, and the
- * thread version it was proposed against. The version is the precondition
- * the target carries, so a proposal can be found stale without anything
- * being read again.
+ * One target: the observed copy from which the Spark message id was selected,
+ * and the thread version to check immediately before action. Spark does not
+ * accept the mailbox id as a write boundary.
  */
 const actionTargetSchema = z.strictObject({
-  /** The exact copy. A copy in another mailbox is another target. */
+  /** The selected row's copy, used for preflight and readback only. */
   copy: mailboxCopyRefSchema,
   /** Provider-local: it means nothing outside `copy.mailboxId`. */
   threadId: id,
@@ -86,10 +81,11 @@ const targetsSchema = z
 
 const mailboxActionProposalSchema = z.strictObject({
   kind: mailboxActionKindSchema,
+  /** Spark's action command accepts a message id without a mailbox selector. */
+  scope: z.literal('spark-message-id'),
   /**
-   * Every mailbox copy the action would touch, named. This list is the whole
-   * scope of the proposal: nothing is added to it later and nothing is
-   * inferred from it.
+   * The selected rows from which message ids came. These are observed
+   * contexts, not a claim that Spark will touch only these mailbox copies.
    */
   targets: targetsSchema,
   /**
@@ -130,6 +126,7 @@ const basisId = (basis: MailboxActionProposal['basis']) => {
 export const proposalId = (proposal: MailboxActionProposal) =>
   JSON.stringify([
     proposal.kind,
+    proposal.scope,
     proposal.targets.map(targetId).sort(),
     basisId(proposal.basis),
     proposal.proposedAt,
@@ -141,7 +138,7 @@ export const proposalId = (proposal: MailboxActionProposal) =>
  *   proposal named. There is one of these per target.
  * - `human_approval`: a person approved this exact proposal.
  * - `write_adapter_connected`: something could carry the action out at all.
- *   Nothing in this build can, so this one is never met.
+ *   This pure domain module leaves that runtime check unmet.
  */
 export type Precondition =
   | Readonly<{ name: 'thread_unchanged' } & ActionTarget>
@@ -250,7 +247,7 @@ export const parseActionApproval = (value: unknown): ActionApproval | null =>
 /**
  * One person's approval of one exact proposal. It is a decision about this
  * proposal and nothing else: it permits no provider anything by itself.
- * The live workbench has no Spark write adapter.
+ * The server records the authoritative approval separately.
  */
 export const approveProposal = (
   proposal: MailboxActionProposal,
@@ -259,7 +256,7 @@ export const approveProposal = (
 
 /**
  * Execution, which is always blocked. There is no ready form of this type,
- * because no write adapter is connected in this build: `unmet` always holds
+ * because the runtime is outside this pure module: `unmet` always holds
  * `write_adapter_connected`, whatever else holds. Nothing may read this as
  * an action that was carried out.
  */
@@ -300,7 +297,7 @@ function unmetIn(
     .filter((target) => targetStanding(target, observations).status !== 'holds')
     .map(threadUnchanged)
   const approval: readonly Precondition[] = approved ? [] : [{ name: 'human_approval' }]
-  // No Spark write adapter is connected, so this one cannot be met at all.
+  // The runtime adapter is deliberately outside this pure proposal model.
   return [...targets, ...approval, { name: 'write_adapter_connected' }]
 }
 

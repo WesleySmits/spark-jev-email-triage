@@ -12,6 +12,7 @@ import type {
   StoredClassification,
 } from '../../../domain/stored-classification'
 import type { ReviewReason, SuspicionSignal } from '../../../domain/triage'
+import { approveProposal } from '../../../domain/mailbox-action'
 import type { ListedEvidence } from './classification'
 import type { WorkbenchMessage } from './workbench'
 import { WorkbenchPage } from './WorkbenchPage'
@@ -890,7 +891,7 @@ export const SharedMarkerMailboxes: Story = {
 const judgedAt = '2026-09-22T09:15:00.000Z'
 
 const subjectOf = (id: string) => ({
-  copy: { mailboxId: 'studio@mail.example', messageId: id },
+  copy: { mailboxId: 'studio', messageId: id },
   threadId: `t-${id}`,
   latestMessageId: id,
   rubric: 'email-triage.v2',
@@ -2141,15 +2142,26 @@ const proposing = (states: Readonly<Record<string, StoredClassification>> = stor
     ...classified,
     classifications: reading('reading-1', states),
     loadBody: fn(provingBodies({ m1: m1Current })),
-    proposals: { mode: 'enabled', approver: 'you, at this computer' },
+    proposals: {
+      mode: 'enabled',
+      approver: 'you, at this computer',
+      onApprove: (proposal) =>
+        Promise.resolve({
+          status: 'approved' as const,
+          approval: approveProposal(proposal, {
+            approvedBy: 'you, at this computer',
+            approvedAt: new Date().toISOString(),
+          }),
+        }),
+      onExecute: () => Promise.resolve({ status: 'blocked' as const, reason: 'disabled' as const }),
+    },
   }) satisfies Partial<Props>
 
 /**
  * Proposing one mailbox action, and then approving it. The three stages read
  * apart at every moment: what is proposed, what a person approved, and that
- * execution is blocked. The proposal names the open row's own mailbox copy
- * and no other, and no state ever says a message was marked as read: nothing here
- * can write to a mailbox at all.
+ * the separate execution confirmation remains unpressed. All data and
+ * callbacks in this story are fictional; no Spark action runs.
  */
 export const ProposeMailboxAction: Story = {
   globals: { viewport: { value: 'desktop', isRotated: false } },
@@ -2159,31 +2171,32 @@ export const ProposeMailboxAction: Story = {
 
     // Before anything is proposed, the stages still say where this can go.
     await expect(actionPanel(canvasElement)).toHaveTextContent('Nothing proposed')
-    await expect(actionPanel(canvasElement)).toHaveTextContent('Blocked')
+    await expect(actionPanel(canvasElement)).toHaveTextContent('Waiting')
     await expect(namedCopies(canvasElement)).toEqual([])
     await expect(expectedEffect(canvasElement)).toHaveTextContent(
       'Nothing is proposed, so nothing would change.',
     )
 
-    await press(canvasElement, 'Propose marking as read')
+    await press(canvasElement, 'Propose Spark Done')
     await expect(actionPanel(canvasElement)).toHaveTextContent('Waiting for you')
     // Exactly the open row's copy, by the ids a provider would be given.
     // Nothing added an alias copy to it.
     await expect(namedCopies(canvasElement)).toEqual(['studio · message m1'])
     await expect(actionPanel(canvasElement)).toHaveTextContent(
-      'The same message in another mailbox is a separate copy',
+      'Another visible copy may change too',
     )
 
-    // It says what would change, about that copy alone, and what about a
-    // provider doing it is not known. It never says anything happened.
+    // The message ID is Spark's write boundary; the mailbox is context.
     await expect(expectedEffect(canvasElement)).toHaveTextContent('What it would change')
     await expect(expectedEffect(canvasElement)).toHaveTextContent(
-      'The intended effect is to mark only the copy named above as read: Studio Noord (studio · message m1).',
+      'Spark would mark message ID m1 as Done',
     )
     await expect(expectedEffect(canvasElement)).toHaveTextContent(
-      'effect on the rest of the thread is also unverified',
+      'A new message could arrive between the final check and the action',
     )
-    await expect(expectedEffect(canvasElement)).toHaveTextContent('No live write is connected')
+    await expect(expectedEffect(canvasElement)).toHaveTextContent(
+      'mailbox shown here does not limit Spark',
+    )
 
     // Each precondition names its mailbox id too, so two mailboxes shown
     // under one name could never read as one precondition.
@@ -2195,9 +2208,9 @@ export const ProposeMailboxAction: Story = {
     await press(canvasElement, 'Approve')
     await expect(actionPanel(canvasElement)).toHaveTextContent('Approved by you, at this computer')
     await expect(actionResult(canvasElement)).toHaveTextContent('Approved, not carried out')
-    await expect(actionPanel(canvasElement)).toHaveTextContent('Not connected')
+    await expect(actionPanel(canvasElement)).toHaveTextContent('Checked on run')
     await expect(actionAnnounced(canvasElement)).toHaveTextContent('Your mailbox is unchanged')
-    await expect(actionPanel(canvasElement)).not.toHaveTextContent(/was marked as read|completed/i)
+    await expect(actionPanel(canvasElement)).not.toHaveTextContent(/was marked as Done|completed/i)
 
     // Nothing was asked of the provider: only the one body the reader opened.
     await expect(args.loadBody).toHaveBeenCalledTimes(1)
@@ -2220,9 +2233,9 @@ export const NothingToProposeAgainst: Story = {
     await waitFor(() => expect(actionPanel(canvasElement)).toHaveTextContent('Nothing proposed'))
 
     await expect(
-      within(canvasElement).getByRole('button', { name: 'Propose marking as read' }),
+      within(canvasElement).getByRole('button', { name: 'Propose Spark Done' }),
     ).toBeDisabled()
-    await expect(actionPanel(canvasElement)).toHaveTextContent('Blocked')
+    await expect(actionPanel(canvasElement)).toHaveTextContent('Waiting')
   },
 }
 
@@ -2258,7 +2271,7 @@ export const ProposalLapsesOnNewerMessage: Story = {
   render: (args) => <WithMovingThread {...args} />,
   play: async ({ canvasElement, args }) => {
     await waitFor(() => expect(evidence(canvasElement)).toHaveTextContent('Triage current'))
-    await press(canvasElement, 'Propose marking as read')
+    await press(canvasElement, 'Propose Spark Done')
     await press(canvasElement, 'Approve')
     await expect(actionResult(canvasElement)).toHaveTextContent('Approved, not carried out')
 

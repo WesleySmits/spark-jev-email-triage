@@ -3,8 +3,10 @@
 ## Implemented boundary
 
 `src/routes/index.tsx` reads mail through `ReviewDesk` and enables local
-category reviews while keeping completion in `read-only` mode. Spark mailbox
-data is only read. The CLI `pnpm shadow --apply` stores classifications;
+category reviews. The legacy Complete control remains off; the separate
+guarded Done panel can archive one selected Spark message ID after human
+approval and a second confirmation. The action server is disabled by default.
+The CLI `pnpm shadow --apply` stores classifications;
 the review desk appends human reviews to the same local schema-3 SQLite file.
 The default is `.data/shadow-triage.sqlite`; `--db` selects the CLI path and
 `SHADOW_DATABASE_PATH` selects the app path.
@@ -25,9 +27,9 @@ supported workflows and current limitations.
 probes `spark accounts` on the executing host; neither proves that all mail,
 the classifier, or local review storage works.
 
-The terms below include future concepts. Logical-message correlation,
-mailbox-action execution and action receipts are not exposed by the current
-root route or shadow command on `main`.
+The terms below include future concepts. Logical-message correlation is not
+implemented. The root route exposes only guarded Spark Done, never an
+automatic action from classification or review.
 
 ## Mailbox
 
@@ -72,16 +74,28 @@ One delivery of a logical message to a recipient or alias. A delivery may produc
 
 ## Mailbox action
 
-A requested provider mutation against explicitly named mailbox copies. A classification or review is not a mailbox action.
+A requested provider mutation. Spark Done addresses one message ID and does
+not accept a mailbox selector. The selected mailbox copy is context for
+preflight and readback, not an exact write boundary. A classification or
+review is not a mailbox action.
 
 ## Action proposal
 
-One proposed mailbox action: the action, every target mailbox copy named explicitly by its mailbox and provider message id, the thread version each was proposed against, and what explains it. Making one changes nothing and authorizes nothing. A copy is a target only where the proposal names it, so a copy of the same message in another mailbox is never added to one.
+One proposed Spark Done action: the selected message ID, the mailbox copy it
+was selected from, the observed thread version, and what explains the
+proposal. Making one changes nothing. Spark may affect another visible copy
+that shares the ID, and a new message may arrive between preflight and action.
 
 ## Action approval
 
-One person's decision about one exact proposal. It is that person's decision, recorded by this application; it is not a provider's permission and no provider is told about it. An approval lapses once a target's thread moves past the version proposed against.
+One person's decision about one exact proposal, recorded in a separate local
+action journal with server-owned identity and time. It expires after five
+minutes and is rechecked before execution. Approval alone starts no Spark
+action.
 
 ## Action receipt
 
-The durable record of one mailbox action attempt and its provider readback, including failed or uncertain outcomes.
+The durable record claimed before one Spark Done attempt. It stores a
+confirmed status and readback time only after Archive/Inbox verification;
+otherwise a pending or uncertain status prevents an automatic retry on the
+same message ID.

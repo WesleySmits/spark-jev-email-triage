@@ -4,21 +4,18 @@
  *
  * Plain functions of plain data, like `classification.ts` and `review.ts`
  * beside it. Nothing here reads a store, calls a classifier or touches a
- * mailbox, and nothing here executes: it decides which rows a proposal may
+ * mailbox, and nothing here executes by itself: it decides which rows a proposal may
  * name at all, turns what the reading says about a row into what the domain
  * calls an observation, and owns the words for proposal, approval and
  * execution.
  *
  * What the copy must never do, and the reason this module owns it:
  *
- * - It never says a mailbox action happened. Execution is blocked at every
- *   stage, because nothing in this build can write to a mailbox, and every
- *   state says the mailbox is unchanged.
- * - It never says an approval permits a provider anything. An approval is a
- *   person's decision, recorded and shown here; no provider is told about it.
- * - It carries no subject, address or body. A stage, a target and a refusal
- *   name mailboxes as the workbench already names them, message and thread
- *   ids, and content-free codes, so the same words may be shown and logged.
+ * - It never infers that a mailbox action happened from approval. The guarded
+ *   executor reports a separate confirmed or uncertain outcome.
+ * - Approval alone never starts a provider action.
+ * - It carries no subject or body. A stage, a target and a refusal name the
+ *   selected mailbox as context, the Spark message id and content-free codes.
  */
 import {
   actionStanding,
@@ -47,7 +44,7 @@ import type {
  * for anything and permits nothing.
  */
 const actionKindLabels = {
-  markAsSeen: 'Mark as read',
+  markAsDone: 'Mark as Done',
 } as const satisfies Record<MailboxActionKind, string>
 
 /** What a proposal about one row would name: one copy, and what explains it. */
@@ -67,7 +64,7 @@ export type Proposable = Readonly<{
  *
  * The judgment is named as the proposal's basis, which explains it and
  * authorizes nothing: the proposal still waits for a person, and execution
- * stays blocked whatever the classifier said.
+ * still requires separate approval and execution whatever the classifier said.
  */
 export function proposableIn(
   classification: StoredClassification | undefined,
@@ -155,7 +152,7 @@ const proposalStage = (held: HeldProposal | null, standing: ActionStanding | nul
     detail:
       standing.stage === 'invalidated'
         ? breaks[standing.reason]
-        : `${kind}, against the ${String(copies)} mailbox ${copies === 1 ? 'copy' : 'copies'} named below.`,
+        : `${kind}, using the ${String(copies)} Spark message ${copies === 1 ? 'ID' : 'IDs'} selected below.`,
   }
 }
 
@@ -166,7 +163,7 @@ const approvalStates = {
   },
   waiting: {
     state: { label: 'Waiting for you', tone: 'review' },
-    detail: 'Approving records your decision here. No mail provider is asked for anything.',
+    detail: 'Approving records your decision. Spark Done still needs a separate confirmation.',
   },
   lapsed: {
     state: { label: 'No longer holds', tone: 'danger' },
@@ -188,7 +185,7 @@ function approvalStage(held: HeldProposal | null, standing: ActionStanding | nul
   return {
     ...named,
     state: { label: 'Approved', tone: 'done' },
-    detail: `Approved by ${standing.approval.approvedBy}. That decision is recorded here and nowhere else.`,
+    detail: `Approved by ${standing.approval.approvedBy}. Spark Done has not run yet.`,
   }
 }
 
@@ -203,10 +200,18 @@ const executionStage: ActionStage = {
 export const actionStages = (
   held: HeldProposal | null,
   standing: ActionStanding | null,
+  connected = false,
 ): readonly ActionStage[] => [
   proposalStage(held, standing),
   approvalStage(held, standing),
-  executionStage,
+  connected
+    ? {
+        id: 'execution',
+        name: 'Execution',
+        state: { label: 'Waiting', tone: 'review' },
+        detail: 'A separate confirmation starts a fresh Spark check and one guarded Done attempt.',
+      }
+    : executionStage,
 ]
 
 const standings = {
@@ -249,17 +254,7 @@ export type ActionEffect = Readonly<{ title: string; statement: string; note: st
 
 const effectTitle = 'What it would change'
 
-/**
- * What the action would change if it were ever carried out, about the copies
- * it names and about nothing else.
- *
- * It is written so it can never be read as more than it says. It names the
- * copies asked for, and it does not claim what a provider would do with such
- * a request: whether one is enough, whether a provider touches the rest of a
- * thread, and how it scopes a message id are all unverified here. Nothing
- * has run, and nothing can, so this is a description of a request nobody has
- * made rather than a report of anything that happened.
- */
+/** The selected mailbox gives context; Spark's write accepts only message IDs. */
 export function actionEffect(held: HeldProposal | null, labelOf: LabelOf): ActionEffect {
   if (held === null) {
     return {
@@ -277,8 +272,8 @@ export function actionEffect(held: HeldProposal | null, labelOf: LabelOf): Actio
   const copies = held.proposal.targets.length
   return {
     title: effectTitle,
-    statement: `The intended effect is to mark ${copies === 1 ? 'only the copy' : 'only the copies'} named above as read: ${named}.`,
-    note: `Spark has not verified that this action can target these exact mailbox copies without changing others. Its effect on the rest of the thread is also unverified. No live write is connected, and ${unchanged.toLowerCase()}`,
+    statement: `Spark would mark ${copies === 1 ? 'message ID' : 'message IDs'} ${held.proposal.targets.map(({ copy }) => copy.messageId).join(', ')} as Done. Selected from: ${named}. Done moves mail out of Inbox into Archive.`,
+    note: `The mailbox shown here does not limit Spark's action. Another visible copy may change. A new message could arrive between the final check and the action. ${unchanged}`,
   }
 }
 
@@ -290,6 +285,7 @@ function preconditionView(
   standing: ActionStanding | null,
   observations: readonly TargetObservation[],
   labelOf: LabelOf,
+  connected: boolean,
 ): PreconditionView {
   if (precondition.name === 'human_approval') {
     return {
@@ -301,8 +297,10 @@ function preconditionView(
   if (precondition.name === 'write_adapter_connected') {
     return {
       id: 'write_adapter_connected',
-      label: 'Something could carry the action out',
-      state: { label: 'Not connected', tone: 'neutral' },
+      label: 'Spark action path and server switch',
+      state: connected
+        ? { label: 'Checked on run', tone: 'review' }
+        : { label: 'Not connected', tone: 'neutral' },
     }
   }
   const holds = targetStanding(precondition, observations).status === 'holds'
@@ -322,13 +320,14 @@ export function actionPreconditions(
   standing: ActionStanding | null,
   observations: readonly TargetObservation[],
   labelOf: LabelOf,
+  connected = false,
 ): readonly PreconditionView[] {
   const preconditions: readonly Precondition[] =
     held === null
       ? [{ name: 'human_approval' }, { name: 'write_adapter_connected' }]
       : preconditionsFor(held.proposal)
   return preconditions.map((precondition) =>
-    preconditionView(precondition, standing, observations, labelOf),
+    preconditionView(precondition, standing, observations, labelOf, connected),
   )
 }
 
@@ -352,12 +351,13 @@ export type ActionResult = Readonly<{ title: string; detail: string }>
 export function actionResult(
   standing: ActionStanding | null,
   refusal: keyof typeof refusals | null,
+  connected = false,
 ): ActionResult {
   if (refusal !== null) return { title: 'Not approved', detail: refusals[refusal] }
   if (standing === null) {
     return {
       title: 'Nothing proposed',
-      detail: `Proposing names this one mailbox copy and no other. ${unchanged}`,
+      detail: `A proposal names one Spark message ID from the open row. ${unchanged}`,
     }
   }
   if (standing.stage === 'invalidated') {
@@ -366,12 +366,14 @@ export function actionResult(
   if (standing.stage === 'proposed') {
     return {
       title: 'Not approved',
-      detail: `Approving records your decision here. ${unchanged}`,
+      detail: `Approving records your decision. ${unchanged}`,
     }
   }
   return {
     title: 'Approved, not carried out',
-    detail: `Nothing was sent to your mail provider, and nothing can be. ${unchanged}`,
+    detail: connected
+      ? `Use the separate confirmation to run Done. Spark will check the current thread first. ${unchanged}`
+      : `Nothing was sent to your mail provider, and nothing can be. ${unchanged}`,
   }
 }
 
