@@ -7,6 +7,7 @@ import { z } from 'zod'
 import {
   checkDatabase,
   migrate,
+  migrateExistingDatabase,
   openDatabase,
   openForWriting,
   openReadOnly,
@@ -43,6 +44,8 @@ describe('migrations', () => {
     expect(tableNames(db)).toEqual([
       'judgment_messages',
       'judgments',
+      'manual_run_items',
+      'manual_runs',
       'review_requests',
       'reviews',
       'runs',
@@ -62,6 +65,19 @@ describe('migrations', () => {
     expect(userVersion(db)).toBe(schemaVersion)
     expect(checkDatabase(db)).toEqual([])
     db.close()
+  })
+
+  it('upgrades the previous app schema without Spark or Jev', () => {
+    const path = disposablePath()
+    const old = openDatabase(path)
+    old.exec('DROP TABLE manual_run_items; DROP TABLE manual_runs; PRAGMA user_version = 3;')
+    old.close()
+
+    expect(migrateExistingDatabase(path)).toBe('migrated')
+    const upgraded = openReadOnly(path)
+    expect(userVersion(upgraded)).toBe(schemaVersion)
+    expect(tableNames(upgraded)).toContain('manual_runs')
+    upgraded.close()
   })
 
   it('are a no-op on an up-to-date database', () => {

@@ -31,6 +31,11 @@ function sparkReader() {
   return reader
 }
 
+/** Shared read-only provider used by explicit local server workflows. */
+export function sparkMailReader() {
+  return sparkReader()
+}
+
 export function sparkInbox() {
   inbox ??= createLiveInbox({
     reader: sparkReader(),

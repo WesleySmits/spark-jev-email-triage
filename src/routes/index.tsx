@@ -19,6 +19,7 @@ import {
 import { failedCoverage, inboxCoverage, type InboxCoverage } from '../app/inbox-coverage'
 import { ReviewDesk, type DeskReason, type DeskView } from '../app/review-desk'
 import type { InboxListRequest } from '../app/live-inbox'
+import { useTriageRunController } from '../app/triage-run-client'
 
 export const Route = createFileRoute('/')({
   loader: () => readWithStart(() => ReviewDesk.open()),
@@ -27,6 +28,12 @@ export const Route = createFileRoute('/')({
 })
 
 const profile = { profileLabel: 'Profile', profileInitials: 'ME' } as const
+const triageGateway = {
+  start: ReviewDesk.startTriage,
+  restart: ReviewDesk.restartTriage,
+  read: ReviewDesk.triageStatus,
+  stop: ReviewDesk.stopTriage,
+} as const
 
 /** How long the Spark connected notice stays, unless focus is on it. */
 const noticeMs = 8_000
@@ -122,10 +129,11 @@ type PageProps = Readonly<{
   onChange: (request: InboxListRequest) => Promise<void>
   coverage: InboxCoverage | undefined
   loading: boolean
+  triage: ReturnType<typeof useTriageRunController>
 }>
 
 /** The page for what the loader found: waiting, no mailboxes or the inbox. */
-function Page({ inbox, root, onReady, onRefresh, onChange, coverage, loading }: PageProps) {
+function Page({ inbox, root, onReady, onRefresh, onChange, coverage, loading, triage }: PageProps) {
   const rememberReadFocus = useInboxReadFocus(root, loading)
   const reread = () => {
     if (!loading) void onRefresh()
@@ -178,6 +186,26 @@ function Page({ inbox, root, onReady, onRefresh, onChange, coverage, loading }: 
               {coverage && <InboxZeroStatusBar coverage={coverage} refreshing={loading} />}
             </>
           }
+          triage={{
+            worklistSize: inbox.messages.length,
+            state: triage.state,
+            onStart: (limits) => {
+              void triage.start(limits)
+            },
+            onResume: () => {
+              void triage.resume()
+            },
+            onRead: () => {
+              void triage.read()
+            },
+            onStop: () => {
+              void triage.stop()
+            },
+            onRestart: () => {
+              void triage.restart()
+            },
+            onForget: triage.forget,
+          }}
           completion={{ mode: 'read-only' }}
           review={{
             mode: 'enabled',
@@ -275,6 +303,10 @@ function Home() {
   const [waited, setWaited] = useState(false)
   const { count, label: messages } = loadedMessageSummary(inbox)
   const notice = useConnectedNotice(root, waited && count > 0)
+  const triage = useTriageRunController({
+    reading: inbox.status === 'ready' ? inbox.reading : undefined,
+    gateway: triageGateway,
+  })
   return (
     <>
       <Page
@@ -291,6 +323,7 @@ function Home() {
         onChange={read}
         coverage={coverage}
         loading={loading}
+        triage={triage}
       />
       <LocalStatusToast
         visible={notice.visible}
