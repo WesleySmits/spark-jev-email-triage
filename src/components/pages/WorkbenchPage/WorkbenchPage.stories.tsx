@@ -7,6 +7,7 @@ import SidebarStories from '../../organisms/Sidebar/Sidebar.stories'
 import TopBarStories from '../../organisms/TopBar/TopBar.stories'
 import { fixtureBodyLoader, type BodyLoader, type InboxFixture } from '../../../app/inbox'
 import type { DeskReviewOutcome, DeskReviewRequest, RowReview } from '../../../app/desk-review'
+import type { TriageRunSnapshot } from '../../../app/triage-run'
 import type {
   ClassificationLabels,
   StoredClassification,
@@ -49,6 +50,37 @@ const messages: readonly WorkbenchMessage[] = QueueStories.args.messages.map((me
 })
 
 const bodies = new Map(Object.entries(details).map(([id, { body }]) => [id, body]))
+
+const completedTriageRun: TriageRunSnapshot = {
+  runId: '58c6210a-76d3-4ae2-8910-a36a87005794',
+  scope: { kind: 'worklist', label: 'Current worklist' },
+  status: 'completed',
+  limits: { maxMessages: 4, maxJevCalls: 4 },
+  counts: {
+    selected: 4,
+    processed: 4,
+    classified: 3,
+    alreadyCurrent: 1,
+    providerFailures: 0,
+    errors: 0,
+    deferred: 0,
+  },
+  cost: { status: 'price_unavailable', jevCalls: 3, inputTokens: 912, outputTokens: 204 },
+  shadowRunIds: [41],
+  errorCodes: [],
+  startedAt: '2026-09-24T09:42:00.000Z',
+  finishedAt: '2026-09-24T09:42:12.000Z',
+  items: [
+    {
+      mailbox: 'studio',
+      messageId: 'fictional-message-1',
+      status: 'classified',
+      category: 'personal',
+      priority: 'high',
+      needsReview: true,
+    },
+  ],
+}
 
 /** Loads the sample bodies, each after `delay` milliseconds or its own delay. */
 const bodiesAfter = (delay: number, per: Readonly<Record<string, number>> = {}) =>
@@ -201,6 +233,7 @@ const meta = {
     completion: { control: 'object' },
     workflows: { control: 'object' },
     mailboxes: { control: 'object' },
+    triage: { control: 'object' },
     topBar: { control: 'object' },
   },
   parameters: { layout: 'fullscreen' },
@@ -370,6 +403,30 @@ export const Desktop: Story = {
   play: async ({ canvasElement }) => {
     await filtersAndSearch(canvasElement)
     await shortcuts(canvasElement)
+  },
+}
+
+/** The selected Compact workbench with durable Jev result evidence in its queue header. */
+export const ManualJevRun: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: {
+    triage: {
+      worklistSize: messages.length,
+      state: { phase: 'run', run: completedTriageRun },
+      onStart: fn(),
+      onResume: fn(),
+      onRead: fn(),
+      onStop: fn(),
+      onRestart: fn(),
+      onForget: fn(),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const queue = canvas.getByRole('region', { name: 'Needs review' })
+    await expect(within(queue).getByRole('region', { name: 'Jev triage run' })).toBeVisible()
+    await expect(within(queue).getByText('Completed')).toBeVisible()
+    await expect(canvas.getByRole('main')).toBeVisible()
   },
 }
 
