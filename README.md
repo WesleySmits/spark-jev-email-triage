@@ -55,14 +55,13 @@ as they were.
 
 Supported: reading mail, refreshing, opening one body, viewing stored triage,
 and confirming or correcting its category locally. The guarded Done panel
-can archive a selected message when explicitly enabled. Classification starts
-through `pnpm shadow --mailbox <mailbox> --apply`, not from the UI. A
-default-off local server contract supports an explicit bounded Start,
-readback, cooperative Stop and idempotent Restart, but no component invokes it
-yet. A run sends minimized thread content to Jev and requires
-`TYPESAFE_API_KEY`. Loading, refreshing and reviewing in the app make no model
-calls. There is no UI
-triage-run control, priority/reply/deadline editor, persisted completion or Undo.
+can archive a selected message when explicitly enabled. The queue header has
+an explicit **Start Jev triage** control for the loaded worklist, with message
+and Jev-call limits, durable readback, cooperative Stop and idempotent Restart.
+It is loopback-only, default-off behind `JEV_MANUAL_RUNS_ENABLED=1`, and also
+requires `TYPESAFE_API_KEY`. A run sends minimized thread content to Jev;
+loading, refreshing and reviewing in the app make no model calls. There is no
+priority/reply/deadline editor, persisted completion or Undo.
 
 The workbench's single-key shortcuts (K, J, E and `/`) can be turned off in
 the rail, under the shortcut help. The choice is kept in that browser's local

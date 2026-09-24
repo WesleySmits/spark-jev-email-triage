@@ -131,15 +131,11 @@ export const ReviewDesk = {
 
   /** Explicit Start is the only desk operation that may invoke Jev. */
   startTriage: (request: TriageRunStart): Promise<TriageRunStartResult> =>
-    startTriageRun({ data: request }).catch(
-      () => ({ status: 'blocked', reason: 'store_unavailable' }) as const,
-    ),
+    startTriageRun({ data: request }),
 
   /** A new run over the older run's durable selection; still an explicit action. */
   restartTriage: (request: TriageRunRestart): Promise<TriageRunStartResult> =>
-    restartTriageRun({ data: request }).catch(
-      () => ({ status: 'blocked', reason: 'store_unavailable' }) as const,
-    ),
+    restartTriageRun({ data: request }),
 
   /** Local durable readback only; it never reads mail or invokes Jev. */
   triageStatus: (runId: string): Promise<TriageRunReadResult> =>

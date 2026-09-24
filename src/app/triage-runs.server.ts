@@ -16,6 +16,7 @@ import { createSdkTransport } from '../jev/transport'
 import { readDatabasePath } from '../shadow/config'
 import { openDatabase } from '../shadow/database'
 import {
+  activeManualRunOwnedBy,
   claimManualRun,
   deferQueuedManualRunItems,
   finishManualRun,
@@ -46,6 +47,22 @@ import { sparkMailReader } from './spark-inbox.server'
 
 type Classifier = ReturnType<typeof createJevClassifier>
 
+interface ManualRunJob {
+  controller: AbortController
+  promise: Promise<void>
+}
+
+interface ManualRunProcessScope {
+  __sparkManualTriageJobs?: Map<string, ManualRunJob>
+}
+
+// Process-local ownership survives dev-server module reloads. The pid remains
+// the durable cross-process owner; this registry only proves whether that
+// owner's in-memory job can still finish a run.
+const processScope = globalThis as typeof globalThis & ManualRunProcessScope
+const processJobs = processScope.__sparkManualTriageJobs ?? new Map<string, ManualRunJob>()
+processScope.__sparkManualTriageJobs = processJobs
+
 export interface TriageRunDependencies {
   reader: MailReader
   classifier: () => Classifier | null
@@ -70,7 +87,7 @@ type PreparedRun = Readonly<{
 }>
 
 export function createTriageRunService(deps: TriageRunDependencies) {
-  const jobs = new Map<string, { controller: AbortController; promise: Promise<void> }>()
+  const jobKey = (runId: string) => `${String(deps.processId)}:${runId}`
 
   const opened = (): DatabaseSync | null => {
     try {
@@ -221,6 +238,28 @@ export function createTriageRunService(deps: TriageRunDependencies) {
     }
   }
 
+  function settleLocallyOwnedStop(
+    db: DatabaseSync,
+    runId: string,
+    wasStopping: boolean,
+    changed: boolean,
+  ): boolean {
+    if (!activeManualRunOwnedBy(db, runId, deps.processId)) return false
+    const job = processJobs.get(jobKey(runId))
+    if (job !== undefined) {
+      if (changed || wasStopping) job.controller.abort()
+      return false
+    }
+    if (!changed && !wasStopping) return false
+    deferQueuedManualRunItems(db, runId)
+    finishManualRun(db, runId, {
+      status: 'stopped',
+      at: deps.now().toISOString(),
+      errors: [],
+    })
+    return true
+  }
+
   const stop = (runId: string): TriageRunStopResult => {
     const db = opened()
     if (db === null) return { status: 'unavailable' }
@@ -228,10 +267,10 @@ export function createTriageRunService(deps: TriageRunDependencies) {
       const before = readFrom(db, runId)
       if (before === null) return { status: 'absent' }
       const changed = requestManualRunStop(db, runId)
-      if (changed) jobs.get(runId)?.controller.abort()
+      const recovered = settleLocallyOwnedStop(db, runId, before.status === 'stopping', changed)
       const run = readFrom(db, runId)
       if (run === null) return { status: 'absent' }
-      return { status: changed ? 'stopping' : 'already_finished', run }
+      return { status: changed && !recovered ? 'stopping' : 'already_finished', run }
     } catch {
       return { status: 'unavailable' }
     } finally {
@@ -243,10 +282,11 @@ export function createTriageRunService(deps: TriageRunDependencies) {
     const db = opened()
     if (db === null) return false
     const controller = new AbortController()
+    const key = jobKey(runId)
     const promise = runJob(db, runId, controller)
       .catch(() => undefined)
-      .finally(() => jobs.delete(runId))
-    jobs.set(runId, { controller, promise })
+      .finally(() => processJobs.delete(key))
+    processJobs.set(key, { controller, promise })
     return true
   }
 
@@ -289,7 +329,7 @@ export function createTriageRunService(deps: TriageRunDependencies) {
     read,
     stop,
     /** Synthetic tests wait for background work without exposing this to the browser. */
-    settled: async (runId: string) => jobs.get(runId)?.promise,
+    settled: async (runId: string) => processJobs.get(jobKey(runId))?.promise,
   }
 }
 

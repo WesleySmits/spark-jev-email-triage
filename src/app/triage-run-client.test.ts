@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { isActiveTriageRun, restoreTriageSession, saveTriageSession } from './triage-run-client'
+import {
+  isActiveTriageRun,
+  restoreTriageSession,
+  saveTriageSession,
+  triageStateAfterReadback,
+} from './triage-run-client'
 import type { TriageRunSnapshot } from './triage-run'
 
 function memoryStorage(initial?: string) {
@@ -44,6 +49,23 @@ describe('manual triage browser session', () => {
 
     expect(restoreTriageSession(storage)).toEqual({ version: 1, runId, pending })
   })
+
+  it.each(['absent', 'unavailable'] as const)(
+    'keeps a pending restart resumable after %s readback',
+    (status) => {
+      const runId = '58c6210a-76d3-4ae2-8910-a36a87005794'
+      const pending = {
+        kind: 'restart' as const,
+        request: { requestId: request.requestId, runId },
+      }
+
+      expect(triageStateAfterReadback({ version: 1, runId, pending }, { status })).toEqual({
+        phase: 'uncertain',
+        runId,
+        pending,
+      })
+    },
+  )
 
   it('fails closed for malformed or unavailable browser storage', () => {
     expect(restoreTriageSession(memoryStorage('{"version":1,"runId":"not-a-uuid"}'))).toBeNull()

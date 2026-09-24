@@ -177,16 +177,24 @@ function useRunReader(
   }
 }
 
-function restoredState(saved: SavedSession, result: TriageRunReadResult): TriageClientState {
+export function triageStateAfterReadback(
+  saved: SavedSession,
+  result: TriageRunReadResult,
+): TriageClientState {
+  if (saved.pending !== undefined) {
+    return {
+      phase: 'uncertain',
+      ...(result.status === 'found' ? { run: result.run } : {}),
+      runId: saved.runId,
+      pending: saved.pending,
+    }
+  }
   if (result.status === 'found') {
-    return saved.pending === undefined
-      ? { phase: 'run', run: result.run }
-      : { phase: 'uncertain', run: result.run, pending: saved.pending }
+    return { phase: 'run', run: result.run }
   }
   return {
     phase: result.status === 'absent' ? 'absent' : 'unavailable',
     runId: saved.runId,
-    pending: saved.pending,
   }
 }
 
@@ -211,12 +219,10 @@ function useInitialReadback(
     void gateway
       .read(saved.runId)
       .then((result) => {
-        if (mounted) setState(restoredState(saved, result))
+        if (mounted) setState(triageStateAfterReadback(saved, result))
       })
       .catch(() => {
-        if (mounted) {
-          setState({ phase: 'unavailable', runId: saved.runId, pending: saved.pending })
-        }
+        if (mounted) setState(triageStateAfterReadback(saved, { status: 'unavailable' }))
       })
     return () => {
       mounted = false

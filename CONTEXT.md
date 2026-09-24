@@ -28,11 +28,11 @@ unavailable.
 The workflow and mailbox filters move into a modal sheet from the top bar
 at 900px and below, so they remain reachable on narrow screens.
 
-Classifying is still exposed in the UI only as a CLI workflow. A default-off,
-loopback-only server contract can start an explicitly requested, bounded run
-over one recent worklist reading or mailbox, but no component calls it yet.
-Opening and refreshing only read and never start Jev. The app otherwise reads
-existing judgments and saves reviews. It shows a raw category
+The workbench queue header can explicitly start a bounded Jev run over its
+loaded worklist, show progress, request a safe Stop and read the durable result.
+The control and server contract are default-off and loopback-only. Opening and
+refreshing only read and never start Jev. The CLI mailbox workflow remains
+available. The app otherwise reads existing judgments and saves reviews. It shows a raw category
 "Model score", which is not calibrated certainty. Reviews currently decide
 category, not reply expectations or deadlines; the UI retains priority but
 hides its uncertainty note after a review. See [README](README.md) for the

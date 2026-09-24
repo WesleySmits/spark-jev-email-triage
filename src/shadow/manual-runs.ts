@@ -182,6 +182,22 @@ export function requestManualRunStop(db: DatabaseSync, runId: string): boolean {
   return result.changes > 0
 }
 
+export function activeManualRunOwnedBy(
+  db: DatabaseSync,
+  runId: string,
+  processId: number,
+): boolean {
+  return (
+    db
+      .prepare(
+        `SELECT 1 FROM manual_runs
+         WHERE id = :runId AND pid = :processId
+           AND status IN ('queued', 'running', 'stopping')`,
+      )
+      .get({ runId, processId }) !== undefined
+  )
+}
+
 /** Durable stop state, visible to the process that owns the running job. */
 export function manualRunStopRequested(db: DatabaseSync, runId: string): boolean {
   return (

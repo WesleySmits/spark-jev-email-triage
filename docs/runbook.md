@@ -135,11 +135,11 @@ panel's "Model score" is raw category confidence, not calibrated certainty.
 The panel and the reader name the grounds the run recorded for asking a
 person; a record that stored none says so instead of naming a reason. A
 suspicion signal is shown as a scored possibility, because policy admits one
-from a deliberately low floor. There is no app control to launch
-classification. The default-off manual-run server contract is loopback-only
-and starts nothing until an explicit Start request. `JEV_MANUAL_RUNS_ENABLED=1`
-and `TYPESAFE_API_KEY` are both required; readback and Stop call neither Spark
-nor Jev.
+from a deliberately low floor. The workbench queue header has an explicit
+**Start Jev triage** control for a bounded run over the loaded worklist. It is
+available only over loopback when `JEV_MANUAL_RUNS_ENABLED=1` and
+`TYPESAFE_API_KEY` are both set. Opening and refreshing never start it;
+readback and Stop call neither Spark nor Jev.
 
 The separate Spark Done panel can archive one selected message ID only after
 proposal, server-owned approval and a second confirmation. It is disabled by

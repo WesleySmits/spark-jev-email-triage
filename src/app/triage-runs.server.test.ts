@@ -6,7 +6,7 @@ import type { MailReader } from '../domain/mail-reader'
 import type { createJevClassifier } from '../jev/classifier'
 import { jevFailure, jevJudgment } from '../jev/fixtures'
 import { openDatabase } from '../shadow/database'
-import type { ManualRunSelection } from '../shadow/manual-runs'
+import { claimManualRun, type ManualRunSelection } from '../shadow/manual-runs'
 import { createTriageRunService } from './triage-runs.server'
 
 const mailbox = { id: 'support@example.com', address: 'support@example.com' }
@@ -349,6 +349,40 @@ describe('manual Jev run server', () => {
       status: 'found',
       run: { status: 'stopped', counts: { selected: 3, processed: 3, deferred: 1 } },
     })
+  })
+
+  it('finishes a locally owned run when its in-memory job is gone', () => {
+    const { service, path, calls } = harness()
+    const runId = crypto.randomUUID()
+    const db = openDatabase(path)
+    try {
+      expect(
+        claimManualRun(
+          db,
+          {
+            id: runId,
+            requestId: crypto.randomUUID(),
+            requestPayload: JSON.stringify(worklistStart),
+            scopeKind: 'worklist',
+            scopeLabel: 'Current worklist',
+            maxMessages: 3,
+            maxJevCalls: 3,
+            pid: 4242,
+            startedAt: '2026-09-24T09:00:00.000Z',
+            items: selected,
+          },
+          () => true,
+        ),
+      ).toEqual({ status: 'created', runId })
+    } finally {
+      db.close()
+    }
+
+    expect(service.stop(runId)).toMatchObject({
+      status: 'already_finished',
+      run: { status: 'stopped', counts: { selected: 3, processed: 3, deferred: 3 } },
+    })
+    expect(calls).toEqual([])
   })
 
   it('selects a mailbox with the requested hard message bound', async () => {
