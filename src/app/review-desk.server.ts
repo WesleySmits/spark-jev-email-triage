@@ -17,6 +17,11 @@ import type { ReadOptions } from '../domain/mail-reader'
 import type { ClassifiedInbox, InboxListRequest } from './live-inbox'
 import { sparkInbox } from './spark-inbox.server'
 import { storedRowsFor } from './stored-classifications.server'
+import type { ManualRunSelection } from '../shadow/manual-runs'
+
+/** Recent server-owned readings that an explicit manual run may select. */
+const worklists = new Map<string, readonly ManualRunSelection[]>()
+const retainedWorklists = 20
 
 export async function deskReading(
   options?: ReadOptions,
@@ -27,5 +32,26 @@ export async function deskReading(
   // One id per reading, minted here because this is where a listing and the
   // judgments stored for it become one reading. It lets a browser tell a
   // proof that belongs to this reading from one an earlier reading made.
-  return { ...inbox, reading: randomUUID(), ...storedRowsFor(inbox.messages) }
+  const reading = randomUUID()
+  const addresses = new Map(inbox.scope.mailboxes.map((mailbox) => [mailbox.id, mailbox.label]))
+  worklists.set(
+    reading,
+    inbox.messages.flatMap((message): ManualRunSelection[] => {
+      const mailboxAddress = addresses.get(message.mailbox)
+      return message.messageId === undefined || mailboxAddress === undefined
+        ? []
+        : [{ mailboxId: message.mailbox, mailboxAddress, messageId: message.messageId }]
+    }),
+  )
+  while (worklists.size > retainedWorklists) {
+    const oldest = worklists.keys().next().value
+    if (oldest === undefined) break
+    worklists.delete(oldest)
+  }
+  return { ...inbox, reading, ...storedRowsFor(inbox.messages) }
+}
+
+/** Exact mailbox copies from one recent reading; never re-lists or calls Jev. */
+export function worklistFor(reading: string): readonly ManualRunSelection[] | null {
+  return worklists.get(reading) ?? null
 }
