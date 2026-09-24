@@ -28,8 +28,12 @@ import { SparkError } from '../spark/errors'
 import { inboxSummarySchema, messageBodySchema, type InboxSummary, type MessageBody } from './inbox'
 import type {
   BodyRequest,
+  InboxDiscovery,
+  InboxDiscoveryRequest,
+  InboxDiscoveryScope,
   InboxListRequest,
   InboxScope,
+  InboxView,
   LiveInbox,
   MailboxFailure,
 } from './live-inbox'
@@ -120,6 +124,9 @@ export function createLiveInbox({
   /** The mailbox copies the last list offered, by copy id. Bodies are read only for these. */
   let offered = new Set<string>()
   let reading: ReadingProgress | undefined
+  let discovery: (ReadingProgress & { query: string }) | undefined
+  /** Serializes cursor claims before any discovery provider I/O begins. */
+  let searches: Promise<void> = Promise.resolve()
   /** Counts list reads, so only the latest one decides what is offered. */
   let reads = 0
 
@@ -131,6 +138,7 @@ export function createLiveInbox({
     // nothing, so an older list's bodies stay closed.
     const read = ++reads
     offered = new Set()
+    discovery = undefined
     try {
       const selected = await selectReading(reader, reading, request, options)
       const { current } = selected
@@ -145,9 +153,7 @@ export function createLiveInbox({
       current.cursor = randomUUID()
       reading = current
       const listed = listedFrom(current)
-      const messages = newestFirst(unique(listed)).map(({ listing, mailbox, page }) =>
-        summarize(listing, mailbox, page, current.view, format.listed(listing.date, at)),
-      )
+      const messages = summariesOf(unique(listed), current.view, at, format)
       if (read === reads) offered = new Set(messages.map((message) => message.id))
       const failed = failuresOf(current, 'failed')
       const incomplete = failuresOf(current, 'incomplete')
@@ -201,7 +207,149 @@ export function createLiveInbox({
     }
   }
 
-  return { list, body } as const
+  /**
+   * Searches the sender and subject metadata Spark lists. A new query searches
+   * every page already loaded for its view; a matching cursor advances at
+   * most one provider page per still-bounded mailbox. Search text never goes
+   * to Spark or the reader log, and no thread/body is read.
+   */
+  const runSearch = async (
+    request: InboxDiscoveryRequest,
+    options?: ReadOptions,
+  ): Promise<InboxDiscovery> => {
+    const read = ++reads
+    offered = new Set()
+    try {
+      const selected = await selectDiscovery(reader, reading, discovery, request, options)
+      const { current, advance } = selected
+      if (advance) await advanceReading(reader, current, options)
+      current.pages = completedPages(current)
+      const at = now()
+      current.cursor = randomUUID()
+      // Page shifts can repeat a copy at a later offset. Scope and results
+      // count the copy once, while page depth still says what was requested.
+      const listed = unique(listedFrom(current))
+      const matches = listed.filter(({ listing }) => matchesQuery(listing, request.query))
+      const messages = summariesOf(unique(matches), current.view, at, format)
+      if (read === reads) {
+        discovery = current
+        // Pages found while searching become part of the loaded reading too,
+        // so the next discovery begins at the reached depth. Keep a list's
+        // cursor valid, and never replace a reading of another view.
+        if (reading === undefined || reading.view === current.view) {
+          reading = { ...cloneReading(current), cursor: reading?.cursor ?? current.cursor }
+        }
+        offered = new Set(messages.map((message) => message.id))
+      }
+      return {
+        status: 'ready',
+        scope: discoveryScopeOf(current, listed, messages, at, format),
+        mailboxes: current.mailboxes,
+        messages,
+      }
+    } catch (error) {
+      return { status: 'unavailable', reason: reasonFor(error) }
+    }
+  }
+
+  const search = (request: InboxDiscoveryRequest, options?: ReadOptions) => {
+    const result = searches.then(() => runSearch(request, options))
+    searches = result.then(
+      () => undefined,
+      () => undefined,
+    )
+    return result
+  }
+
+  return { list, search, body } as const
+}
+
+type DiscoveryProgress = ReadingProgress & { query: string }
+
+async function selectDiscovery(
+  reader: MailReader,
+  reading: ReadingProgress | undefined,
+  discovery: DiscoveryProgress | undefined,
+  request: InboxDiscoveryRequest,
+  options?: ReadOptions,
+): Promise<{ current: DiscoveryProgress; advance: boolean }> {
+  const active =
+    discovery?.view === request.view && discovery.query === request.query ? discovery : undefined
+  if (request.cursor !== undefined && active !== undefined) {
+    return {
+      current: { ...cloneReading(active), query: active.query },
+      advance: active.cursor === request.cursor,
+    }
+  }
+  if (reading?.view === request.view) {
+    return { current: { ...cloneReading(reading), query: request.query }, advance: false }
+  }
+  return {
+    current: { ...(await startReading(reader, request.view, options)), query: request.query },
+    // A query without a same-view reading only establishes its empty scope.
+    // Its returned cursor must be presented before page 1 is fetched.
+    advance: false,
+  }
+}
+
+const completedPages = (reading: ReadingProgress) =>
+  Math.max(1, ...[...reading.progress.values()].map((progress) => progress.nextPage - 1))
+
+function matchesQuery(listing: Listing, query: string) {
+  const needle = query.trim().toLowerCase()
+  return [listing.sender?.text, listing.subject?.text].some((value) =>
+    value?.toLowerCase().includes(needle),
+  )
+}
+
+function summariesOf(
+  listed: readonly Listed[],
+  view: InboxView,
+  at: Date,
+  format: ReturnType<typeof timeFormats>,
+) {
+  return newestFirst(listed).map(({ listing, mailbox, page }) =>
+    summarize(listing, mailbox, page, view, format.listed(listing.date, at)),
+  )
+}
+
+function discoveryScopeOf(
+  reading: ReadingProgress & { query: string },
+  listed: readonly Listed[],
+  messages: readonly InboxSummary[],
+  at: Date,
+  format: ReturnType<typeof timeFormats>,
+): InboxDiscoveryScope {
+  const mailboxes = reading.mailboxes.map((mailbox) => {
+    const progress = reading.progress.get(mailbox.id)
+    const scanned = listed.filter((row) => row.mailbox.id === mailbox.id).length
+    const matched = messages.filter((row) => row.mailbox === mailbox.id).length
+    return {
+      id: mailbox.id,
+      label: mailbox.label,
+      pages: Math.max(0, (progress?.nextPage ?? 1) - 1),
+      scanned,
+      matched,
+      bounded: progress?.bounded ?? false,
+    }
+  })
+  return {
+    view: reading.view,
+    query: reading.query,
+    fields: ['sender', 'subject'],
+    valuesMayBeTruncated: true,
+    pageSize: perMailbox,
+    cursor: reading.cursor,
+    mailboxes,
+    failed: failuresOf(reading, 'failed'),
+    incomplete: failuresOf(reading, 'incomplete'),
+    readable: reading.readable,
+    scanned: listed.length,
+    matched: messages.length,
+    bounded: mailboxes.some((mailbox) => mailbox.bounded),
+    searchedAt: format.clock(at),
+    searchCompletedAt: at.toISOString(),
+  }
 }
 
 async function selectReading(

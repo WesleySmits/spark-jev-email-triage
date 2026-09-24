@@ -14,7 +14,12 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { ReadOptions } from '../domain/mail-reader'
-import type { ClassifiedInbox, InboxListRequest } from './live-inbox'
+import type {
+  ClassifiedDiscovery,
+  ClassifiedInbox,
+  InboxDiscoveryRequest,
+  InboxListRequest,
+} from './live-inbox'
 import { sparkInbox } from './spark-inbox.server'
 import { storedRowsFor } from './stored-classifications.server'
 
@@ -27,5 +32,15 @@ export async function deskReading(
   // One id per reading, minted here because this is where a listing and the
   // judgments stored for it become one reading. It lets a browser tell a
   // proof that belongs to this reading from one an earlier reading made.
+  return { ...inbox, reading: randomUUID(), ...storedRowsFor(inbox.messages) }
+}
+
+/** One controlled metadata search with the stored state of its matching copies. */
+export async function deskDiscovery(
+  request: InboxDiscoveryRequest,
+  options?: ReadOptions,
+): Promise<ClassifiedDiscovery> {
+  const inbox = await sparkInbox().search(request, options)
+  if (inbox.status !== 'ready') return inbox
   return { ...inbox, reading: randomUUID(), ...storedRowsFor(inbox.messages) }
 }

@@ -19,6 +19,20 @@ export type InboxView = 'unread' | 'other'
 export type InboxListRequest = Readonly<{ view: InboxView; cursor?: string | undefined }>
 
 /**
+ * A metadata search through one Inbox view. The query is deliberately sent in
+ * a POST body by the server boundary: search text may itself be private and
+ * must not become part of a request URL or a Spark log entry.
+ */
+export const inboxDiscoveryRequestSchema = z.strictObject({
+  view: z.enum(['unread', 'other']),
+  query: z.string().trim().min(1).max(200),
+  /** No cursor searches the pages already loaded for this view. */
+  cursor: z.uuid().optional(),
+})
+
+export type InboxDiscoveryRequest = z.infer<typeof inboxDiscoveryRequestSchema>
+
+/**
  * How much of one mailbox a reading holds. Counted from the rows it kept,
  * so it says what is there, never what the mailbox holds.
  */
@@ -108,6 +122,54 @@ export type InboxScope = Readonly<{
   refreshedAt: string
 }>
 
+/** What one mailbox contributed to a controlled metadata search. */
+export type DiscoveryMailboxScope = Readonly<{
+  id: string
+  label: string
+  /** Completed provider pages whose listed metadata was searched. */
+  pages: number
+  /** Mailbox copies inspected in those pages, before matching the query. */
+  scanned: number
+  /** Mailbox copies whose listed sender or subject matched. */
+  matched: number
+  /** Whether another provider page may exist. */
+  bounded: boolean
+}>
+
+/**
+ * Honest reach for a search. Spark's list output can truncate sender and
+ * subject cells, so this never claims body search or full-text coverage.
+ */
+export type InboxDiscoveryScope = Readonly<{
+  view: InboxView
+  query: string
+  fields: readonly ['sender', 'subject']
+  valuesMayBeTruncated: true
+  pageSize: number
+  cursor: string
+  mailboxes: readonly DiscoveryMailboxScope[]
+  failed: readonly MailboxFailure[]
+  incomplete: readonly MailboxFailure[]
+  readable: number
+  scanned: number
+  matched: number
+  bounded: boolean
+  /** Visible time at which this metadata search finished. */
+  searchedAt: string
+  /** Machine-readable form of `searchedAt`; it is not a mailbox refresh time. */
+  searchCompletedAt: string
+}>
+
+/** Results from one controlled metadata search, preserving mailbox copies. */
+export type InboxDiscovery =
+  | Readonly<{
+      status: 'ready'
+      scope: InboxDiscoveryScope
+      mailboxes: readonly SidebarItem[]
+      messages: readonly InboxSummary[]
+    }>
+  | Extract<LiveInbox, { status: 'unavailable' }>
+
 /**
  * The initial page data: summaries without bodies, or why there are none.
  * `unavailable` never comes with messages, sample or otherwise.
@@ -164,6 +226,16 @@ export type ClassifiedInbox =
         reviews: ListedReviews
       }>)
   | Extract<LiveInbox, { status: 'unavailable' }>
+
+/** A discovery result with the locally stored state of each matching copy. */
+export type ClassifiedDiscovery =
+  | (Extract<InboxDiscovery, { status: 'ready' }> &
+      Readonly<{
+        reading: string
+        classifications: ListedClassifications
+        reviews: ListedReviews
+      }>)
+  | Extract<InboxDiscovery, { status: 'unavailable' }>
 
 /** One body request: a mailbox copy the server listed, by its mailbox and message id. */
 export const bodyRequestSchema = z.strictObject({
