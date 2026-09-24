@@ -258,6 +258,8 @@ describe('ReviewDesk.open', () => {
 
 describe('ReviewDesk.search', () => {
   it('finds matching mailbox copies from listed metadata without a thread or Jev call', async () => {
+    await ReviewDesk.open()
+    spark.run.mockClear()
     const result = await ReviewDesk.search({ view: 'unread', query: 'shared' })
     if (result.status !== 'ready') throw new Error('Expected discovery')
 

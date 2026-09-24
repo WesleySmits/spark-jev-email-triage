@@ -875,6 +875,36 @@ describe('createLiveInbox controlled discovery', () => {
       }),
     )
 
+  it('requires a continuation before a cold search fetches each full page', async () => {
+    const pages: number[] = []
+    const reader: MailReader = {
+      listMailboxes: () => Promise.resolve([access(one)]),
+      listRecentEmails: ({ page = 1 }) => {
+        pages.push(page)
+        return Promise.resolve(fullPage(one, page))
+      },
+      readThread: () => Promise.resolve(thread([])),
+    }
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+
+    const cold = await live.search({ view: 'unread', query: 'routine' })
+    if (cold.status !== 'ready') throw new Error('Expected cold discovery')
+    expect(pages).toEqual([])
+    expect(cold.scope).toMatchObject({ scanned: 0, bounded: true, mailboxes: [{ pages: 0 }] })
+
+    const first = await live.search({
+      view: 'unread',
+      query: 'routine',
+      cursor: cold.scope.cursor,
+    })
+    if (first.status !== 'ready') throw new Error('Expected first page')
+    expect(pages).toEqual([1])
+    expect(first.scope).toMatchObject({ scanned: perMailbox, mailboxes: [{ pages: 1 }] })
+
+    await live.search({ view: 'unread', query: 'routine', cursor: first.scope.cursor })
+    expect(pages).toEqual([1, 2])
+  })
+
   it('searches every already loaded page without reading bodies or repeating pages', async () => {
     const requests: number[] = []
     const threads: string[] = []
@@ -1013,6 +1043,52 @@ describe('createLiveInbox controlled discovery', () => {
     await live.search({ view: 'unread', query: 'routine', cursor })
 
     expect(pages).toEqual([1, 2])
+  })
+
+  it('claims one cursor before concurrent continuations start provider I/O', async () => {
+    const pages: number[] = []
+    let enterPageTwo!: () => void
+    let releasePageTwo!: () => void
+    const pageTwoEntered = new Promise<void>((resolve) => {
+      enterPageTwo = resolve
+    })
+    const pageTwoHeld = new Promise<void>((resolve) => {
+      releasePageTwo = resolve
+    })
+    const reader: MailReader = {
+      listMailboxes: () => Promise.resolve([access(one)]),
+      listRecentEmails: async ({ page = 1 }) => {
+        pages.push(page)
+        if (page === 2) {
+          enterPageTwo()
+          await pageTwoHeld
+        }
+        return fullPage(one, page)
+      },
+      readThread: () => Promise.resolve(thread([])),
+    }
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+    await live.list()
+    const discovery = await live.search({ view: 'unread', query: 'routine' })
+    if (discovery.status !== 'ready') throw new Error('Expected discovery')
+    pages.length = 0
+
+    const first = live.search({
+      view: 'unread',
+      query: 'routine',
+      cursor: discovery.scope.cursor,
+    })
+    const second = live.search({
+      view: 'unread',
+      query: 'routine',
+      cursor: discovery.scope.cursor,
+    })
+    await pageTwoEntered
+
+    expect(pages).toEqual([2])
+    releasePageTwo()
+    await Promise.all([first, second])
+    expect(pages).toEqual([2])
   })
 
   it('does not continue an older discovery after a fresh inbox reading', async () => {
