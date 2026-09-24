@@ -5,10 +5,11 @@ TanStack Start app with React, Vite, and strict TypeScript.
 ## Current product status
 
 The root route reads a bounded recent inbox from the local Spark CLI and
-shows classifications previously stored by the shadow CLI. Mailbox data is
-read-only; local data is not: `shadow --apply` stores classifications and the
-app saves human category reviews in the same SQLite database. Neither a
-classification nor a review completes, archives, moves, or marks mail as read.
+shows classifications previously stored by the shadow CLI. `shadow --apply`
+stores classifications and the app saves human category reviews in the same
+SQLite database. Neither classification nor review changes mail. A separate,
+default-off Done panel can archive one message after explicit approval and
+confirmation.
 
 The inbox includes the first five readable mailboxes in provider order and
 up to ten recent Inbox messages per mailbox, sorted newest first (at most
@@ -35,12 +36,12 @@ mail, and a reading that loaded nothing reads differently from a filter that
 matched nothing.
 
 Supported: reading mail, refreshing, opening one body, viewing stored triage,
-and confirming or correcting its category locally. Classification starts
+and confirming or correcting its category locally. The guarded Done panel
+can archive a selected message when explicitly enabled. Classification starts
 through `pnpm shadow --mailbox <mailbox> --apply`, not from the UI; it sends
 minimized thread content to Jev and requires `TYPESAFE_API_KEY`. Loading,
 refreshing and reviewing in the app make no model calls. There is no UI
-triage-run control, priority/reply/deadline editor, persisted completion/Undo,
-or mailbox-action workflow on `main`.
+triage-run control, priority/reply/deadline editor, persisted completion or Undo.
 
 The web process needs the local Spark CLI to read mail. A successful build
 or `/health` response does not prove Spark readiness. See
@@ -189,7 +190,7 @@ pnpm readback:spark                      # whether Spark answers on this host
 
 ## Safety status
 
-- The app's root route keeps mailbox access read-only. It uses
+- The app's root route keeps inbox loading and review read-only. It uses
   `ReviewDesk` in `src/app/review-desk.ts`: `open` for the list and stored
   evidence, `focus` for one opened row's body, `probe` for Spark readiness,
   `review` to append a local review, and `check` to read a save's outcome.
@@ -234,8 +235,30 @@ pnpm readback:spark                      # whether Spark answers on this host
 - When Spark is missing, fails, or prints output that doesn't parse, the
   page says so and shows no mail; it never falls back to sample data.
   Errors reach the browser only as a coarse reason or a fixed message.
-- The page runs in `read-only` completion mode: no Complete, E, Completed
-  notice or Undo. The sync button only reads the inbox again.
+- The page keeps its legacy Complete button and `E` shortcut off. The sync
+  button only reads the inbox. The separate guarded Done panel can archive
+  one selected message after a person proposes it, approves it and confirms
+  execution. Classification and review never start a mailbox action.
+- Spark's `markAsDone` command takes a message ID, without a mailbox selector
+  or conditional version argument. The selected mailbox is context for the
+  person, preflight and readback; another visible copy may also change. A new
+  message can arrive between the final check and the command. The panel says
+  this before approval. Done removes the message from Inbox and puts it in
+  Archive; this feature does not mark a message merely as read.
+- The server owns the reviewer identity and approval time in a separate
+  durable SQLite action journal. Approval covers one exact proposal and
+  expires after five minutes. The execution server checks the Spark account's
+  triage access, that the selected message remains in Inbox, and that the
+  thread still ends at the proposed message. It then commits one pending
+  receipt before sending exactly one ID-only `markAsDone` command. A confirmed
+  result requires Archive presence and Inbox absence on readback. A timeout,
+  partial list or lost answer is uncertain; an unresolved attempt blocks
+  another automatic attempt on the same message ID, including alias copies.
+  No subject, address or body is stored in the action journal. The action
+  endpoint is local-only, origin-gated and disabled unless
+  `SPARK_DONE_ACTIONS_ENABLED=1` is set. `SPARK_DONE_ACTION_DB_PATH` can set
+  the separate journal path; the default is `.data/done-actions.sqlite`.
+  Tests use a fake transport and do not establish a live mailbox result.
 - Spark wiring lives in `*.server.ts` files, which TanStack Start keeps out
   of the client build; ESLint also keeps components and stories from
   importing `*.server`, `*.functions`, `src/spark` and Node built-ins, and
@@ -252,7 +275,9 @@ pnpm readback:spark                      # whether Spark answers on this host
   as a review by a person. The review panel shows category confidence as a
   percentage labelled "Model score"; this is the model's raw score, not a
   calibrated probability of correctness. The page can save a category
-  review but cannot change a mailbox. Spark's list shows at most 30 characters of a sender
+  review but cannot change a mailbox. The separate guarded Done panel can
+  execute only after explicit approval and confirmation. Spark's list
+  shows at most 30 characters of a sender
   and 50 of a subject and has no uncut or structured form. A cut sender keeps its whole name when the address
   was cut, otherwise the visible start; a cut subject keeps its visible
   start. Both end in `…`, and nothing is guessed. Only a blank value
@@ -321,10 +346,11 @@ pnpm readback:spark                      # whether Spark answers on this host
   whose grounds disagree with the review need stored beside it. The judgment
   itself stays readable either way, and no warning or reassurance is claimed
   for it.
-- `src/spark` reads mail through the local `spark` CLI, read-only. Its command
-  type allows only `accounts`, `emails`, and `thread`. It never uses a shell,
-  runs one call at a time with a timeout and output limit, and logs no mail
-  content. The shadow command and the live inbox call it.
+- `src/spark` reads mail through the local `spark` CLI. The reader's command
+  type allows only `accounts`, `emails`, and `thread`. The separate Done
+  adapter sends one `markAsDone` command after the guarded approval flow.
+  Neither adapter uses a shell; calls run one at a time with a timeout and
+  output limit, and log no mail content.
 - `src/jev` classifies one normalized thread with Jev through the official
   TypeSafe SDK. It sends a minimized state: the latest five messages with
   quoted history, URL queries, and long opaque tokens removed, bounded text,

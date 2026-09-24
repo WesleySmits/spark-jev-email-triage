@@ -132,7 +132,18 @@ The panel and the reader name the grounds the run recorded for asking a
 person; a record that stored none says so instead of naming a reason. A
 suspicion signal is shown as a scored possibility, because policy admits one
 from a deliberately low floor. There is no app control to launch
-classification or execute mailbox actions.
+classification.
+
+The separate Spark Done panel can archive one selected message ID only after
+proposal, server-owned approval and a second confirmation. It is disabled by
+default. To enable it for a local session, set
+`SPARK_DONE_ACTIONS_ENABLED=1` on the app server. The private, durable action
+journal path is `SPARK_DONE_ACTION_DB_PATH` (default:
+`.data/done-actions.sqlite`), separate from the shadow triage database. An
+uncertain receipt blocks another automatic attempt on the same Spark message
+ID; inspect Spark manually before any further action. Spark may affect
+another visible copy of the message, and a new message may arrive between
+preflight and the command.
 
 ## Upgrade an existing shadow database to schema 3
 

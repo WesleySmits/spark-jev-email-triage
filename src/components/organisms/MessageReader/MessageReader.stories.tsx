@@ -2,6 +2,8 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState, type ComponentProps, type ReactNode } from 'react'
 import { expect, fn, within } from 'storybook/test'
 import { ClassificationEvidence } from '../../molecules/ClassificationEvidence/ClassificationEvidence'
+import { ActionProposalPanel } from '../ActionProposalPanel/ActionProposalPanel'
+import ActionProposalStories from '../ActionProposalPanel/ActionProposalPanel.stories'
 import { ReviewPanel } from '../ReviewPanel/ReviewPanel'
 import { formatMessageBody } from './formatMessageBody'
 import { MessageReader } from './MessageReader'
@@ -68,6 +70,7 @@ const meta = {
     actions: { control: 'object' },
     evidence: { control: false },
     review: { control: false },
+    proposal: { control: false },
     className: { control: false },
   },
   render: (args) => (
@@ -131,6 +134,25 @@ const reviewArgs = {
 
 /** The source's composition: the review panel sits under the body in the same scroll. */
 export const Review: Story = { args: reviewArgs }
+
+/**
+ * Both panels, in the same scroll and never as one another: a person decides
+ * the message's labels above, and below that one mailbox action is proposed,
+ * approved and blocked from running.
+ */
+export const ReviewAndProposal: Story = {
+  args: {
+    ...reviewArgs,
+    proposal: <ActionProposalPanel {...ActionProposalStories.args} headingLevel={3} />,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+
+    await expect(canvas.getByRole('button', { name: 'Save review' })).toBeVisible()
+    await expect(canvas.getByRole('button', { name: 'Approve' })).toBeVisible()
+    await expect(canvas.getByText('Blocked')).toBeVisible()
+  },
+}
 
 /**
  * Read-only, as live mail is shown: what triage stored about this message

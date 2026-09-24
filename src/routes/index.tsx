@@ -128,7 +128,7 @@ function Page({ inbox, root, onReady }: PageProps) {
     )
   }
   // It names what was refreshed: the loaded selection, not a whole mailbox.
-  const syncLabel = `Loaded mail updated at ${inbox.scope.readAt} · read only`
+  const syncLabel = `Loaded mail updated at ${inbox.scope.readAt}`
   return (
     <div ref={root} className="app-root">
       <WorkbenchPage
@@ -152,6 +152,13 @@ function Page({ inbox, root, onReady }: PageProps) {
             return result
           },
         }}
+        proposals={{
+          mode: 'enabled',
+          approver: 'you, at this computer',
+          onApprove: ReviewDesk.approveDone,
+          onExecute: ReviewDesk.executeDone,
+          onConfirmed: reread,
+        }}
         topBar={{
           syncStatus: 'connected',
           syncLabel,
@@ -164,19 +171,10 @@ function Page({ inbox, root, onReady }: PageProps) {
   )
 }
 
-// Recent Spark mail beside what shadow triage last stored about it. The
-// mail itself is read-only: nothing here completes, archives or moves a
-// message. The one thing a person may record is a review of one stored
-// classification, which is kept beside that classification and changes no
-// mail. A review that was saved is read back with the rows it belongs to, so
-// it still decides what they show after a refresh, while what the classifier
-// proposed stays beside it. Rows arrive without bodies; one body loads when
-// its message opens, and that read is the only thing that can say a stored
-// judgment still describes the row. Refresh lists the mailbox again under a
-// new reading, so what an earlier read proved stops counting as proof
-// without anything being read again. Neither refreshing nor opening a row
-// calls a classifier. While Spark is away the workbench waits in place and
-// reads the inbox once it answers.
+// Recent Spark mail and stored triage. Reviews change only the local review
+// store. The separate Done panel may approve and execute one guarded Spark
+// message-ID action when the server kill switch is enabled. Inbox refresh and
+// body reads remain read-only and never start an action.
 function Home() {
   const inbox = Route.useLoaderData()
   const router = useRouter()
@@ -200,7 +198,7 @@ function Home() {
       <LocalStatusToast
         visible={notice.visible}
         title="Spark connected"
-        detail={`${messages} · read only`}
+        detail={`${messages} loaded`}
         dismissLabel="Dismiss"
         onDismiss={notice.hide}
       />

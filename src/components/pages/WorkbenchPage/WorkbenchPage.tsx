@@ -9,6 +9,12 @@ import {
   type RefObject,
 } from 'react'
 import type { RowReview } from '../../../app/desk-review'
+import type {
+  DoneApprovalResult,
+  DoneExecutionRequest,
+  DoneExecutionResult,
+} from '../../../app/done-action'
+import type { MailboxActionProposal } from '../../../domain/mailbox-action'
 import type { BodyLoader } from '../../../app/inbox'
 import { sameSubject } from '../../../domain/review'
 import type { DeskReviewRequest } from '../../../app/desk-review'
@@ -23,6 +29,8 @@ import { formatMessageBody } from '../../organisms/MessageReader/formatMessageBo
 import { Sidebar, type SidebarItem } from '../../organisms/Sidebar/Sidebar'
 import { TopBar } from '../../organisms/TopBar/TopBar'
 import { WorkbenchTemplate } from '../../templates/WorkbenchTemplate/WorkbenchTemplate'
+import { ActionProposalAction } from './ActionProposalAction'
+import { observationIn, proposableIn, type LabelOf } from './action'
 import type { BodyState } from './body'
 import {
   classificationView,
@@ -56,7 +64,8 @@ type Pane = ComponentProps<typeof WorkbenchTemplate>['mobilePane']
 
 /**
  * What Complete may do. `read-only` shows no Complete button, ignores `E`
- * and never shows the Completed notice: the page offers no way to change mail.
+ * and never shows the Completed notice. The separate guarded Done panel is
+ * configured through `proposals`.
  */
 type WorkbenchCompletion =
   | Readonly<{ mode: 'read-only' }>
@@ -97,6 +106,24 @@ type WorkbenchReview =
       mode: 'enabled'
       onSaveReview: SaveReview
       onCheckReview: CheckReview
+    }>
+
+/**
+ * Whether the open message offers a mailbox action to propose. `off` shows
+ * no panel at all, which is what a page with nothing to propose against does.
+ *
+ * The optional callbacks take approval and execution through the server.
+ * Without them, Storybook can render a proposal-only panel.
+ */
+type WorkbenchProposals =
+  | Readonly<{ mode: 'off' }>
+  | Readonly<{
+      mode: 'enabled'
+      /** How this computer names the person approving. Never a mailbox address. */
+      approver: string
+      onApprove?: ((proposal: MailboxActionProposal) => Promise<DoneApprovalResult>) | undefined
+      onExecute?: ((request: DoneExecutionRequest) => Promise<DoneExecutionResult>) | undefined
+      onConfirmed?: (() => void) | undefined
     }>
 
 type WorkbenchPageProps = Readonly<{
@@ -151,6 +178,15 @@ type WorkbenchPageProps = Readonly<{
    * records labels, runs no provider command and changes no mail.
    */
   review?: WorkbenchReview | undefined
+  /**
+   * Whether the open message offers a mailbox action to propose, and how the
+   * person approving one is named. Left out, or `off`: no panel is shown.
+   *
+   * A proposal names the open row's own mailbox copy and no other, an
+   * approval is that person's decision recorded on this page, and execution
+   * is blocked: nothing here reaches a mailbox or asks anything to.
+   */
+  proposals?: WorkbenchProposals | undefined
   /** Sync status and profile. The page owns the search. */
   topBar: Omit<
     ComponentProps<typeof TopBar>,
@@ -711,13 +747,62 @@ function readerReview(
   )
 }
 
+/**
+ * The mailbox action panel under the review, or none. It is offered for the
+ * open row wherever the page may propose at all, including where that row
+ * names no version to propose against: proposing is then refused in words
+ * rather than silently absent.
+ *
+ * The open row's id keys it, so one message's proposal never carries to the
+ * next, while a reading that lists the mailbox again leaves it in place. A
+ * proposal must be seen to lapse when a later message reaches its thread,
+ * which is exactly what an unchanged panel under a changed reading shows.
+ */
+function readerProposal(
+  proposals: WorkbenchProposals | undefined,
+  evidence: Evidence,
+  openId: string | undefined,
+  labelOf: LabelOf,
+) {
+  if (proposals?.mode !== 'enabled' || openId === undefined) return undefined
+  return (
+    <ActionProposalAction
+      key={openId}
+      proposable={proposableIn(evidence.open)}
+      observation={observationIn(evidence.open)}
+      approver={proposals.approver}
+      labelOf={labelOf}
+      onApprove={proposals.onApprove}
+      onExecute={proposals.onExecute}
+      onConfirmed={proposals.onConfirmed}
+    />
+  )
+}
+
+/**
+ * How a mailbox copy is named in the action panel: as the rail names its
+ * mailbox, never as an address the page would otherwise not show. A mailbox
+ * none of the listed rows came from is named as such rather than guessed at.
+ */
+function mailboxNames(messages: readonly WorkbenchMessage[]): LabelOf {
+  const labels = new Map(messages.map((message) => [message.mailbox, message.account.label]))
+  return ({ mailboxId }) => labels.get(mailboxId) ?? 'Another mailbox'
+}
+
 type ReaderActions = ComponentProps<typeof MessageReader>['actions']
 
 /** Complete when the page may offer it; read-only says so instead. */
-function readerActions(complete: (() => void) | undefined): ReaderActions {
+function readerActions(complete: (() => void) | undefined, guardedDone: boolean): ReaderActions {
   return complete
     ? { primaryAction: { label: 'Complete', icon: 'check', shortcut: 'E', onClick: complete } }
-    : { note: { title: 'Read only', detail: 'Nothing here changes your mail.' } }
+    : guardedDone
+      ? {
+          note: {
+            title: 'Guarded Done',
+            detail: 'Use the proposal panel below to approve and run Spark Done.',
+          },
+        }
+      : { note: { title: 'Read only', detail: 'Nothing here changes your mail.' } }
 }
 
 type ReaderProps = PaneProps &
@@ -731,9 +816,23 @@ type ReaderProps = PaneProps &
     reviewed: RowReview | undefined
     /** The review panel for the open row, or none when it offers no review. */
     review: ReactNode
+    /** The mailbox action panel for the open row, or none when none is offered. */
+    proposal: ReactNode
+    guardedDone?: boolean | undefined
   }>
 
-function Reader({ state, title, complete, body, retry, evidence, reviewed, review }: ReaderProps) {
+function Reader({
+  state,
+  title,
+  complete,
+  body,
+  retry,
+  evidence,
+  reviewed,
+  review,
+  proposal,
+  guardedDone = false,
+}: ReaderProps) {
   const { shown, open } = state
   if (!open) {
     return (
@@ -765,7 +864,8 @@ function Reader({ state, title, complete, body, retry, evidence, reviewed, revie
       }}
       evidence={readerEvidence(evidence, reviewed)}
       review={review}
-      actions={readerActions(complete)}
+      proposal={proposal}
+      actions={readerActions(complete, guardedDone)}
     >
       <ReaderBody body={body} retry={retry} />
     </MessageReader>
@@ -816,6 +916,10 @@ function useWorkbench(props: WorkbenchPageProps) {
  * can say a judgment is current. That reading is scoped to the reading it
  * ran under: passing a new one, as a refresh does, drops back to what the
  * store alone says without asking for anything again.
+ *
+ * Passing `proposals` offers the open message a guarded Spark Done action.
+ * Its proposal, server-owned approval and execution outcome remain separate
+ * stages. The selected mailbox copy provides context; Spark acts by ID.
  *
  * @example
  * import { WorkbenchPage } from '../components/pages/WorkbenchPage/WorkbenchPage'
@@ -875,6 +979,15 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
               evidence,
               state.open?.id,
             )}
+            proposal={readerProposal(
+              props.proposals,
+              evidence,
+              state.open?.id,
+              mailboxNames(props.messages),
+            )}
+            guardedDone={
+              props.proposals?.mode === 'enabled' && props.proposals.onExecute !== undefined
+            }
           />
         }
       />
