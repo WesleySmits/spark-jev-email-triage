@@ -44,6 +44,11 @@ const ofThree = (failing: readonly string[]): QueueScope => {
 }
 
 describe('scopeText', () => {
+  it('separates loaded-row filters from controlled sender/subject discovery', () => {
+    expect(scopeText(scope(), true).detail).toContain(
+      'Filters cover only loaded mail; sender and subject search reports its own scanned reach.',
+    )
+  })
   it('names the loaded unread subset and keeps Inbox Zero separate', () => {
     const text = scopeText(scope({ view: 'unread', pages: 1, loaded: 0, bounded: true }))
     expect(text.summary).toBe('Loaded: 0 unread messages from 1 mailbox')

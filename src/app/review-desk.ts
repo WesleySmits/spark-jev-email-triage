@@ -64,12 +64,14 @@ export type DeskReason = ConnectionReason
  * comes with messages.
  */
 export type DeskView = ClassifiedInbox | Readonly<{ status: 'unavailable'; reason: 'unreachable' }>
-type DeskDiscovery =
+export type DeskDiscovery =
   ClassifiedDiscovery | Readonly<{ status: 'unavailable'; reason: 'unreachable' }>
-type DeskRefresh = ClassifiedRefresh | Readonly<{ status: 'unavailable'; reason: 'unreachable' }>
+export type DeskRefresh =
+  ClassifiedRefresh | Readonly<{ status: 'unavailable'; reason: 'unreachable' }>
 
 /** No rows to focus in: an unavailable desk lists nothing, sample or otherwise. */
-const rowsOf = (view: DeskView) => (view.status === 'ready' ? view.messages : [])
+const rowsOf = (view: DeskView | DeskDiscovery | DeskRefresh) =>
+  view.status === 'ready' ? view.messages : []
 
 export const ReviewDesk = {
   /** The rail's workflows. Live mail isn't triaged yet, so there is one. */
@@ -120,7 +122,7 @@ export const ReviewDesk = {
    * That costs no extra provider call, and a judgment that cannot be read
    * never holds up the body.
    */
-  focus: (view: DeskView): BodyLoader =>
+  focus: (view: DeskView | DeskDiscovery | DeskRefresh): BodyLoader =>
     liveBodyLoader(rowsOf(view), (data, signal) => getLiveBody({ data, signal })),
 
   /**

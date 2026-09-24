@@ -20,6 +20,26 @@
   list-style: none;
 }
 
+.mailbox-reach__all {
+  width: 100%;
+  margin: 0 0 var(--s1);
+  padding: var(--s2);
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--muted);
+  background: transparent;
+  font: var(--text-meta);
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mailbox-reach__all:hover,
+.mailbox-reach__all[aria-pressed='true'] {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+
 .mailbox-reach__item {
   min-width: 0;
   display: grid;
@@ -56,6 +76,7 @@
 }
 
 .mailbox-reach__select:focus-visible,
+.mailbox-reach__all:focus-visible,
 .mailbox-reach__retry:focus-visible {
   outline: var(--focus-width) solid var(--focus);
   outline-offset: var(--focus-offset);

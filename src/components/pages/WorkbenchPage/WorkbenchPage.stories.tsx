@@ -82,6 +82,17 @@ const completedTriageRun: TriageRunSnapshot = {
   ],
 }
 
+const completedTriageControl = () => ({
+  worklistSize: messages.length,
+  state: { phase: 'run' as const, run: completedTriageRun },
+  onStart: fn(),
+  onResume: fn(),
+  onRead: fn(),
+  onStop: fn(),
+  onRestart: fn(),
+  onForget: fn(),
+})
+
 /** Loads the sample bodies, each after `delay` milliseconds or its own delay. */
 const bodiesAfter = (delay: number, per: Readonly<Record<string, number>> = {}) =>
   fixtureBodyLoader(bodies, { delay: (id) => per[id] ?? delay })
@@ -410,16 +421,7 @@ export const Desktop: Story = {
 export const ManualJevRun: Story = {
   globals: { viewport: { value: 'desktop', isRotated: false } },
   args: {
-    triage: {
-      worklistSize: messages.length,
-      state: { phase: 'run', run: completedTriageRun },
-      onStart: fn(),
-      onResume: fn(),
-      onRead: fn(),
-      onStop: fn(),
-      onRestart: fn(),
-      onForget: fn(),
-    },
+    triage: completedTriageControl(),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -427,6 +429,106 @@ export const ManualJevRun: Story = {
     await expect(within(queue).getByRole('region', { name: 'Jev triage run' })).toBeVisible()
     await expect(within(queue).getByText('Completed')).toBeVisible()
     await expect(canvas.getByRole('main')).toBeVisible()
+  },
+}
+
+const discoveryScope = {
+  view: 'unread',
+  query: 'cedar',
+  fields: ['sender', 'subject'],
+  valuesMayBeTruncated: true,
+  pageSize: 10,
+  cursor: '11111111-1111-4111-8111-111111111111',
+  mailboxes: [
+    {
+      id: 'studio',
+      label: 'studio@mail.example',
+      pages: 2,
+      scanned: 20,
+      matched: 2,
+      bounded: true,
+    },
+    {
+      id: 'atelier',
+      label: 'atelier@mail.example',
+      pages: 2,
+      scanned: 18,
+      matched: 1,
+      bounded: false,
+    },
+  ],
+  failed: [],
+  incomplete: [],
+  readable: 2,
+  scanned: 38,
+  matched: 3,
+  bounded: true,
+  searchedAt: '14:32',
+  searchCompletedAt: '2026-09-24T12:32:00.000Z',
+} as const
+
+/** Variant C integrated with server-search reach while Feature 2's run control stays intact. */
+export const MailboxReachDiscovery: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: {
+    messages: messages.slice(0, 3).map((message, index) => ({
+      ...message,
+      subject: `Cedar result ${String(index + 1)}`,
+    })),
+    mailboxReach: {
+      items: [
+        {
+          id: 'studio',
+          label: 'studio@mail.example',
+          account: 'studio',
+          pages: 2,
+          copies: 20,
+          state: 'more',
+          lastRead: { label: 'Last searched 14:32', dateTime: '2026-09-24T12:32:00.000Z' },
+        },
+        {
+          id: 'atelier',
+          label: 'atelier@mail.example',
+          account: 'atelier',
+          pages: 2,
+          copies: 18,
+          state: 'complete',
+          lastRead: { label: 'Last searched 14:32', dateTime: '2026-09-24T12:32:00.000Z' },
+        },
+      ],
+      onRetry: fn(),
+    },
+    discovery: {
+      scope: discoveryScope,
+      loading: false,
+      resetKey: 'reading-1',
+      onSearch: fn(),
+      onContinue: fn(),
+      onClear: fn(),
+    },
+    triage: completedTriageControl(),
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('heading', { level: 1, name: '“cedar”' })).toBeVisible()
+    await expect(canvas.getByRole('region', { name: 'Search reach' })).toHaveTextContent(
+      '3 matches · 38 copies scanned',
+    )
+    await expect(canvas.getByRole('heading', { name: 'Mailbox reach' })).toBeVisible()
+    await expect(canvas.queryByRole('navigation', { name: 'Mailboxes' })).toBeNull()
+    await expect(canvas.getByRole('region', { name: 'Jev triage run' })).toBeVisible()
+
+    const search = canvas.getByRole('searchbox', { name: 'Search sender and subject' })
+    await userEvent.type(search, 'cedar')
+    await userEvent.keyboard('{Enter}')
+    await expect(args.discovery?.onSearch).toHaveBeenCalledWith('cedar')
+    await userEvent.click(canvas.getByRole('button', { name: 'Search further' }))
+    await expect(args.discovery?.onContinue).toHaveBeenCalledOnce()
+
+    await userEvent.click(canvas.getByRole('button', { name: /studio@mail\.example/ }))
+    await expect(queueContext(canvasElement)).toHaveTextContent('Studio Noord')
+    await userEvent.click(canvas.getByRole('button', { name: 'All readable mailboxes' }))
+    await expect(queueContext(canvasElement)).toHaveTextContent('All readable mailboxes')
   },
 }
 
@@ -652,6 +754,39 @@ const noMailboxReadScope: NonNullable<Props['scope']> = {
   refreshedAt: '2026-09-24T07:42:00.000Z',
 }
 
+const afterRefresh = (messages: readonly WorkbenchMessage[], refreshed: boolean) =>
+  refreshed ? messages.filter((message) => message.id !== 'm1') : messages
+
+const refreshedScope = (
+  scope: Props['scope'],
+  loaded: number,
+  readAt: string,
+  refreshedAt: string,
+) => scope && { ...scope, loaded, readAt, refreshedAt }
+
+const resetDiscovery = (discovery: Props['discovery'], resetKey: string) =>
+  discovery && { ...discovery, scope: undefined, resetKey }
+
+function WithIncrementalRefresh(args: Props) {
+  const [state, setState] = useState({ readAt: '09:42', refreshedAt: '2026-09-24T07:42:00.000Z' })
+  const nextMessages = afterRefresh(args.messages, state.readAt === '09:47')
+  return (
+    <WorkbenchPage
+      {...args}
+      messages={nextMessages}
+      scope={refreshedScope(args.scope, nextMessages.length, state.readAt, state.refreshedAt)}
+      discovery={resetDiscovery(args.discovery, state.refreshedAt)}
+      topBar={{
+        ...args.topBar,
+        syncLabel: `Loaded unread updated at ${state.readAt} · read only`,
+        onSyncClick: () => {
+          setState({ readAt: '09:47', refreshedAt: '2026-09-24T07:47:00.000Z' })
+        },
+      }}
+    />
+  )
+}
+
 // The scope line under the queue title, whatever it says.
 const queueScope = (root: HTMLElement) => root.querySelector('.queue-header__scope')
 
@@ -681,6 +816,35 @@ export const BoundedScope: Story = {
     await expect(within(canvasElement).getByRole('searchbox')).toHaveAccessibleName(
       'Search loaded mail',
     )
+  },
+}
+
+/** A refresh removes another row, preserves the open copy and leaves the Jev control mounted. */
+export const IncrementalRefreshKeepsSelection: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: {
+    scope: boundedScope,
+    discovery: {
+      loading: false,
+      resetKey: '2026-09-24T07:42:00.000Z',
+      onSearch: fn(),
+      onContinue: fn(),
+      onClear: fn(),
+    },
+    triage: completedTriageControl(),
+  },
+  render: (args) => <WithIncrementalRefresh {...args} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: /Move Friday dinner\?/ }))
+    await expect(subject(canvasElement)).toHaveTextContent('Move Friday dinner?')
+    await userEvent.type(canvas.getByRole('searchbox'), 'Friday')
+    await userEvent.click(canvas.getByRole('button', { name: /Loaded unread updated at 09:42/ }))
+
+    await expect(subject(canvasElement)).toHaveTextContent('Move Friday dinner?')
+    await expect(canvas.getByRole('searchbox')).toHaveValue('')
+    await expect(canvas.getByRole('region', { name: 'Jev triage run' })).toBeVisible()
+    await expect(canvas.getByText('Last refreshed 09:47.')).toBeVisible()
   },
 }
 

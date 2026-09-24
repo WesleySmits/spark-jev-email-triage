@@ -1,6 +1,11 @@
 import type { MailboxReachItem } from '../components/organisms/MailboxReach/MailboxReach'
 import type { SidebarItem } from '../components/organisms/Sidebar/Sidebar'
-import type { InboxRefreshSummary, InboxScope, MailboxFailure } from './live-inbox'
+import type {
+  InboxDiscoveryScope,
+  InboxRefreshSummary,
+  InboxScope,
+  MailboxFailure,
+} from './live-inbox'
 
 type Marker = MailboxReachItem['account']
 
@@ -26,9 +31,27 @@ function reachState(
   return bounded ? 'more' : 'complete'
 }
 
+function readTimes(
+  scope: InboxScope | InboxDiscoveryScope,
+  result: InboxRefreshSummary['mailboxes'][number] | undefined,
+) {
+  const scopeTimes =
+    'searchedAt' in scope
+      ? { readAt: scope.searchedAt, refreshedAt: scope.searchCompletedAt }
+      : { readAt: scope.readAt, refreshedAt: scope.refreshedAt }
+  return {
+    readAt: result?.readAt ?? scopeTimes.readAt,
+    refreshedAt: result?.refreshedAt ?? scopeTimes.refreshedAt,
+  }
+}
+
+const copyCount = (
+  mailbox: InboxScope['mailboxes'][number] | InboxDiscoveryScope['mailboxes'][number],
+) => ('scanned' in mailbox ? mailbox.scanned : mailbox.loaded)
+
 /** Maps the read-only refresh contract to Variant C's isolated mailbox rail section. */
 export function mailboxReachItems(
-  scope: InboxScope,
+  scope: InboxScope | InboxDiscoveryScope,
   mailboxes: readonly SidebarItem[],
   refresh?: InboxRefreshSummary,
 ): readonly MailboxReachItem[] {
@@ -39,8 +62,8 @@ export function mailboxReachItems(
   return scope.mailboxes.map((mailbox, index) => {
     const result = refreshed.get(mailbox.id)
     const state = reachState(mailbox.id, mailbox.bounded, failed, incomplete)
-    const readAt = result?.readAt ?? scope.readAt
-    const refreshedAt = result?.refreshedAt ?? scope.refreshedAt
+    const discovery = 'scanned' in mailbox
+    const { readAt, refreshedAt } = readTimes(scope, result)
     const hasSuccessfulRead = state !== 'failed'
 
     return {
@@ -48,10 +71,13 @@ export function mailboxReachItems(
       label: mailbox.label,
       account: markerFor(mailboxes, mailbox.id, index),
       pages: result?.pages ?? mailbox.pages ?? 0,
-      copies: mailbox.loaded,
+      copies: copyCount(mailbox),
       state,
       ...(hasSuccessfulRead && {
-        lastRead: { label: `Last read ${readAt}`, dateTime: refreshedAt },
+        lastRead: {
+          label: `${discovery ? 'Last searched' : 'Last read'} ${readAt}`,
+          dateTime: refreshedAt,
+        },
       }),
     }
   })

@@ -7,6 +7,7 @@ const meta = {
   component: MailboxReach,
   args: {
     selectedId: 'studio@mail.example',
+    allLabel: 'All readable mailboxes',
     onSelect: fn(),
     onRetry: fn(),
     items: [

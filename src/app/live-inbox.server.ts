@@ -316,6 +316,22 @@ async function selectDiscovery(
 const completedPages = (reading: ReadingProgress) =>
   Math.max(1, ...[...reading.progress.values()].map((progress) => progress.nextPage - 1))
 
+const pagesToRefresh = (previous: MailboxProgress | undefined) =>
+  Math.max(1, (previous?.nextPage ?? 2) - 1 + (previous?.incomplete ? 1 : 0))
+
+async function refreshMailbox(
+  reader: MailReader,
+  view: InboxView,
+  mailbox: ReadingProgress['mailboxes'][number],
+  progress: MailboxProgress,
+  pages: number,
+  options?: ReadOptions,
+) {
+  for (let page = 0; page < pages && progress.bounded && !progress.failed; page += 1) {
+    await advanceMailbox(reader, view, mailbox.id, progress, options)
+  }
+}
+
 async function refreshReading(
   reader: MailReader,
   view: InboxView,
@@ -327,10 +343,9 @@ async function refreshReading(
     const progress = current.progress.get(mailbox.id)
     if (!progress) continue
     const previous = before?.progress.get(mailbox.id)
-    const pages = Math.max(1, (previous?.nextPage ?? 2) - 1)
-    for (let page = 0; page < pages && progress.bounded && !progress.failed; page += 1) {
-      await advanceMailbox(reader, view, mailbox.id, progress, options)
-    }
+    // A failed later page belongs to the attempted window even though it was
+    // not retained. Refresh retries that page, but never advances beyond it.
+    await refreshMailbox(reader, view, mailbox, progress, pagesToRefresh(previous), options)
   }
   return current
 }

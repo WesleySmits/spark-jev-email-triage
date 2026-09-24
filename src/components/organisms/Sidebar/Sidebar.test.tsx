@@ -116,6 +116,14 @@ describe('Sidebar', () => {
     expect(render({ shortcuts: [] }).byClass('sidebar__help')).toHaveLength(0)
   })
 
+  it('places optional supplementary rail content after the navigation groups', () => {
+    const reach = <section data-testid="reach">Reach</section>
+    const { byClass } = render({ afterGroups: reach })
+    const [scroll] = byClass('sidebar__scroll')
+
+    expect((scroll?.props['children'] as ReactNode[]).at(-1)).toBe(reach)
+  })
+
   it('rejects an item with no lead or with both leads', () => {
     // @ts-expect-error an icon or an account is required
     const missing: SidebarItem = { id: 'a', label: 'A' }

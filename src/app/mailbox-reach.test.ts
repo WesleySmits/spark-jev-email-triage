@@ -60,6 +60,45 @@ describe('mailboxReachItems', () => {
     ])
   })
 
+  it('maps controlled search reach without presenting matches as loaded copies', () => {
+    const searched = mailboxReachItems(
+      {
+        view: 'unread',
+        query: 'cedar',
+        fields: ['sender', 'subject'],
+        valuesMayBeTruncated: true,
+        pageSize: 10,
+        cursor: 'opaque',
+        mailboxes: [
+          {
+            id: 'studio@mail.example',
+            label: 'Studio',
+            pages: 3,
+            scanned: 28,
+            matched: 2,
+            bounded: true,
+          },
+        ],
+        failed: [],
+        incomplete: [],
+        readable: 1,
+        scanned: 28,
+        matched: 2,
+        bounded: true,
+        searchedAt: '14:36',
+        searchCompletedAt: '2026-09-24T12:36:00.000Z',
+      },
+      mailboxes,
+    )
+
+    expect(searched[0]).toMatchObject({
+      pages: 3,
+      copies: 28,
+      state: 'more',
+      lastRead: { label: 'Last searched 14:36', dateTime: '2026-09-24T12:36:00.000Z' },
+    })
+  })
+
   it('uses per-mailbox refresh depth and time without giving failures a read time', () => {
     const refresh: InboxRefreshSummary = {
       mailboxes: [

@@ -1006,9 +1006,11 @@ describe('createLiveInbox incremental refresh', () => {
 
   it('keeps a completed first page when a later refresh page fails without guessing changes', async () => {
     let refreshing = false
+    const pages: number[] = []
     const reader: MailReader = {
       listMailboxes: () => Promise.resolve([access(one)]),
       listRecentEmails: ({ page = 1 }) => {
+        pages.push(page)
         if (refreshing && page === 2) return Promise.reject(new SparkError('timeout'))
         return Promise.resolve(page === 1 ? pageOf(one, 1) : [listing(one, '201', null)])
       },
@@ -1045,6 +1047,15 @@ describe('createLiveInbox incremental refresh', () => {
         },
       ],
     })
+
+    pages.length = 0
+    refreshing = false
+    const retried = await live.refresh({ view: 'unread' })
+    if (retried.status !== 'ready') throw new Error('Expected retry')
+
+    expect(pages).toEqual([1, 2])
+    expect(retried.scope.incomplete).toEqual([])
+    expect(retried.refresh.mailboxes).toMatchObject([{ pages: 2, status: 'refreshed' }])
   })
 })
 
