@@ -14,6 +14,8 @@ export type WorkbenchMessage = QueueMessage &
      * marker is only a color, which several mailboxes may share.
      */
     mailbox: string
+    /** Provider message id, when this row came from a live mailbox. */
+    messageId?: string | undefined
     /** The sender's address, shown in the reader. */
     address?: string | undefined
   }>

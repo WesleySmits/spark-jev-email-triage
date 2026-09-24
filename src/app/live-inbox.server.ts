@@ -153,14 +153,16 @@ export function createLiveInbox({
 function bodyOf(thread: Thread, ref: MailboxCopyRef, verify: LiveInboxOptions['verify']) {
   const text = thread.messages.find((message) => message.id === ref.messageId)?.bodyText ?? null
   if (text === null) return null
+  const latestMessageId = thread.messages.at(-1)?.id ?? thread.id
   const found = evidence(verify, {
     copy: ref,
     threadId: thread.id,
-    latestMessageId: thread.messages.at(-1)?.id ?? thread.id,
+    latestMessageId,
   })
   return messageBodySchema.parse({
     id: mailboxCopyId(ref),
     text,
+    thread: { threadId: thread.id, latestMessageId },
     ...(found && { classification: found.classification }),
     ...(found?.review && { review: found.review }),
   } satisfies MessageBody)

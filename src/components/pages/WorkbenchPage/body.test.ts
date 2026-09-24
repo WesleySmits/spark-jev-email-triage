@@ -44,6 +44,18 @@ describe('settleBody', () => {
     expect(settleBody(loading, 1, text('a', 'Hello'))).not.toHaveProperty('classification')
   })
 
+  it('keeps a live thread version with the selected body', () => {
+    const thread = { threadId: 't-a', latestMessageId: 'a' }
+    expect(
+      settleBody(loading, 1, { ok: true, body: { id: 'a', text: 'Hello', thread } }),
+    ).toMatchObject({
+      status: 'ready',
+      id: 'a',
+      reading: 'reading-1',
+      thread,
+    })
+  })
+
   it('reports a missing body and a provider failure apart', () => {
     expect(settleBody(loading, 1, { ok: true, body: null })).toMatchObject({
       status: 'error',

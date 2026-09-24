@@ -32,6 +32,8 @@ export type BodyState =
       text: string
       /** The reading this request ran under, as the caller named it. */
       reading: string | undefined
+      /** Version observed by the live thread read, if it supplied one. */
+      thread?: MessageBody['thread'] | undefined
       /**
        * What the thread this body was read from proves about the judgment
        * stored for the row. Absent when the read carried none, as fixtures do.
@@ -88,13 +90,14 @@ export function settleBody(state: BodyState, request: number, outcome: BodyOutco
     return { status: 'error', id, request, reason: 'provider' }
   }
   if (outcome.body === null) return { status: 'error', id, request, reason: 'missing' }
-  const { text, classification, review } = outcome.body
+  const { text, thread, classification, review } = outcome.body
   return {
     status: 'ready',
     id,
     request,
     text,
     reading,
+    ...(thread && { thread }),
     ...(classification && { classification }),
     ...(review && { review }),
   }

@@ -62,6 +62,8 @@ export const messageBodySchema = z.strictObject({
   id,
   /** Plain text. A blank line starts a new paragraph. */
   text: z.string(),
+  /** Thread version returned by this body read, when a live provider supplied it. */
+  thread: z.strictObject({ threadId: id, latestMessageId: id }).optional(),
   /**
    * What the stored judgment for this row says, now that a thread was read
    * for it. Absent when no judgment was looked up at all, as for fixtures.

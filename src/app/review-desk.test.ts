@@ -260,11 +260,13 @@ describe('ReviewDesk.focus', () => {
     await expect(focus(copy(two, '11'), { signal })).resolves.toEqual({
       id: copy(two, '11'),
       text: 'Body of 11',
+      thread: { threadId: '11', latestMessageId: '11' },
       classification: { state: 'none' },
     })
     await expect(focus(copy(one, '12'), { signal })).resolves.toEqual({
       id: copy(one, '12'),
       text: 'Body of 12',
+      thread: { threadId: '12', latestMessageId: '12' },
       classification: { state: 'none' },
     })
     expect(threadIds()).toEqual(['11', '12'])
@@ -701,6 +703,7 @@ describe('ReviewDesk.focus, verifying a stored classification', () => {
     await expect(ReviewDesk.focus(view)(copy(one, '11'), { signal })).resolves.toEqual({
       id: copy(one, '11'),
       text: 'Body of 11',
+      thread: { threadId: '11', latestMessageId: '11' },
       classification: { state: 'unavailable', reason: 'unreadable' },
     })
   })
