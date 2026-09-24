@@ -280,9 +280,15 @@ pnpm readback:spark                      # whether Spark answers on this host
   the category only.
 - The panel and the reader say why review was asked for, from the grounds the
   run recorded beside the judgment: a category score under the accept level,
-  a category no rubric label fits, a mail read as a possible scam, and the
-  signals cited for that last one. Each reads as itself, so no state explains
-  every `needs_review` as the model doubting its own category. Those grounds
+  an answer of Other, a mail read as a possible scam, and the signals cited
+  for that last one. Each reads as itself, so no state explains every
+  `needs_review` as the model doubting its own category.
+- No ground is stated more strongly than what produced it. Policy admits a
+  suspicion signal from `suspicionFloor`, which is low on purpose, so every
+  signal is shown as a possibility the model scored rather than as a checked
+  finding. `other` covers both a category that does not fit and a thread that
+  does not say enough, and a run stores one code for both, so the copy names
+  both and claims neither. Those grounds
   are policy decisions over the model's scores, made in ordinary code; they
   say nothing about whether the judgment still describes the mail, which is
   the state beside them, and nothing about what a person decided, which is a

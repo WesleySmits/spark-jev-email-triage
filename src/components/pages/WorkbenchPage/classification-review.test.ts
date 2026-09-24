@@ -134,7 +134,7 @@ describe.each(currency)('category review of $state ($reason)', (state) => {
         expect(factNamed(shown.facts, 'Warning')).toEqual({
           term: 'Warning',
           value: 'Possible scam or phishing',
-          note: 'It asks for a password, a login code or another credential. This stands whatever category a person decides on.',
+          note: 'It may ask for a password, a login code or another credential. Each is a possibility the model scored, not a checked finding. This stands whatever category a person decides on.',
         })
         expect(factNamed(shown.facts, 'Why review')?.value).toBe(
           'Low category score · Possible scam or phishing',

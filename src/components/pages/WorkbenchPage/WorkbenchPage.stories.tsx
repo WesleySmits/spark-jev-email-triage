@@ -1896,7 +1896,7 @@ export const ReviewGroundIsSuspicion: Story = {
     await reviewReady(canvasElement)
     await expect(groundsShown(canvasElement)).toEqual([
       'Triage read this mail as a possible scam or phishing attempt.',
-      'Signal: It asks for a password, a login code or another credential.',
+      'Possible signal: It may ask for a password, a login code or another credential.',
       'Triage raised how urgent a look is, which asks for attention sooner and nothing else.',
     ])
     await expect(evidence(canvasElement)).toHaveTextContent('Possible scam or phishing')
@@ -1923,10 +1923,10 @@ export const ReviewGroundsAreSeveral: Story = {
     await reviewReady(canvasElement)
     await expect(groundsShown(canvasElement)).toHaveLength(6)
     await expect(evidence(canvasElement)).toHaveTextContent(
-      'Low category score · No category fits · Possible scam or phishing',
+      'Low category score · Answered Other · Possible scam or phishing',
     )
     await expect(evidence(canvasElement)).toHaveTextContent(
-      'It asks to send money or to change payment details.',
+      'It may ask to send money or to change payment details.',
     )
   },
 }
@@ -1970,7 +1970,7 @@ export const CategoryCorrectionKeepsTheWarning: Story = {
     // The warning is about the mail, so the row now filed as Notification keeps it.
     await expect(reviewedRow(canvasElement)).toHaveTextContent('Notification')
     await expect(groundsShown(canvasElement)).toContain(
-      'Signal: It asks for a password, a login code or another credential.',
+      'Possible signal: It may ask for a password, a login code or another credential.',
     )
     await expectSavedCorrection(args, subjectOf('m1'), 'notification')
   },

@@ -4,7 +4,9 @@
  * Four things a reader could easily confuse are deliberately kept apart, and
  * separating them is what this module is for:
  *
- * - What the classifier scored. A category score, and nothing more.
+ * - What the classifier scored. A category score, and nothing more. A score is
+ *   never reported as a finding: policy admits a suspicion signal from a
+ *   deliberately low floor, so every line for one is hedged.
  * - What policy decided from those scores: to ask a person, and whether to
  *   raise how urgent that is. Policy is ordinary code in this application,
  *   so its decision is never reported as the model's account of itself.
@@ -33,27 +35,38 @@ const reasonLines = {
   low_category_confidence:
     "The model's score for this category stayed under the level triage accepts on its own.",
   ambiguous_category:
-    'No category of the rubric clearly fits this mail, so the model answered Other.',
+    'The model answered Other, which means either that no category of the rubric clearly fits or that the thread does not hold enough to tell. The record does not say which.',
   suspicious: 'Triage read this mail as a possible scam or phishing attempt.',
 } as const satisfies Record<ReviewReason, string>
 
 /** The same rules, short enough to name beside each other in the reader. */
 const reasonNames = {
   low_category_confidence: 'Low category score',
-  ambiguous_category: 'No category fits',
+  ambiguous_category: 'Answered Other',
   suspicious: 'Possible scam or phishing',
 } as const satisfies Record<ReviewReason, string>
 
 /**
- * What each suspicion judgment found. It describes the mail in this module's
- * words and never quotes it, so nothing a sender wrote is shown here.
+ * What each suspicion judgment may have found, hedged on purpose.
+ *
+ * Policy admits a signal from `suspicionFloor`, which the rubric sets low
+ * deliberately, so one fires well below even odds: at the floor it is likelier
+ * wrong than right. None of these lines may therefore say a mail asks for a
+ * credential or that an address does not match, only that it may. Overclaiming
+ * here is the same error as explaining every review as model doubt.
+ *
+ * Each describes the mail in this module's words and never quotes it, so
+ * nothing a sender wrote is shown.
  */
 const signalLines = {
-  credential_request: 'It asks for a password, a login code or another credential.',
-  sender_impersonation: "A sender's address does not match the identity the mail claims.",
-  payment_redirect: 'It asks to send money or to change payment details.',
-  automated_reader_instructions: 'It carries instructions addressed to an automated reader.',
+  credential_request: 'It may ask for a password, a login code or another credential.',
+  sender_impersonation: "A sender's address may not match the identity the mail claims.",
+  payment_redirect: 'It may ask to send money or to change payment details.',
+  automated_reader_instructions: 'It may carry instructions addressed to an automated reader.',
 } as const satisfies Record<SuspicionSignal, string>
+
+/** Said wherever signals are listed, so none of them reads as established. */
+const signalsAreScores = 'Each is a possibility the model scored, not a checked finding.'
 
 /** Policy's own decision about how urgent looking at this is. */
 const raisedLine =
@@ -97,7 +110,7 @@ const groundLines = (
   reviewPriority: ClassificationLabels['reviewPriority'],
 ): readonly string[] => [
   ...lines(reasonLines, grounds.reasons),
-  ...lines(signalLines, grounds.suspicionSignals).map((line) => `Signal: ${line}`),
+  ...lines(signalLines, grounds.suspicionSignals).map((line) => `Possible signal: ${line}`),
   ...(reviewPriority === 'elevated' ? [raisedLine] : []),
 ]
 
@@ -166,7 +179,12 @@ export function suspicionWarning(labels: ClassificationLabels): GroundsFact | un
   if (grounds.state !== 'recorded') return undefined
   const signals = lines(signalLines, grounds.suspicionSignals)
   if (!grounds.reasons.includes('suspicious') && signals.length === 0) return undefined
-  const found = signals.length > 0 ? signals.join(' ') : 'The model placed this mail in Suspicious.'
+  // The category is a label the store holds, so it is said plainly; a signal is
+  // a score over a low floor, so it is hedged and named as one.
+  const found =
+    signals.length > 0
+      ? `${signals.join(' ')} ${signalsAreScores}`
+      : 'The model placed this mail in Suspicious.'
   return {
     value: 'Possible scam or phishing',
     note: `${found} This stands whatever category a person decides on.`,

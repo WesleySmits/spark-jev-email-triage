@@ -191,9 +191,9 @@ export const SeveralGrounds: Story = {
       'Triage policy asked for a person on the grounds below. Each is a rule over the scores, not the model\u2019s own account of itself, and none of them says whether this triage still describes the mail as it stands now.',
     reasons: [
       "The model's score for this category stayed under the level triage accepts on its own.",
-      'No category of the rubric clearly fits this mail, so the model answered Other.',
+      'The model answered Other, which means either that no category of the rubric clearly fits or that the thread does not hold enough to tell. The record does not say which.',
       'Triage read this mail as a possible scam or phishing attempt.',
-      'Signal: It asks to send money or to change payment details.',
+      'Possible signal: It may ask to send money or to change payment details.',
       'Triage raised how urgent a look is, which asks for attention sooner and nothing else.',
     ],
     originalSuggestion: 'Other',
@@ -249,7 +249,7 @@ export const LongDutchCopy: Story = {
       'De mail bevat planningstaal over de leveranciersovereenkomstwijzigingsvoorstellen, maar de afzender vraagt expliciet om een antwoord en een besluit vóór vrijdag.',
     reasons: [
       'De modelscore voor deze leveranciersovereenkomstwijzigingscategorie bleef onder de drempel die triage zonder mens accepteert.',
-      'Signaal: er wordt gevraagd om geld over te maken of betaalgegevens te wijzigen.',
+      'Mogelijk signaal: er wordt misschien gevraagd om geld over te maken of betaalgegevens te wijzigen.',
     ],
     originalLabel: 'Originele AI-suggestie',
     originalSuggestion: 'Nieuwsbrief',
