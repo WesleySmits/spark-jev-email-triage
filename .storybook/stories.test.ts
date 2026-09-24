@@ -5,11 +5,10 @@ import {
   type StoryObj,
 } from '@storybook/react-vite'
 import type { Globals } from 'storybook/internal/types'
-import { MINIMAL_VIEWPORTS } from 'storybook/viewport'
 import { beforeAll, describe, expect, test } from 'vitest'
 import { page } from 'vitest/browser'
 import main from './main'
-import preview from './preview'
+import preview, { viewports } from './preview'
 
 // Storybook's portable stories: each story renders with the project's
 // annotations and then runs its play function. A failed assertion fails the
@@ -28,9 +27,11 @@ test('finds the stories that main.ts lists', () => {
   expect(main.stories).toEqual([glob])
 })
 
-// Storybook's viewport sizes in pixels, like mobile1: 320 by 568.
+// The preview's viewport sizes in pixels, like mobile1: 320 by 568. A story
+// that names one is rendered at that size here too, so what Storybook shows
+// and what this run checks are the same window.
 const sizes = new Map(
-  Object.entries(MINIMAL_VIEWPORTS).map(([name, { styles }]) => [
+  Object.entries(viewports).map(([name, { styles }]) => [
     name,
     [Number.parseInt(styles.width, 10), Number.parseInt(styles.height, 10)] as const,
   ]),

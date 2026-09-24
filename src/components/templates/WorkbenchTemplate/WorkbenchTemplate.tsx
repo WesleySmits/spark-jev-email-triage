@@ -1,10 +1,34 @@
 import type { ReactNode } from 'react'
 import './WorkbenchTemplate.css'
 
+/**
+ * The widest viewport that hides the navigation rail, in CSS pixels.
+ * `WorkbenchTemplate.css` matches it, and `WorkbenchTemplate.test.tsx` keeps
+ * the two the same.
+ */
+export const compactWidth = 900
+
+/**
+ * Matches while the rail is hidden, for `window.matchMedia`. A caller that
+ * shows something only in the compact layout, such as an open filter sheet,
+ * uses it to stop showing it once the rail is back.
+ */
+export const compactQuery = `(max-width: ${String(compactWidth)}px)`
+
+/**
+ * Put this on anything inside the template that belongs to the compact layout
+ * only, such as the button that opens the filters. It is shown while the rail
+ * is hidden and leaves the layout and the tab order above that width.
+ */
+export const compactOnly = 'workbench__compact-only'
+
 type WorkbenchTemplateProps = Readonly<{
   /** The bar above the workspace, usually a TopBar. */
   topBar: ReactNode
-  /** The navigation rail, usually a Sidebar. Hidden at 600px and below. */
+  /**
+   * The navigation rail, usually a Sidebar. Hidden at `compactWidth` and
+   * below, where `filters` reaches the same filters instead.
+   */
   sidebar: ReactNode
   /**
    * The queue pane, usually a MessageQueue. At 600px and below it shows when
@@ -27,6 +51,14 @@ type WorkbenchTemplateProps = Readonly<{
    * going back.
    */
   mobilePane: 'queue' | 'reader'
+  /**
+   * The compact way to the filters the rail holds, usually a FilterSheet that
+   * the caller opens from a control carrying `compactOnly` in the top bar. It
+   * sits outside `main`, so it is no part of the queue or the reader. Left
+   * out, the filters are the rail's alone and there is no way to them below
+   * `compactWidth`.
+   */
+  filters?: ReactNode | undefined
   className?: string | undefined
 }>
 
@@ -34,7 +66,10 @@ type WorkbenchTemplateProps = Readonly<{
  * The Compact workbench page layout: a top bar above a three-pane workspace
  * with the navigation rail, a bounded queue and a flexible reader. At 600px
  * and below it shows the top bar above one pane, the queue or the reader as
- * `mobilePane` says, instead of squeezing the columns.
+ * `mobilePane` says, instead of squeezing the columns. At 900px and below the
+ * rail leaves the layout before that, because a rail and a bounded queue take
+ * more than half of a tablet; the `filters` slot is the way to the same
+ * filters there.
  *
  * Layout only. The caller renders every slot and owns filtering, routing,
  * data, selection, keyboard shortcuts, mailbox actions and which pane shows
@@ -69,6 +104,7 @@ export function WorkbenchTemplate({
   queue,
   reader,
   mobilePane,
+  filters,
   className,
 }: WorkbenchTemplateProps) {
   const classes = ['workbench', `workbench--mobile-${mobilePane}`, className]
@@ -84,6 +120,7 @@ export function WorkbenchTemplate({
           <div className="workbench__reader">{reader}</div>
         </main>
       </div>
+      {filters}
     </div>
   )
 }

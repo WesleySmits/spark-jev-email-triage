@@ -1,0 +1,62 @@
+/* FilterSheet organism: the navigation rail's filters as a modal side panel
+ * where the rail itself is hidden. It brings the panel, its bar and the
+ * backdrop; what it holds brings its own surface, type, color and focus.
+ * Token values live in src/styles/tokens.css. */
+.filter-sheet {
+  box-sizing: border-box;
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: min(320px, 88vw);
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  color: var(--ink);
+  /* The rail inside fills the panel and brings the same surface. */
+  background: var(--surface);
+  font: var(--text-ui);
+}
+
+/* A closed dialog leaves the layout, the tab order and the accessibility
+ * tree, so the page behind it is reached exactly as before. */
+.filter-sheet:not([open]) {
+  display: none;
+}
+
+/* Dimmed from --ink, so the panel reads as being over the page. */
+.filter-sheet::backdrop {
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+}
+
+/* The panel's own bar: what it is, and the way out. 44px is the close
+ * button's own target; the bar keeps the 48px of the mobile reader bar. */
+.filter-sheet__bar {
+  min-width: 0;
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s1) var(--s1) var(--s1) var(--s3);
+  border-bottom: 1px solid var(--line);
+}
+
+.filter-sheet__title {
+  min-width: 0;
+  margin: 0;
+  color: var(--ink);
+  font: var(--text-control);
+  overflow-wrap: anywhere;
+}
+
+/* The filters fill the rest and scroll inside themselves, as in the rail. */
+.filter-sheet__body {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}

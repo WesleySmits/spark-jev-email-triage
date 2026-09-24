@@ -51,6 +51,15 @@ Nothing older is kept when a mailbox fails, so no row is ever shown as
 fresher than the reading it came from, and a failure carries the mailbox
 address and a coarse reason only, never mail content.
 
+The filters are reachable at every supported width. Above 900px they are the
+navigation rail beside the queue. At 900px and below the rail would leave the
+reader too narrow, so it goes and a button in the top bar opens the same rail
+as a modal sheet: one filter model and one set of counts, never a second
+mobile one. Choosing there applies the filter, closes the sheet and shows the
+list; Escape, the close button and the backdrop close it and hand focus back
+to the button. What was open, where back leads and what was searched all stay
+as they were.
+
 Supported: reading mail, refreshing, opening one body, viewing stored triage,
 and confirming or correcting its category locally. The guarded Done panel
 can archive a selected message when explicitly enabled. Classification starts
@@ -62,8 +71,8 @@ triage-run control, priority/reply/deadline editor, persisted completion or Undo
 The workbench's single-key shortcuts (K, J, E and `/`) can be turned off in
 the rail, under the shortcut help. The choice is kept in that browser's local
 storage, holds after a reload, and carries no mail. With the keys off nothing
-in the page claims one, and Tab, Enter and Escape keep working. The rail, and
-with it the setting, is hidden below a 600px viewport.
+in the page claims one, and Tab, Enter and Escape keep working. On narrow
+screens, the setting remains available through the Filters sheet.
 
 The web process needs the local Spark CLI to read mail. A successful build
 or `/health` response does not prove Spark readiness. See
@@ -156,7 +165,10 @@ Git hooks:
 `pnpm test-storybook` renders every story and runs its play function in
 headless Chromium through Vitest browser mode and Storybook's portable
 stories (`.storybook/stories.test.ts`). It starts no Storybook server. A
-story's `viewport` global sets the window size; other stories get 1280×1024.
+story's `viewport` global sets the window size, from the map in
+`.storybook/preview.ts`; other stories get 1280×1024. Besides Storybook's own
+sizes that map holds the widths the workbench is checked at: 390, 600, 640
+(1280 at 200% zoom), 768 and 1024.
 The first local run needs `pnpm exec playwright install --only-shell chromium`.
 
 ## Releasing

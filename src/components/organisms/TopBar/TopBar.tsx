@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Avatar } from '../../atoms/Avatar/Avatar'
 import { Brand } from '../../molecules/Brand/Brand'
 import { SearchField } from '../../molecules/SearchField/SearchField'
@@ -11,6 +12,12 @@ import './TopBar.css'
 type TopBarProps = Readonly<{
   /** Brand wordmark. Defaults to "Spark Triage". */
   productName?: string | undefined
+  /**
+   * An optional control before the brand, e.g. the button that opens the
+   * filters where a navigation rail is hidden. The bar only places it: the
+   * caller owns what it is, what it does and at which widths it shows.
+   */
+  filters?: ReactNode | undefined
   /** Accessible name of the search field, e.g. "Zoek in huidige resultaten". */
   searchLabel: string
   searchPlaceholder?: string | undefined
@@ -53,6 +60,65 @@ type TopBarProps = Readonly<{
   className?: string | undefined
 }>
 
+type LeadProps = Pick<TopBarProps, 'productName' | 'filters'>
+
+/** The brand, with the caller's optional control before it. */
+function leadElement({ productName, filters }: LeadProps) {
+  return (
+    <div className="top-bar__lead">
+      {filters}
+      <Brand name={productName} className="top-bar__brand" />
+    </div>
+  )
+}
+
+type SearchProps = Pick<
+  TopBarProps,
+  | 'searchId'
+  | 'searchLabel'
+  | 'searchPlaceholder'
+  | 'searchShortcut'
+  | 'searchValue'
+  | 'searchDisabled'
+  | 'onSearchChange'
+  | 'onSearchSubmit'
+>
+
+/** The search landmark. Enter submits the query without navigating. */
+function searchElement({
+  searchId,
+  searchLabel,
+  searchPlaceholder,
+  searchShortcut,
+  searchValue,
+  searchDisabled,
+  onSearchChange,
+  onSearchSubmit,
+}: SearchProps) {
+  return (
+    <form
+      className="top-bar__search"
+      role="search"
+      onSubmit={(event) => {
+        event.preventDefault()
+        onSearchSubmit(searchValue)
+      }}
+    >
+      <SearchField
+        id={searchId}
+        label={searchLabel}
+        placeholder={searchPlaceholder}
+        shortcut={searchShortcut}
+        value={searchValue}
+        disabled={searchDisabled}
+        onChange={(event) => {
+          onSearchChange(event.target.value)
+        }}
+      />
+    </form>
+  )
+}
+
 type SyncProps = Pick<TopBarProps, 'syncStatus' | 'syncLabel' | 'syncActionLabel' | 'onSyncClick'>
 
 /** The sync status: a button when a click does something, plain text otherwise. */
@@ -85,7 +151,8 @@ function syncElement({ syncStatus, syncLabel, syncActionLabel, onSyncClick }: Sy
  * landmark when it is not inside `main` or a sectioning element, and wraps the
  * search in a search landmark. The avatar is an image, not an account menu.
  * Below a 600px viewport the search moves to its own full-width row and the
- * search and sync controls grow to 44px.
+ * search and sync controls grow to 44px. A `filters` control shares the
+ * brand's column, so it is the first thing Tab reaches.
  *
  * @example
  * import { TopBar } from '../components/organisms/TopBar/TopBar'
@@ -104,49 +171,13 @@ function syncElement({ syncStatus, syncLabel, syncActionLabel, onSyncClick }: Sy
  *   profileInitials="WS"
  * />
  */
-export function TopBar({
-  productName,
-  searchLabel,
-  searchPlaceholder,
-  searchValue,
-  onSearchChange,
-  onSearchSubmit,
-  searchShortcut,
-  searchId,
-  searchDisabled,
-  syncStatus,
-  syncLabel,
-  syncActionLabel,
-  onSyncClick,
-  profileLabel,
-  profileInitials,
-  className,
-}: TopBarProps) {
+export function TopBar({ profileLabel, profileInitials, className, ...props }: TopBarProps) {
   const classes = ['top-bar', className].filter(Boolean).join(' ')
   return (
     <header className={classes}>
-      <Brand name={productName} className="top-bar__brand" />
-      <form
-        className="top-bar__search"
-        role="search"
-        onSubmit={(event) => {
-          event.preventDefault()
-          onSearchSubmit(searchValue)
-        }}
-      >
-        <SearchField
-          id={searchId}
-          label={searchLabel}
-          placeholder={searchPlaceholder}
-          shortcut={searchShortcut}
-          value={searchValue}
-          disabled={searchDisabled}
-          onChange={(event) => {
-            onSearchChange(event.target.value)
-          }}
-        />
-      </form>
-      {syncElement({ syncStatus, syncLabel, syncActionLabel, onSyncClick })}
+      {leadElement(props)}
+      {searchElement(props)}
+      {syncElement(props)}
       <Avatar initials={profileInitials} label={profileLabel} size="sm" />
     </header>
   )

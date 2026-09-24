@@ -21,6 +21,9 @@ fails costs only that mailbox's rows; the reading is still delivered with
 the mailboxes that answered, and Refresh is the retry. Only failing to
 discover the mailboxes makes a reading unavailable.
 
+The workflow and mailbox filters move into a modal sheet from the top bar
+at 900px and below, so they remain reachable on narrow screens.
+
 Classifying is a CLI workflow; the app
 only reads existing judgments and saves reviews. It shows a raw category
 "Model score", which is not calibrated certainty. Reviews currently decide

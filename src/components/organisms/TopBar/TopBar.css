@@ -16,9 +16,20 @@
   font: var(--text-ui);
 }
 
-/* 172px lines the search up with the queue, past the navigation rail. */
+/* 172px lines the search up with the queue, past the navigation rail. An
+ * optional filters control shares that column, so the search stays put. The
+ * column keeps its width: the search gives way first, and a name too long for
+ * what is left wraps inside the column instead of widening the bar. */
+.top-bar__lead {
+  min-width: 0;
+  flex: 0 0 172px;
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
 .top-bar__brand {
-  flex: 0 1 172px;
+  min-width: 0;
 }
 
 /* The source gives the search at most 420px; it gives way first. */
@@ -35,13 +46,14 @@
 
 /* The source's mobile bar hides the search and the avatar. Here the search
  * keeps working on its own row, so nothing is lost at 320px or 400% zoom, and
- * both controls reach 44px. A grid keeps brand, sync and avatar on the first
- * row. The brand takes at most 45%, so long sync text still has room to wrap. */
+ * both controls reach 44px. A grid keeps the lead, sync and avatar on the
+ * first row. The lead takes at most half the row, so a filters control and the
+ * brand fit beside each other and long sync text still has room to wrap. */
 @media (max-width: 600px) {
   .top-bar {
     min-height: 48px;
     display: grid;
-    grid-template-columns: fit-content(45%) 1fr auto;
+    grid-template-columns: fit-content(50%) 1fr auto;
     gap: var(--s1) var(--s3);
     padding: 2px var(--s3) var(--s2);
   }

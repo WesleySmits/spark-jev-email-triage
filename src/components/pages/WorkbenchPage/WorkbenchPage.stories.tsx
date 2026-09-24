@@ -2502,3 +2502,127 @@ export const ProposalLapsesOnNewerMessage: Story = {
     await expect(args.loadBody).toHaveBeenCalledTimes(1)
   },
 }
+
+/** Opens the compact filters from the top bar and returns the sheet. */
+async function openFilters(root: HTMLElement) {
+  await userEvent.click(within(root).getByRole('button', { name: 'Filters' }))
+  return within(root).getByRole('dialog', { name: 'Filters' })
+}
+
+/**
+ * At 320px there is no rail, so the filters sit in the top bar. The sheet
+ * holds that same rail with the same counts: there is one filter model, not a
+ * mobile copy of it. Choosing applies the filter, closes the sheet, leaves
+ * the queue showing and hands focus back to the button that opened it.
+ */
+export const MobileFilters: Story = {
+  globals: { viewport: { value: 'mobile1', isRotated: false } },
+  args: readOnly,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.queryByRole('complementary')).not.toBeInTheDocument()
+    const button = canvas.getByRole('button', { name: 'Filters' })
+    const sheet = await openFilters(canvasElement)
+    await expect(within(sheet).getByRole('button', { name: /^Needs review/ })).toHaveTextContent(
+      '2',
+    )
+    await userEvent.click(within(sheet).getByRole('button', { name: /^Personal/ }))
+    await expect(canvas.queryByRole('dialog')).not.toBeInTheDocument()
+    await expect(button).toHaveFocus()
+    await expect(canvas.getByText('1 result')).toBeVisible()
+    await expect(queueContext(canvasElement)).toHaveTextContent('Personal')
+    await expect(canvasElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth)
+  },
+}
+
+/**
+ * The sheet changes nothing but the filter. At 390px it opens over the
+ * reader; Escape leaves the open message exactly as it was. Choosing a
+ * mailbox goes back to the list with that message still current, and opening
+ * it again reads it.
+ */
+export const MobileFiltersKeepTheOpenMessage: Story = {
+  globals: { viewport: { value: 'phone390', isRotated: false } },
+  args: readOnly,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await openDinnerOnMobile(canvasElement)
+    const button = canvas.getByRole('button', { name: 'Filters' })
+    await userEvent.click(button)
+    await userEvent.keyboard('{Escape}')
+    await expect(button).toHaveFocus()
+    await expect(subject(canvasElement)).toHaveTextContent('Move Friday dinner?')
+
+    const sheet = await openFilters(canvasElement)
+    await userEvent.click(within(sheet).getByRole('button', { name: /^Personal/ }))
+    await expect(canvas.getByText('1 result')).toBeVisible()
+    const row = canvas.getByRole('button', { name: /Move Friday dinner\?/ })
+    await expect(row).toHaveAttribute('aria-current', 'true')
+    await userEvent.click(row)
+    await expect(content(canvasElement)).toHaveFocus()
+    await backToDinnerRow(canvasElement)
+  },
+}
+
+/**
+ * A 768px portrait tablet: the rail is gone, so the reader keeps its width,
+ * and both panes stay. The keyboard reaches the filters and leaves them the
+ * same way as on a phone.
+ */
+export const CompactTabletFilters: Story = {
+  globals: { viewport: { value: 'tablet768', isRotated: false } },
+  args: { ...readOnly, scope: boundedScope },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.queryByRole('complementary')).not.toBeInTheDocument()
+    // Both panes: the queue's scope line and the reader's body are there.
+    await expect(queueScope(canvasElement)).toBeVisible()
+    await bodyShows(canvasElement, 'Hi Wesley,')
+
+    // The button opens the sheet from the keyboard, and Tab stays inside it.
+    const button = canvas.getByRole('button', { name: 'Filters' })
+    button.focus()
+    await userEvent.keyboard('{Enter}')
+    const sheet = canvas.getByRole('dialog', { name: 'Filters' })
+    await userEvent.tab()
+    await expect(sheet).toContainElement(document.activeElement as HTMLElement)
+
+    // Closing hands focus back and leaves the open message where it was.
+    await userEvent.click(within(sheet).getByRole('button', { name: 'Close filters' }))
+    await expect(button).toHaveFocus()
+    await expect(subject(canvasElement)).toHaveTextContent('Can delivery move a week earlier?')
+    await expect(canvasElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth)
+  },
+}
+
+/**
+ * A 1280px screen at 200% zoom, which is a 640px viewport: two panes without
+ * a rail, and the filters one button away. Nothing scrolls sideways.
+ */
+export const Zoom200: Story = {
+  globals: { viewport: { value: 'zoom200', isRotated: false } },
+  args: readOnly,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const sheet = await openFilters(canvasElement)
+    await userEvent.click(within(sheet).getByRole('button', { name: /^Done/ }))
+    await expect(canvas.getByRole('heading', { name: 'Done' })).toBeVisible()
+    await expect(canvasElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth)
+  },
+}
+
+/**
+ * At 1280px the rail is the only way to the filters: the compact button
+ * leaves the layout and the tab order, so nothing offers the same filters
+ * twice.
+ */
+export const DesktopHasNoFilterButton: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: readOnly,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('complementary', { name: 'Filters' })).toBeVisible()
+    await expect(canvas.queryByRole('button', { name: 'Filters' })).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('dialog')).not.toBeInTheDocument()
+  },
+}

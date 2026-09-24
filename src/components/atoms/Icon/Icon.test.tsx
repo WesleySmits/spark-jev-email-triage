@@ -41,6 +41,8 @@ describe('Icon', () => {
       'undo',
       'refresh',
       'info',
+      'filter',
+      'close',
     ])
     for (const name of iconNames) {
       expect(svg(Icon({ name })).children).toBeTruthy()
