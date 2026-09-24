@@ -431,16 +431,19 @@ export const Mobile: Story = {
   },
 }
 
-// A bounded reading of five mailboxes, as the live inbox produces: the
-// figures are counted, never estimated. Synthetic throughout.
+// A bounded reading, shaped as the live inbox produces one: it lists every
+// readable mailbox up to its mailbox bound, so the three loaded here are the
+// bound, and the two beyond it went unread. The story's own bound is 3
+// because the sample data has three mailboxes; the app's is 5. The figures
+// are counted, never estimated. Synthetic throughout.
 const boundedScope: NonNullable<Props['scope']> = {
   mailboxes: [
     { id: 'studio', label: 'studio@mail.example', loaded: 10, bounded: true },
     { id: 'atelier', label: 'atelier@mail.example', loaded: 10, bounded: true },
     { id: 'personal', label: 'personal@mail.example', loaded: 4, bounded: false },
   ],
-  readable: 7,
-  mailboxLimit: 5,
+  readable: 5,
+  mailboxLimit: 3,
   messageLimit: 10,
   loaded: 24,
   bounded: true,
@@ -462,12 +465,12 @@ export const BoundedScope: Story = {
   play: async ({ canvasElement }) => {
     const line = queueScope(canvasElement)
     await expect(line).toHaveTextContent(
-      'Loaded: 24 recent messages from 3 of 7 readable mailboxes',
+      'Loaded: 24 recent messages from 3 of 5 readable mailboxes',
     )
     // The two bounds are said apart: skipped mailboxes are missing whole,
     // while the loaded ones were only cut off at their oldest read message.
     await expect(line).toHaveTextContent(
-      '4 readable mailboxes were not read at all, so even the newest mail in them is missing',
+      '2 readable mailboxes were not read at all, so even the newest mail in them is missing',
     )
     await expect(line).toHaveTextContent('Older mail was left out of 2 loaded mailboxes')
     await expect(line).toHaveTextContent('Search and filters cover only loaded mail')
@@ -492,7 +495,7 @@ export const BoundedScopeOnMobile: Story = {
     const line = queueScope(canvasElement)
     await expect(line).toBeVisible()
     await expect(line).toHaveTextContent(
-      'Loaded: 24 recent messages from 3 of 7 readable mailboxes',
+      'Loaded: 24 recent messages from 3 of 5 readable mailboxes',
     )
     await expect(line).toHaveTextContent('Last refreshed 09:42')
     // Tab from the search reaches the queue's rows past the scope line, which
