@@ -25,7 +25,7 @@ import type {
   StoredClassification,
 } from '../../../domain/stored-classification'
 import type { ReviewCategory } from '../../organisms/ReviewPanel/ReviewPanel'
-import { categoryLabels } from './classification'
+import { categoryLabels, categoryReviewScopeNote } from './classification'
 
 export type ReviewCategoryValue = ClassificationLabels['category']
 
@@ -62,7 +62,8 @@ export function reviewableIn(
  * a confirmation, and carries no labels of its own, so it can never read as
  * having proposed them. Any other choice is a correction of the category;
  * the priority stays the one that was judged, because this panel asks about
- * the category and a person decides nothing they were not shown.
+ * the category and a person decides nothing they were not shown. Carrying
+ * the priority forward does not confirm it or clear its uncertainty.
  */
 export function verdictFor(
   chosen: ReviewCategoryValue,
@@ -209,8 +210,8 @@ function recorded(
     title: 'Review saved',
     detail:
       state.decision === 'confirmed'
-        ? `You confirmed ${chosen}. ${unchanged}`
-        : `Category set to ${chosen}. The original stays ${original}. ${unchanged}`,
+        ? `You confirmed ${chosen}. ${categoryReviewScopeNote} ${unchanged}`
+        : `Category set to ${chosen}. The original stays ${original}. ${categoryReviewScopeNote} ${unchanged}`,
   }
 }
 
@@ -261,7 +262,7 @@ export function reviewPanelCopy(labels: ClassificationLabels) {
     originalSuggestion: categoryLabels[labels.category],
     originalNote: 'This original suggestion is kept, whatever you decide.',
     categoriesTitle: 'Choose the right category',
-    categoriesHint: "This reviews the message. It doesn't complete it.",
+    categoriesHint: `${categoryReviewScopeNote} It doesn't complete the message.`,
     saveLabel: 'Save review',
   } as const
 }

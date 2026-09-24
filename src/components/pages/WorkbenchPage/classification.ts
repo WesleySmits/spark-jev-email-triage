@@ -262,7 +262,7 @@ export type ClassificationView = Readonly<{
 
 /** Review need, as labels the model produced: `auto_accepted` is no review by a person. */
 function modelReviewFact({ review, reviewPriority }: ClassificationLabels): ClassificationFact {
-  const raised = reviewPriority === 'elevated' ? ' Marked as more urgent to look at.' : ''
+  const raised = reviewPriorityNote(reviewPriority)
   if (review === 'needs_review') {
     return { term: 'Review', value: 'Needs a person', note: `The model was unsure.${raised}` }
   }
@@ -278,15 +278,21 @@ const decisions = {
   corrected: 'Corrected by a person',
 } as const
 
+const reviewPriorityNote = (priority: ClassificationLabels['reviewPriority']) =>
+  priority === 'elevated' ? ' Marked as more urgent to look at.' : ''
+
+/** The category panel makes no decision about any other classification field. */
+export const categoryReviewScopeNote =
+  'This review covers the category only. Priority and reply expectations are not confirmed.'
+
 /**
- * Review need once someone has reviewed. It names the decision, who made it
- * and when, and never claims more: a review decides labels, so nothing here
- * reads as a message having been handled.
+ * Name the category decision, who made it and when. Other model signals
+ * still apply: recording a category review does not assess another field.
  */
-const personReviewFact = (review: RowReview): ClassificationFact => ({
-  term: 'Review',
+const personReviewFact = (review: RowReview, labels: ClassificationLabels): ClassificationFact => ({
+  term: 'Category review',
   value: decisions[review.decision],
-  note: `By ${review.reviewer} on ${judgedText(review.reviewedAt)}. Labels only: your mail is unchanged.`,
+  note: `By ${review.reviewer} on ${judgedText(review.reviewedAt)}. ${categoryReviewScopeNote} Your mail is unchanged.${reviewPriorityNote(labels.reviewPriority)}`,
 })
 
 /**
@@ -321,10 +327,9 @@ function factsOf(
     {
       term: 'Priority',
       value: priorities[priority],
-      ...(labels.priorityUncertain &&
-        review === undefined && { note: 'The model was not sure of this priority.' }),
+      ...(labels.priorityUncertain && { note: 'The model was not sure of this priority.' }),
     },
-    review === undefined ? modelReviewFact(labels) : personReviewFact(review),
+    review === undefined ? modelReviewFact(labels) : personReviewFact(review, labels),
   ]
 }
 

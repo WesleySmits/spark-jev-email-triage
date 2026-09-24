@@ -1445,7 +1445,7 @@ export const ReviewSurvivesRefresh: Story = {
 
     await refresh(canvasElement)
     await showsTheCorrection(canvasElement)
-    await expect(evidence(canvasElement)).toHaveTextContent('your mail is unchanged')
+    await expect(evidence(canvasElement)).toHaveTextContent('Your mail is unchanged')
 
     // Built afresh from what the reading carried, not from this session.
     await reopenReviewed(canvasElement)
@@ -1711,5 +1711,95 @@ export const RefusedReviewShowsNowhere: Story = {
     await expect(reviewedRow(canvasElement)).not.toHaveTextContent('Suspicious')
     await expect(evidence(canvasElement)).toHaveTextContent('Needs a person')
     await expect(evidence(canvasElement)).not.toHaveTextContent('by a person')
+  },
+}
+
+const priorityUncertain: StoredClassification = {
+  ...m1Unsure,
+  labels: { ...unsureLabels, priorityUncertain: true, reviewPriority: 'elevated' },
+}
+const priorityUncertainStates = { ...unsureStates, m1: priorityUncertain }
+const reviewingUncertainPriority = () => ({
+  ...reviewing({ outcome: recording }, priorityUncertainStates),
+  loadBody: fn(provingBodies({ m1: { ...priorityUncertain, state: 'current' } })),
+})
+
+/** A category correction made with the keyboard leaves the priority uncertain. */
+export const CategoryCorrectionKeepsPriorityUncertain: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewingUncertainPriority(),
+  play: async ({ args, canvasElement }) => {
+    await reviewReady(canvasElement)
+    const canvas = within(canvasElement)
+    canvas.getByRole('radio', { name: 'Personal' }).focus()
+    await userEvent.keyboard(' {ArrowDown}')
+    await expect(canvas.getByRole('radio', { name: 'Notification' })).toBeChecked()
+    await userEvent.tab()
+    await expect(save(canvasElement)).toHaveFocus()
+    await userEvent.keyboard('{Enter}')
+    await resultShows(canvasElement, 'Review saved')
+
+    await expect(evidence(canvasElement)).toHaveTextContent('Category review')
+    await expect(evidence(canvasElement)).toHaveTextContent('Corrected by a person')
+    await expect(evidence(canvasElement)).toHaveTextContent('The model suggested Personal')
+    await expect(evidence(canvasElement)).toHaveTextContent(
+      'The model was not sure of this priority.',
+    )
+    await expect(evidence(canvasElement)).toHaveTextContent('Marked as more urgent to look at.')
+    await expect(announced(canvasElement)).toHaveTextContent(
+      'Priority and reply expectations are not confirmed.',
+    )
+    await expect(reviewedRow(canvasElement)).toHaveTextContent('Notification')
+    await expectSavedCorrection(args, subjectOf('m1'), 'notification')
+    await expect(args.loadBody).toHaveBeenCalledTimes(1)
+  },
+}
+
+/** On a narrow screen, confirming the category certifies no other field. */
+export const CategoryConfirmationKeepsPriorityUncertain: Story = {
+  globals: { viewport: { value: 'mobile1', isRotated: false } },
+  args: reviewingUncertainPriority(),
+  play: async ({ canvasElement }) => {
+    await userEvent.click(reviewedRow(canvasElement))
+    await saveChosen(canvasElement, 'Personal')
+    await resultShows(canvasElement, 'Review saved')
+    await expect(evidence(canvasElement)).toHaveTextContent('Confirmed by a person')
+    await expect(evidence(canvasElement)).toHaveTextContent(
+      'The model was not sure of this priority.',
+    )
+    await expect(result(canvasElement)).toHaveTextContent(
+      'Priority and reply expectations are not confirmed.',
+    )
+    await expect(panel(canvasElement)).toHaveTextContent('This review covers the category only.')
+    await expect(canvasElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth)
+  },
+}
+
+/** An earlier category review remains historical when the thread has moved on. */
+export const OutdatedCategoryReviewKeepsPriorityUncertain: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: {
+    ...reviewingUncertainPriority(),
+    classifications: {
+      ...reading('reading-1', priorityUncertainStates),
+      reviews: { m1: projected({ decision: 'confirmed' }) },
+    },
+    loadBody: fn(
+      provingBodies({
+        m1: { ...priorityUncertain, state: 'stale', reason: 'newer_message' },
+      }),
+    ),
+  },
+  play: async ({ args, canvasElement }) => {
+    await waitFor(() => expect(evidence(canvasElement)).toHaveTextContent('Triage outdated'))
+    await expect(evidence(canvasElement)).toHaveTextContent('Confirmed by a person')
+    await expect(evidence(canvasElement)).toHaveTextContent(
+      'The model was not sure of this priority.',
+    )
+    await expect(evidence(canvasElement)).toHaveTextContent(
+      'Priority and reply expectations are not confirmed.',
+    )
+    await expect(panel(canvasElement)).not.toBeInTheDocument()
+    await expect(reviewOf(args).onSaveReview).not.toHaveBeenCalled()
   },
 }

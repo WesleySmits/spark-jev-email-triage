@@ -42,7 +42,11 @@ import {
 } from './stored-classification'
 import { categorySchema, prioritySchema } from './triage'
 
-/** The labels a person chose. Labels only: they authorize nothing. */
+/**
+ * Labels carried by a correction. A category-only review also carries the
+ * original priority to preserve this stored shape; that is not evidence a
+ * person assessed the priority. Labels authorize nothing.
+ */
 const reviewedLabelsSchema = z.strictObject({
   category: categorySchema,
   priority: prioritySchema,
@@ -140,7 +144,12 @@ export function admitReview(
     : refused('stale_subject')
 }
 
-/** The labels a row shows, and who decided them. */
+/**
+ * The labels a row shows, and the review they came from. `decidedBy` names
+ * the source of this projection, not certification of every field. Model
+ * uncertainty and other signals remain on the original classification and
+ * must not be discarded merely because a review supplies these labels.
+ */
 export type EffectiveOutcome =
   | Readonly<{
       decidedBy: 'reviewer'

@@ -222,15 +222,31 @@ describe('the copy of every state', () => {
       reviewResult({ status: 'saved', decision: 'confirmed', chosen: 'newsletter' }, 'Newsletter'),
     ).toEqual({
       title: 'Review saved',
-      detail: 'You confirmed Newsletter. Your mailbox is unchanged.',
+      detail:
+        'You confirmed Newsletter. This review covers the category only. Priority and reply expectations are not confirmed. Your mailbox is unchanged.',
     })
     expect(
       reviewResult({ status: 'saved', decision: 'corrected', chosen: 'personal' }, 'Newsletter'),
     ).toEqual({
       title: 'Review saved',
-      detail: 'Category set to Personal. The original stays Newsletter. Your mailbox is unchanged.',
+      detail:
+        'Category set to Personal. The original stays Newsletter. This review covers the category only. Priority and reply expectations are not confirmed. Your mailbox is unchanged.',
     })
   })
+
+  it.each(['confirmed', 'corrected'] as const)(
+    '%s announces only a category review, leaving other fields unconfirmed',
+    (decision) => {
+      const state = { status: 'saved', decision, chosen: 'newsletter' } as const
+      for (const text of [
+        reviewResult(state, 'Newsletter').detail,
+        reviewAnnouncement(state, 'Newsletter'),
+      ]) {
+        expect(text).toContain('This review covers the category only.')
+        expect(text).toContain('Priority and reply expectations are not confirmed.')
+      }
+    },
+  )
 
   it('tells a reviewer of a version that moved on what to do next', () => {
     expect(reviewResult({ status: 'refused', reason: 'stale_subject' }, 'Newsletter')).toEqual({
@@ -261,7 +277,7 @@ describe('reviewAnnouncement', () => {
         'Newsletter',
       ),
     ).toBe(
-      'Review saved. Category set to Personal. The original stays Newsletter. Your mailbox is unchanged. Not completed yet.',
+      'Review saved. Category set to Personal. The original stays Newsletter. This review covers the category only. Priority and reply expectations are not confirmed. Your mailbox is unchanged. Not completed yet.',
     )
   })
 
@@ -303,7 +319,9 @@ describe('reviewPanelCopy', () => {
     const copy = reviewPanelCopy(labels)
 
     expect(copy.originalNote).toBe('This original suggestion is kept, whatever you decide.')
-    expect(copy.categoriesHint).toBe("This reviews the message. It doesn't complete it.")
+    expect(copy.categoriesHint).toBe(
+      "This review covers the category only. Priority and reply expectations are not confirmed. It doesn't complete the message.",
+    )
     expect(copy.saveLabel).toBe('Save review')
   })
 })
