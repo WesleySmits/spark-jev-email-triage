@@ -8,11 +8,13 @@ import { z } from 'zod'
 import {
   bodyRequestSchema,
   inboxDiscoveryRequestSchema,
+  inboxRefreshRequestSchema,
   type ClassifiedDiscovery,
   type ClassifiedInbox,
+  type ClassifiedRefresh,
 } from './live-inbox'
 import { BodyUnavailableError, isLoopback } from './live-inbox.server'
-import { deskDiscovery, deskReading } from './review-desk.server'
+import { deskDiscovery, deskReading, deskRefresh } from './review-desk.server'
 import { sparkInbox } from './spark-inbox.server'
 
 /**
@@ -48,6 +50,15 @@ export const searchLiveInbox = createServerFn({ method: 'POST' })
     const { allowed, signal } = mailRequest()
     if (!allowed) return { status: 'unavailable', reason: 'local-only' }
     return deskDiscovery(data, { signal })
+  })
+
+/** Re-reads the already-loaded window; POST distinguishes it from a fresh list. */
+export const refreshLiveInbox = createServerFn({ method: 'POST' })
+  .validator(inboxRefreshRequestSchema)
+  .handler(async ({ data }): Promise<ClassifiedRefresh> => {
+    const { allowed, signal } = mailRequest()
+    if (!allowed) return { status: 'unavailable', reason: 'local-only' }
+    return deskRefresh(data, { signal })
   })
 
 /**

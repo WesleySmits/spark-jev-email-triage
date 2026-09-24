@@ -69,8 +69,9 @@ vi.mock('../jev/classifier', () => ({ createJevClassifier: jev.createJevClassifi
 const lost = () => Promise.reject(new Error('The app server did not answer'))
 
 vi.mock('./live-inbox.functions', async () => {
-  const { bodyRequestSchema, inboxDiscoveryRequestSchema } = await import('./live-inbox')
-  const { deskDiscovery, deskReading } = await import('./review-desk.server')
+  const { bodyRequestSchema, inboxDiscoveryRequestSchema, inboxRefreshRequestSchema } =
+    await import('./live-inbox')
+  const { deskDiscovery, deskReading, deskRefresh } = await import('./review-desk.server')
   const { sparkInbox } = await import('./spark-inbox.server')
   return {
     getLiveInbox: () => (spark.unreachable ? lost() : deskReading()),
@@ -78,6 +79,8 @@ vi.mock('./live-inbox.functions', async () => {
       spark.unreachable
         ? lost()
         : deskDiscovery(inboxDiscoveryRequestSchema.parse(data), undefined),
+    refreshLiveInbox: ({ data }: { data: unknown }) =>
+      spark.unreachable ? lost() : deskRefresh(inboxRefreshRequestSchema.parse(data), undefined),
     getLiveBody: ({ data, signal }: { data: unknown; signal: AbortSignal }) =>
       spark.unreachable ? lost() : sparkInbox().body(bodyRequestSchema.parse(data), { signal }),
   }
@@ -283,6 +286,43 @@ describe('ReviewDesk.search', () => {
     spark.unreachable = true
 
     await expect(ReviewDesk.search({ view: 'unread', query: 'shared' })).resolves.toEqual({
+      status: 'unavailable',
+      reason: 'unreachable',
+    })
+    expect(spark.run).not.toHaveBeenCalled()
+  })
+})
+
+describe('ReviewDesk.refresh', () => {
+  it('re-reads the loaded window without a thread or Jev call', async () => {
+    const opened = await ReviewDesk.open()
+    if (opened.status !== 'ready') throw new Error('Expected reading')
+    spark.run.mockClear()
+    spark.run.mockImplementation(
+      answerSpark({
+        ...aliased,
+        emails: {
+          [one]: [['12', sender, '2026-09-22 08:00', 'Only in one']],
+          [two]: [['11', sender, '2026-09-22 09:15', 'Shared subject']],
+        },
+      }),
+    )
+
+    const result = await ReviewDesk.refresh({ view: 'unread' })
+    if (result.status !== 'ready') throw new Error('Expected refresh')
+
+    expect(result.refresh).toMatchObject({ added: 0, removed: 1, updated: 0 })
+    expect(result.messages.map((message) => message.id)).toEqual([copy(two, '11'), copy(one, '12')])
+    expect(commands().filter((command) => command === 'emails')).toHaveLength(2)
+    expect(threadIds()).toEqual([])
+    expect(jev.createSdkTransport).not.toHaveBeenCalled()
+    expect(jev.createJevClassifier).not.toHaveBeenCalled()
+  })
+
+  it('reports an unreachable app server without starting Spark', async () => {
+    spark.unreachable = true
+
+    await expect(ReviewDesk.refresh({ view: 'unread' })).resolves.toEqual({
       status: 'unavailable',
       reason: 'unreachable',
     })

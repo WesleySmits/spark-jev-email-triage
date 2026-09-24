@@ -32,10 +32,14 @@ import type {
   InboxDiscoveryRequest,
   InboxDiscoveryScope,
   InboxListRequest,
+  InboxRefresh,
+  InboxRefreshRequest,
+  InboxRefreshSummary,
   InboxScope,
   InboxView,
   LiveInbox,
   MailboxFailure,
+  MailboxRefresh,
 } from './live-inbox'
 
 type Listing = z.infer<typeof emailListingSchema>
@@ -85,6 +89,7 @@ interface ReadingProgress {
   readable: number
   mailboxes: ShownMailbox[]
   progress: Map<string, MailboxProgress>
+  lastReadAt?: Date | undefined
 }
 
 /**
@@ -151,30 +156,12 @@ export function createLiveInbox({
       )
       const at = now()
       current.cursor = randomUUID()
+      current.lastReadAt = at
       reading = current
       const listed = listedFrom(current)
       const messages = summariesOf(unique(listed), current.view, at, format)
       if (read === reads) offered = new Set(messages.map((message) => message.id))
-      const failed = failuresOf(current, 'failed')
-      const incomplete = failuresOf(current, 'incomplete')
-      const scope = scopeOf({
-        mailboxes: current.mailboxes,
-        messages,
-        readable: current.readable,
-        view: current.view,
-        pages: current.pages,
-        cursor: current.cursor,
-        atLimit: new Map(
-          current.mailboxes.map((mailbox) => [
-            mailbox.id,
-            current.progress.get(mailbox.id)?.bounded ?? false,
-          ]),
-        ),
-        failed,
-        incomplete,
-        at,
-        format,
-      })
+      const scope = readingScope(current, messages, at, format)
       return { status: 'ready', scope, mailboxes: current.mailboxes, messages }
     } catch (error) {
       return { status: 'unavailable', reason: reasonFor(error) }
@@ -261,7 +248,41 @@ export function createLiveInbox({
     return result
   }
 
-  return { list, search, body } as const
+  /** Re-reads the current view's loaded page depth, never beyond it. */
+  const refresh = async (
+    request: InboxRefreshRequest,
+    options?: ReadOptions,
+  ): Promise<InboxRefresh> => {
+    const read = ++reads
+    offered = new Set()
+    discovery = undefined
+    try {
+      const before = reading?.view === request.view ? cloneReading(reading) : undefined
+      const current = await refreshReading(reader, request.view, before, options)
+      current.pages = completedPages(current)
+      const at = now()
+      current.cursor = randomUUID()
+      current.lastReadAt = at
+      const listed = unique(listedFrom(current))
+      const messages = summariesOf(listed, current.view, at, format)
+      const scope = readingScope(current, messages, at, format)
+      if (read === reads) {
+        reading = current
+        offered = new Set(messages.map((message) => message.id))
+      }
+      return {
+        status: 'ready',
+        scope,
+        mailboxes: current.mailboxes,
+        messages,
+        refresh: refreshSummary(before, current, at, format),
+      }
+    } catch (error) {
+      return { status: 'unavailable', reason: reasonFor(error) }
+    }
+  }
+
+  return { list, search, refresh, body } as const
 }
 
 type DiscoveryProgress = ReadingProgress & { query: string }
@@ -294,6 +315,111 @@ async function selectDiscovery(
 
 const completedPages = (reading: ReadingProgress) =>
   Math.max(1, ...[...reading.progress.values()].map((progress) => progress.nextPage - 1))
+
+async function refreshReading(
+  reader: MailReader,
+  view: InboxView,
+  before: ReadingProgress | undefined,
+  options?: ReadOptions,
+) {
+  const current = await startReading(reader, view, options)
+  for (const mailbox of current.mailboxes) {
+    const progress = current.progress.get(mailbox.id)
+    if (!progress) continue
+    const previous = before?.progress.get(mailbox.id)
+    const pages = Math.max(1, (previous?.nextPage ?? 2) - 1)
+    for (let page = 0; page < pages && progress.bounded && !progress.failed; page += 1) {
+      await advanceMailbox(reader, view, mailbox.id, progress, options)
+    }
+  }
+  return current
+}
+
+const listedId = ({ listing, mailbox }: Listed) =>
+  mailboxCopyId({ mailboxId: mailbox.id, messageId: listing.messageId })
+
+function changesBetween(before: readonly Listed[], after: readonly Listed[]) {
+  const previous = new Map(before.map((row) => [listedId(row), row.listing]))
+  const current = new Map(after.map((row) => [listedId(row), row.listing]))
+  const added = [...current.keys()].filter((id) => !previous.has(id)).length
+  const removed = [...previous.keys()].filter((id) => !current.has(id)).length
+  const updated = [...current].filter(([id, listing]) => {
+    const old = previous.get(id)
+    return old !== undefined && JSON.stringify(old) !== JSON.stringify(listing)
+  }).length
+  return { added, removed, updated } as const
+}
+
+const noKnownChanges = { added: 0, removed: 0, updated: 0 } as const
+
+function refreshStatus(progress: MailboxProgress | undefined): MailboxRefresh['status'] {
+  if (progress?.failed) return 'failed'
+  if (progress?.incomplete) return 'incomplete'
+  return 'refreshed'
+}
+
+function knownMailboxChanges(
+  id: string,
+  reason: MailboxFailure['reason'] | undefined,
+  previous: readonly Listed[],
+  refreshed: readonly Listed[],
+) {
+  // A partial or failed read cannot prove that an absent row left the
+  // mailbox. Only a completely refreshed window contributes change counts.
+  if (reason) return noKnownChanges
+  return changesBetween(
+    previous.filter((row) => row.mailbox.id === id),
+    refreshed.filter((row) => row.mailbox.id === id),
+  )
+}
+
+function mailboxRefresh(
+  mailbox: ShownMailbox,
+  progress: MailboxProgress | undefined,
+  previous: readonly Listed[],
+  refreshed: readonly Listed[],
+  at: Date,
+  format: ReturnType<typeof timeFormats>,
+): MailboxRefresh {
+  const reason = progress?.failed ?? progress?.incomplete
+  return {
+    id: mailbox.id,
+    label: mailbox.label,
+    pages: Math.max(0, (progress?.nextPage ?? 1) - 1),
+    ...knownMailboxChanges(mailbox.id, reason, previous, refreshed),
+    status: refreshStatus(progress),
+    ...(reason && { reason }),
+    ...(!progress?.failed && { readAt: format.clock(at), refreshedAt: at.toISOString() }),
+  }
+}
+
+function refreshSummary(
+  before: ReadingProgress | undefined,
+  current: ReadingProgress,
+  at: Date,
+  format: ReturnType<typeof timeFormats>,
+): InboxRefreshSummary {
+  const previous = before ? unique(listedFrom(before)) : []
+  const refreshed = unique(listedFrom(current))
+  const mailboxes = current.mailboxes.map((mailbox) =>
+    mailboxRefresh(mailbox, current.progress.get(mailbox.id), previous, refreshed, at, format),
+  )
+  const changes = mailboxes.reduce(
+    (total, mailbox) => ({
+      added: total.added + mailbox.added,
+      removed: total.removed + mailbox.removed,
+      updated: total.updated + mailbox.updated,
+    }),
+    { added: 0, removed: 0, updated: 0 },
+  )
+  return {
+    mailboxes,
+    ...changes,
+    ...(before?.lastReadAt && { previousReadAt: before.lastReadAt.toISOString() }),
+    readAt: format.clock(at),
+    refreshedAt: at.toISOString(),
+  }
+}
 
 function matchesQuery(listing: Listing, query: string) {
   const needle = query.trim().toLowerCase()
@@ -527,6 +653,38 @@ function evidence(verify: LiveInboxOptions['verify'], observed: ObservedThread) 
 
 const markerAt = (index: number): Marker => markers[index % markers.length] ?? 'studio'
 
+function readingScope(
+  current: ReadingProgress,
+  messages: readonly InboxSummary[],
+  at: Date,
+  format: ReturnType<typeof timeFormats>,
+) {
+  return scopeOf({
+    mailboxes: current.mailboxes,
+    messages,
+    readable: current.readable,
+    view: current.view,
+    pages: current.pages,
+    cursor: current.cursor,
+    atLimit: new Map(
+      current.mailboxes.map((mailbox) => [
+        mailbox.id,
+        current.progress.get(mailbox.id)?.bounded ?? false,
+      ]),
+    ),
+    pageDepth: new Map(
+      current.mailboxes.map((mailbox) => [
+        mailbox.id,
+        Math.max(0, (current.progress.get(mailbox.id)?.nextPage ?? 1) - 1),
+      ]),
+    ),
+    failed: failuresOf(current, 'failed'),
+    incomplete: failuresOf(current, 'incomplete'),
+    at,
+    format,
+  })
+}
+
 type ScopeInput = Readonly<{
   mailboxes: readonly ShownMailbox[]
   messages: readonly InboxSummary[]
@@ -537,6 +695,8 @@ type ScopeInput = Readonly<{
   cursor: string
   /** Per mailbox: whether its listing came back at the per-mailbox bound. */
   atLimit: ReadonlyMap<string, boolean>
+  /** Completed pages retained per mailbox. */
+  pageDepth: ReadonlyMap<string, number>
   /** The listed mailboxes whose listing failed, so they hold no rows here. */
   failed: readonly MailboxFailure[]
   incomplete: readonly MailboxFailure[]
@@ -562,6 +722,7 @@ function scopeOf({
   pages,
   cursor,
   atLimit,
+  pageDepth,
   failed,
   incomplete,
   at,
@@ -571,6 +732,7 @@ function scopeOf({
     id: mailbox.id,
     label: mailbox.label,
     loaded: messages.filter((message) => message.mailbox === mailbox.id).length,
+    pages: pageDepth.get(mailbox.id) ?? 0,
     bounded: atLimit.get(mailbox.id) ?? false,
   }))
   return {
