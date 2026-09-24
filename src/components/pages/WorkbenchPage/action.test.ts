@@ -63,7 +63,7 @@ const targetOf = (mailboxId: string) => ({
 
 const proposalOf = (mailboxIds: readonly string[]): MailboxActionProposal =>
   proposeMailboxAction({
-    kind: 'archive',
+    kind: 'markAsSeen',
     targets: mailboxIds.map(targetOf),
     basis: { classification: subjectOf(studio) },
     proposedAt: judgedAt,
@@ -354,7 +354,7 @@ describe('actionEffect', () => {
   it('names the copies it would ask for, by their ids, and nothing else', () => {
     const effect = actionEffect(held([studio]), labelOf)
 
-    expect(effect.statement).toContain('archive the copy named above, and nothing else')
+    expect(effect.statement).toContain('mark only the copy named above as read')
     expect(effect.statement).toContain(`Studio Noord (${studio} · message 11)`)
     expect(effect.statement).not.toContain(alias)
   })
@@ -370,12 +370,12 @@ describe('actionEffect', () => {
   it('claims nothing about what a provider would do, or about the thread', () => {
     const { statement, note } = actionEffect(held([studio]), labelOf)
 
-    expect(note).toContain('not verified here')
-    expect(note).toContain('whether it would touch anything else in the thread')
-    expect(note).toContain('Nothing has been asked, nothing can be')
+    expect(note).toContain('target these exact mailbox copies')
+    expect(note).toContain('effect on the rest of the thread is also unverified')
+    expect(note).toContain('No live write is connected')
     // It describes a request nobody has made, never something that happened.
-    expect(`${statement} ${note}`).not.toMatch(/was archived|has been archived|archived\./i)
-    expect(statement).toMatch(/^If this were ever carried out/)
+    expect(`${statement} ${note}`).not.toMatch(/was marked as read|has been marked as read/i)
+    expect(statement).toMatch(/^The intended effect is/)
   })
 })
 

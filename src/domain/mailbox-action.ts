@@ -14,9 +14,9 @@
  *   provider is told about it. An approval of a proposal whose targets have
  *   moved on is refused, and one that had been given stops holding.
  * - Execution has no ready form here. `ExecutionStanding` is always
- *   `blocked`, because `write_adapter_connected` is a precondition nothing
- *   in this build can meet, so no code path can read as a mailbox action
- *   that was carried out.
+ *   `blocked`, because no live Spark write adapter is connected. The separate
+ *   guarded executor can exercise a fake provider in tests; this domain
+ *   standing never reports a live mailbox action as carried out.
  *
  * Invariants:
  * - A target is one mailbox copy, identified by mailbox and provider message
@@ -47,13 +47,11 @@ import { judgedSubjectSchema } from './stored-classification'
 const id = z.string().trim().min(1)
 
 /**
- * What a proposal would ask a provider to do. `archive` is the one kind this
- * build models, as an illustration of a proposal: it authorizes no provider
- * to do anything, nothing here can perform it, and which action a later
- * build may actually be permitted is not decided by this list. Kinds are
- * added when something is allowed to ask for them, not before.
+ * The only action currently proposed. The separately guarded executor can
+ * mark one exact copy as seen through a scoped provider port; no live Spark
+ * write adapter is connected.
  */
-const mailboxActionKindSchema = z.enum(['archive'])
+const mailboxActionKindSchema = z.enum(['markAsSeen'])
 
 export type MailboxActionKind = z.infer<typeof mailboxActionKindSchema>
 
@@ -115,13 +113,27 @@ export const proposeMailboxAction = (
   proposal: z.input<typeof mailboxActionProposalSchema>,
 ): MailboxActionProposal => mailboxActionProposalSchema.parse(proposal)
 
+/** Parse untrusted execution input without passing malformed data to a provider. */
+export const parseMailboxActionProposal = (value: unknown): MailboxActionProposal | null =>
+  mailboxActionProposalSchema.safeParse(value).data ?? null
+
+const basisId = (basis: MailboxActionProposal['basis']) => {
+  if (basis === null) return null
+  const { copy, threadId, latestMessageId, rubric, classifierVersion } = basis.classification
+  return [mailboxCopyId(copy), threadId, latestMessageId, rubric, classifierVersion]
+}
+
 /**
- * The exact proposal, as one comparable value: what would be done and to
- * which versions of which copies. An approval names this, so an approval
- * never travels to another proposal or to another version of this one.
+ * The exact proposal, including its classification basis and creation time.
+ * An approval never travels to another version or another basis.
  */
 export const proposalId = (proposal: MailboxActionProposal) =>
-  JSON.stringify([proposal.kind, proposal.targets.map(targetId).sort()])
+  JSON.stringify([
+    proposal.kind,
+    proposal.targets.map(targetId).sort(),
+    basisId(proposal.basis),
+    proposal.proposedAt,
+  ])
 
 /**
  * What must hold before this action could be carried out, each one named:
@@ -231,10 +243,14 @@ const actionApprovalSchema = z.strictObject({
 
 export type ActionApproval = Readonly<z.infer<typeof actionApprovalSchema>>
 
+/** Parse untrusted approval data before checking its exact proposal identity. */
+export const parseActionApproval = (value: unknown): ActionApproval | null =>
+  actionApprovalSchema.safeParse(value).data ?? null
+
 /**
  * One person's approval of one exact proposal. It is a decision about this
- * proposal and nothing else: it permits no provider anything, and nothing
- * here or downstream can carry the action out.
+ * proposal and nothing else: it permits no provider anything by itself.
+ * The live workbench has no Spark write adapter.
  */
 export const approveProposal = (
   proposal: MailboxActionProposal,

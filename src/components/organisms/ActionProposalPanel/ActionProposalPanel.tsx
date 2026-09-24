@@ -104,7 +104,7 @@ const subheadings = { 2: 'h3', 3: 'h4', 4: 'h5' } as const
  *   title="Mailbox action"
  *   summary="Proposed here, approved by you, and never carried out."
  *   stages={[
- *     { id: 'proposal', name: 'Proposal', state: { label: 'Proposed', tone: 'review' }, detail: 'Archive, against the copy named below.' },
+ *     { id: 'proposal', name: 'Proposal', state: { label: 'Proposed', tone: 'review' }, detail: 'Mark as read, against the copy named below.' },
  *     { id: 'approval', name: 'Approval', state: { label: 'Waiting for you', tone: 'review' }, detail: 'Approving records your decision here.' },
  *     { id: 'execution', name: 'Execution', state: { label: 'Blocked', tone: 'neutral' }, detail: 'Nothing here can change a mailbox.' },
  *   ]}
@@ -112,7 +112,7 @@ const subheadings = { 2: 'h3', 3: 'h4', 4: 'h5' } as const
  *   targets={[{ id: 'c1', label: 'Studio Noord', identity: 'studio@mail.example · message 11', detail: 'Thread t-11, latest message 11.' }]}
  *   targetsNote="No other copy of this message is included."
  *   targetsEmpty="Nothing is proposed, so no copy is named."
- *   effect={{ title: 'What it would change', statement: 'Archive would be asked for that one copy.', note: 'Not verified, and nothing has been changed.' }}
+ *   effect={{ title: 'What it would change', statement: 'The intended effect is to mark that one copy as read.', note: 'Provider scope is not verified, and nothing has been changed.' }}
  *   preconditionsTitle="Before anything could run"
  *   preconditions={[{ id: 'p1', label: 'A person approved it', state: { label: 'Not met', tone: 'neutral' } }]}
  *   actions={[{ id: 'approve', label: 'Approve', onClick: approve }]}
