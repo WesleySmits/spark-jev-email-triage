@@ -13,13 +13,13 @@
  *
  * - The mail is named, never copied. An entry carries the fixture's name and
  *   the digest of the thread it was measured against, and the mail itself
- *   stays in `src/domain/fixtures.ts` where a person already reviewed it. So
+ *   stays in the repository's evaluation fixtures where a reviewer read it. So
  *   no subject, address, body or attachment can travel in a snapshot, and a
  *   replay still fails loudly when the labelled thread has changed since:
  *   the digest is recomputed from the thread this build holds and compared
  *   with the one the run measured.
  * - The expectation the run was measured against travels as its labels: the
- *   category, the priority and the handling a person settled on, and none of
+ *   category, the priority and the handling a reviewer settled on, and none of
  *   the prose that argued for them. A run is a comparison, so pinning only
  *   the mail pins half of it. Reading a case again and correcting its labels
  *   is an ordinary outcome here — two of the cases in the set began that way
@@ -76,7 +76,7 @@ const handlings = [
 
 /**
  * The labels the run was measured against: what the figures compare a
- * judgment with, and nothing else. The argument a person wrote for them is
+ * judgment with, and nothing else. The argument a reviewer wrote for them is
  * prose about mail and stays in `reviewed-set.ts`.
  */
 const expectationSchema = z.strictObject({
@@ -255,8 +255,8 @@ const expectedLabels = ({ category, priority, handling }: ReviewedExpectation) =
 
 /**
  * Whether a case still expects what it expected when the run was made. Every
- * label counts, including a priority no figure reads today: an expectation
- * is one judgment a person settled on, and a run measured against one
+ * label counts, including priority: an expectation is one judgment a
+ * reviewer settled on, and a run measured against one
  * version of it was not measured against the next.
  */
 const sameLabels = (

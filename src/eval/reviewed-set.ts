@@ -1,12 +1,12 @@
 /**
- * The reviewed evaluation set: sanitized threads with the outcome a person
+ * The reviewed evaluation set: sanitized threads with the outcome a reviewer
  * expects for each, read against `defaultRubric`.
  *
- * Every case was first proposed by Claude Opus 5, running in T3 Code, from
- * the mail and the rubric alone, and then read by Wesley Smits, who kept or
- * corrected it. `curation` on each case records both sides of that, so who
- * stands behind an expectation stays legible and no reading is claimed that
- * did not happen.
+ * Every case is written from the mail and then read against the rubric by a
+ * named reviewer. The original set was proposed by Claude Opus 5 and read by
+ * Wesley Smits. Feature 8 additions were proposed and reviewed in separate
+ * passes by Codex; their curation says so rather than claiming human review
+ * that has not happened. `curation` keeps that distinction legible.
  *
  * Invariants:
  * - Every expectation is written from the mail. Nothing here is a classifier
@@ -27,11 +27,11 @@
  *   states the provenance and privacy rules a later case must meet.
  */
 import { threadSchema } from '../domain/email'
-import { syntheticThreads } from '../domain/fixtures'
 import type { categorySchema, prioritySchema, rubricSchema } from '../domain/triage'
+import { evaluationThreads } from './fixtures'
 import type { z } from 'zod'
 
-type FixtureName = keyof typeof syntheticThreads
+type FixtureName = keyof typeof evaluationThreads
 type Category = z.infer<typeof categorySchema>
 type Priority = z.infer<typeof prioritySchema>
 
@@ -46,17 +46,18 @@ export interface FixtureProvenance {
   note: string
 }
 
-/** Who stands behind an expectation, and whether a person does yet. */
+/** Who stands behind an expectation, and whether a reviewer does yet. */
 export interface Curation {
-  /** `proposed` until a person reads the case and settles the labels. */
+  /** `proposed` until a reviewer reads the case and settles the labels. */
   state: 'proposed' | 'confirmed'
-  /** Who wrote the labels first: an assistant and its harness, or a person. */
+  /** Who wrote the labels first: an assistant and its harness, or a human. */
   proposedBy: string
   /** The day that proposal was written. This is not a review date. */
   proposedOn: string
-  /** The person who read the case, and the day. `null` while proposed. */
+  /** Who read the case, what kind of reviewer they were, and the day. */
   confirmedBy: string | null
   confirmedOn: string | null
+  reviewerKind: 'human' | 'assistant' | null
   /** Whether that person changed the proposal rather than keeping it. */
   changedOnReview: boolean
 }
@@ -125,11 +126,23 @@ const kept: Curation = {
   proposedOn: '2026-09-23',
   confirmedBy: reviewer,
   confirmedOn: reviewedOn,
+  reviewerKind: 'human',
   changedOnReview: false,
 }
 
 /** The same, except that the reviewer changed what was proposed. */
 const corrected: Curation = { ...kept, changedOnReview: true }
+
+/** Proposed and reviewed in separate passes while implementing Feature 8. */
+const featureEightReview: Curation = {
+  state: 'confirmed',
+  proposedBy: 'Codex (T3 Code, implementation pass)',
+  proposedOn: '2026-09-24',
+  confirmedBy: 'Codex (T3 Code, review pass)',
+  confirmedOn: '2026-09-24',
+  reviewerKind: 'assistant',
+  changedOnReview: false,
+}
 
 const invented: FixtureProvenance = {
   origin: 'invented',
@@ -161,6 +174,26 @@ export const reviewedCases: readonly ReviewedCase[] = [
     provenance: invented,
   },
   {
+    fixture: 'personalDinner',
+    writtenAgainst: {
+      subject: 'Dinner next Thursday?',
+      latestMessageId: 'msg-personal-dinner',
+      threadDigest: 'b98225bcfbb755d7',
+      rubricId,
+    },
+    expectation: {
+      category: 'personal',
+      priority: 'normal',
+      handling: 'may_auto_label',
+      rationale:
+        'A friend asks a direct social question, so this is personal mail. The sender explicitly ' +
+        'allows the owner to answer after checking their calendar, which makes it worth a reply ' +
+        'without establishing a deadline within the next day or two.',
+    },
+    curation: featureEightReview,
+    provenance: invented,
+  },
+  {
     fixture: 'invoice',
     writtenAgainst: {
       subject: 'Invoice INV-0001 for January',
@@ -177,6 +210,26 @@ export const reviewedCases: readonly ReviewedCase[] = [
         'it is worth handling without any pressure today.',
     },
     curation: kept,
+    provenance: invented,
+  },
+  {
+    fixture: 'invoiceDueToday',
+    writtenAgainst: {
+      subject: 'Invoice EX-204 is due today',
+      latestMessageId: 'msg-invoice-due-today',
+      threadDigest: 'dd9e0b2773fdf119',
+      rubricId,
+    },
+    expectation: {
+      category: 'purchase',
+      priority: 'urgent',
+      handling: 'may_auto_label',
+      rationale:
+        'A vendor sends an invoice and names a payment deadline today. That is purchase mail, ' +
+        'and the same-day obligation makes the priority urgent without making the category ' +
+        'ambiguous or requiring a person merely to apply the label.',
+    },
+    curation: featureEightReview,
     provenance: invented,
   },
   {
@@ -238,6 +291,26 @@ export const reviewedCases: readonly ReviewedCase[] = [
     provenance: invented,
   },
   {
+    fixture: 'securityIncident',
+    writtenAgainst: {
+      subject: 'Password changed without confirmation',
+      latestMessageId: 'msg-security-incident',
+      threadDigest: '1676d461ef07f548',
+      rubricId,
+    },
+    expectation: {
+      category: 'security',
+      priority: 'urgent',
+      handling: 'may_auto_label',
+      rationale:
+        'A genuine account service confirms an unauthorized password change and suspended ' +
+        'access. This is a security incident that needs action within hours; the clear sender ' +
+        'and account-state facts still allow the labels themselves to be applied automatically.',
+    },
+    curation: featureEightReview,
+    provenance: invented,
+  },
+  {
     fixture: 'newsletter',
     writtenAgainst: {
       subject: 'Product updates for January',
@@ -259,6 +332,87 @@ export const reviewedCases: readonly ReviewedCase[] = [
         'information in the set.',
     },
     curation: corrected,
+    provenance: invented,
+  },
+  {
+    fixture: 'subscribedNewsletter',
+    writtenAgainst: {
+      subject: 'February field notes',
+      latestMessageId: 'msg-subscribed-newsletter',
+      threadDigest: '7f3a74323ccddef2',
+      rubricId,
+    },
+    expectation: {
+      category: 'newsletter',
+      priority: 'low',
+      handling: 'may_auto_label',
+      rationale:
+        'The publication explicitly says this is the recurring editorial mail the owner ' +
+        'subscribed to. It asks for no action and carries no deadline, so newsletter and low ' +
+        'priority are both supported without human context.',
+    },
+    curation: featureEightReview,
+    provenance: invented,
+  },
+  {
+    fixture: 'aliasNoticePersonal',
+    writtenAgainst: {
+      subject: 'Planned maintenance on Saturday',
+      latestMessageId: 'msg-alias-notice',
+      threadDigest: '0a9fa9db895257d0',
+      rubricId,
+    },
+    expectation: {
+      category: 'notification',
+      priority: 'low',
+      handling: 'may_auto_label',
+      rationale:
+        'A service announces planned maintenance and explicitly asks for no action. This copy ' +
+        'is visible as a copy in the personal mailbox and is evaluated independently rather ' +
+        'than being merged with the same alias delivery visible in another mailbox.',
+    },
+    curation: featureEightReview,
+    provenance: invented,
+  },
+  {
+    fixture: 'aliasNoticeTeam',
+    writtenAgainst: {
+      subject: 'Planned maintenance on Saturday',
+      latestMessageId: 'msg-alias-notice',
+      threadDigest: 'ac322794a464a745',
+      rubricId,
+    },
+    expectation: {
+      category: 'notification',
+      priority: 'low',
+      handling: 'may_auto_label',
+      rationale:
+        'The same alias delivery is also visible as a copy in the team mailbox. Its shared ' +
+        'provider message id, recipient and text do not erase this mailbox copy; the mailbox ' +
+        'remains part of the independently reviewed fixture.',
+    },
+    curation: featureEightReview,
+    provenance: invented,
+  },
+  {
+    fixture: 'uncertainPriority',
+    writtenAgainst: {
+      subject: 'Could you review this when possible?',
+      latestMessageId: 'msg-uncertain-priority',
+      threadDigest: '505d4a6432719d72',
+      rubricId,
+    },
+    expectation: {
+      category: 'personal',
+      priority: 'normal',
+      handling: 'may_auto_label',
+      rationale:
+        'A colleague directly asks the owner to review a draft, making the category personal. ' +
+        'The phrases when possible and this week provide no deadline within a day or two, so ' +
+        'normal is the settled priority even though a classifier may be uncertain between ' +
+        'normal and high.',
+    },
+    curation: featureEightReview,
     provenance: invented,
   },
   {
@@ -366,4 +520,4 @@ export const reviewedCases: readonly ReviewedCase[] = [
 
 /** The parsed thread one case was written against. */
 export const reviewedThread = (reviewed: ReviewedCase) =>
-  threadSchema.parse(syntheticThreads[reviewed.fixture])
+  threadSchema.parse(evaluationThreads[reviewed.fixture])

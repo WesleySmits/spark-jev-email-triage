@@ -108,7 +108,7 @@ working Spark integration.
 evaluation set. It calls the TypeSafe API, needs `TYPESAFE_API_KEY`, reports
 itself blocked without it, and is never part of `pnpm test` or CI. It reports
 what each case expects beside what policy did, and then the quality report
-counted from the same answers: category quality, the review rate policy
+counted from the same answers: category and priority quality, the review load policy
 produces beside the one the set expects, calibration and the
 provider-failure rate, split by rubric and classifier build. A provider
 failure is no judgment and counts in no quality figure. Latency is the wall
@@ -403,7 +403,7 @@ pnpm readback:spark                      # whether Spark answers on this host
   authorizes a mailbox action, and only the shadow command calls it.
 - `src/eval/reviewed-set.ts` is the reviewed evaluation set: the invented,
   sanitized threads triage is measured against, each with the category,
-  priority, handling and the argument for them that a person settled on
+  priority, handling and the argument for them that a named reviewer settled on
   against the rubric. It covers ambiguous, suspicious, personal, purchase and
   notification mail among the rest. An assistant proposed every case and a
   named person then read all of them, keeping most and correcting two; each
@@ -419,7 +419,7 @@ pnpm readback:spark                      # whether Spark answers on this host
   provenance and privacy rules, including what sanitizing a real message
   would require.
 - `src/eval/quality-report.ts` counts what one run of that set says about
-  triage quality — category quality, the review rate beside the set's own,
+  triage quality — category and priority quality, the review load beside the set's own,
   calibration and the provider-failure rate — split by rubric and by the
   pinned classifier build, and `quality-report-text.ts` renders it. It is a
   pure function of the answers it is handed, and the judged rows are put in
