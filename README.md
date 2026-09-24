@@ -32,13 +32,11 @@ or `/health` response does not prove Spark readiness. See
 
 ## Setup
 
-Requires Node.js 24 and pnpm 12.5.1 (pinned in `packageManager`).
-
-```sh
-corepack enable
-pnpm install --frozen-lockfile
-pnpm dev
-```
+For live mail, follow the [supported local start procedure](docs/runbook.md#supported-local-start-procedure):
+Node.js 24, pnpm 12.5.1, and the Spark Desktop CLI on the same Mac and in the
+same logged-in user session as Spark. The procedure checks provider readiness
+before starting the app on loopback. Linux/container builds do not provide a
+working Spark integration.
 
 `pnpm install` installs the Git hooks.
 
@@ -371,7 +369,7 @@ pnpm readback:spark                      # whether Spark answers on this host
   back to a known commit. It is not a Spark check.
 - `pnpm readback:spark` is the live Spark check, deliberately apart from
   health: one read-only `spark accounts` call through the app's own probe,
-  one line of output, and no address, subject, count or body. It speaks for
+  a status line plus fixed recovery guidance on failure, and no address, subject, count or body. It speaks for
   the host it ran on and says so, so a deployment's connectivity is only what
   that deployment's own runtime answered; where the probe cannot run there,
   `docs/runbook.md` has it reported as blocked rather than as ready.

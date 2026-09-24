@@ -8,6 +8,102 @@ a merge says nothing about what is deployed, a healthy deployment says
 nothing about whether Spark answers, and a Spark that answers on one host
 says nothing about which code asked it or about any other host.
 
+## Supported local start procedure
+
+Run the app natively on the Mac running Spark Desktop, from a terminal in
+that same logged-in macOS user session. Spark Desktop must be open and
+signed in, and its `spark` CLI must be installed/enabled and executable on
+that terminal's `PATH`. This is the local runtime the adapter is designed
+for: it uses Spark's local IPC and the Mac's time zone. A different user,
+SSH session, Linux host or container is not an equivalent verified runtime.
+The repository does not pin a tested Spark Desktop/CLI version. Record the
+installed versions and a successful readback on the intended Mac before
+claiming live compatibility; Linux mock tests cannot establish that result.
+
+1. Install Node.js 24 (see `.nvmrc`) and Corepack. Open Spark Desktop and
+   enable/install its CLI using the instructions supplied with that Spark
+   installation. `command -v spark` must find the Spark Desktop executable,
+   not an unrelated program or only a shell alias. Reopen the terminal if
+   the installation changed `PATH`.
+2. In the repository root, in that same terminal, install the pinned pnpm
+   dependencies and run the content-free provider check:
+
+   ```sh
+   corepack enable
+   pnpm --version                         # 12.5.1, from packageManager
+   pnpm install --frozen-lockfile
+   pnpm readback:spark
+   ```
+
+   Continue when it prints `spark on this host: ready` and exits zero. It
+   invokes only `spark accounts`, discards the result, and reads no message
+   body or model. An empty account listing can also be ready: check the
+   signed-in accounts in Spark if the inbox is empty. Do not paste raw
+   `spark accounts` output into an issue.
+
+3. Start the web process from that terminal, bound explicitly to loopback:
+
+   ```sh
+   APP_COMMIT_SHA="$(git rev-parse HEAD)" pnpm dev --host 127.0.0.1 --strictPort
+   ```
+
+   Open `http://127.0.0.1:3000`. Port 3000 must be free; stop the conflicting
+   process or deliberately choose another local port. The app reads real
+   mail when opened, but loading it neither classifies nor changes a mailbox.
+   Stop the web process with Ctrl-C. Keep Spark open while using the app.
+
+4. In another terminal on the same Mac, distinguish the two checks:
+
+   ```sh
+   curl -fsS http://127.0.0.1:3000/health
+   pnpm readback:spark
+   ```
+
+   `/health` shows that the web handler answers and reports the configured
+   commit. Only readback tests provider account discovery; neither checks
+   review storage or Jev. The app retries readiness while Spark is away.
+
+No API key or database is needed to read the inbox. An absent default
+`.data/shadow-triage.sqlite` means there are no stored classifications.
+To use existing judgments/reviews, set `SHADOW_DATABASE_PATH` in the terminal
+that starts the app to the same local file selected by the shadow CLI's
+`--db`. Relative paths resolve from the repository working directory. The
+file must be a readable schema-3 database, and saving a review also needs
+write access to it and its directory. An unreadable/unsupported store is
+shown as unavailable, separately from Spark readiness. Follow the upgrade
+section for an old database; do not run classification merely to start or
+repair the app. `TYPESAFE_API_KEY` is only needed for an explicitly requested
+Jev classification run, not this start procedure.
+
+### Recovering a failed local check
+
+Readback exits `1` for unavailable and prints fixed guidance without provider
+errors, account names, environment values or secrets. Invalid command
+options exit `64` before constructing a reader. Retry after the corresponding
+repair:
+
+| Reason          | Meaning and recovery                                                                                                                                                                                                          |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `missing`       | The process could not find `spark`. Install/enable Spark Desktop's CLI and fix the terminal's `PATH`; restart the app after changing its environment.                                                                         |
+| `failed`        | Spark exited unsuccessfully, could not be started, timed out, or otherwise failed. Open/sign in to Spark in the same macOS user session, check executable permissions, then retry. This code cannot distinguish those causes. |
+| `malformed`     | Spark answered in a form the adapter cannot parse. Check which executable `PATH` selects and CLI version compatibility. Do not share raw output.                                                                              |
+| `configuration` | Readback could not construct its local reader. Check the system time zone and any `TZ` override, then restart in the Spark session. This is a CLI diagnostic, not a new browser readiness state.                              |
+| `local-only`    | The app refuses a non-loopback caller before probing. Open it directly through `127.0.0.1` on the Spark Mac. The standalone local CLI does not normally produce this reason.                                                  |
+
+Do not fix connectivity with a remote bridge, a forwarded-IP trust change,
+or broader listener/request access. The mail and readiness boundary remains
+loopback-only.
+
+### What the container can run
+
+`Dockerfile.app` packages the generated Node web server in a Linux image.
+It can serve web assets and `/health` with `APP_COMMIT_SHA` set. It does not
+install Spark Desktop or its CLI, include the source-based readback command,
+or connect to the host Mac's Spark session. It is not the supported local
+mail runtime, including when Docker itself runs on a Mac. Publishing its port
+does not make host Spark available or bypass the request loopback checks.
+Storybook's separate container serves component demonstrations, not live mail.
+
 ## Current operational boundary
 
 The root route reads up to ten recent Inbox messages in each of the first
@@ -246,9 +342,10 @@ spark on this host: ready
 ```
 
 It makes one read-only Spark call — `spark accounts` — through the same probe
-the application uses, drops the listing, and prints one line. Exit codes: `0`
+the application uses, drops the listing, and prints a status line plus fixed recovery guidance on failure. Exit codes: `0`
 ready, `1` unavailable, `64` invalid options. A failure prints a coarse
-reason, `missing`, `failed`, `malformed` or `local-only`, and no address,
+reason, `missing`, `failed`, `malformed`, `local-only` or a CLI initialization
+`configuration` failure, and no address,
 count, subject or body. `ready` means account discovery answered; it does
 not prove Inbox/body reads, writable review storage or Jev availability.
 
