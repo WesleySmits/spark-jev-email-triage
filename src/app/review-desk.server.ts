@@ -14,7 +14,12 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { ReadOptions } from '../domain/mail-reader'
-import type { ClassifiedInbox, InboxListRequest } from './live-inbox'
+import type {
+  ClassifiedDiscovery,
+  ClassifiedInbox,
+  InboxDiscoveryRequest,
+  InboxListRequest,
+} from './live-inbox'
 import { sparkInbox } from './spark-inbox.server'
 import { storedRowsFor } from './stored-classifications.server'
 import type { ManualRunSelection } from '../shadow/manual-runs'
@@ -54,4 +59,14 @@ export async function deskReading(
 /** Exact mailbox copies from one recent reading; never re-lists or calls Jev. */
 export function worklistFor(reading: string): readonly ManualRunSelection[] | null {
   return worklists.get(reading) ?? null
+}
+
+/** One controlled metadata search with the stored state of its matching copies. */
+export async function deskDiscovery(
+  request: InboxDiscoveryRequest,
+  options?: ReadOptions,
+): Promise<ClassifiedDiscovery> {
+  const inbox = await sparkInbox().search(request, options)
+  if (inbox.status !== 'ready') return inbox
+  return { ...inbox, reading: randomUUID(), ...storedRowsFor(inbox.messages) }
 }

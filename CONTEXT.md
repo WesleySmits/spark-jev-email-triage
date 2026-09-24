@@ -25,6 +25,14 @@ first-page failure costs only that mailbox's rows; a later failure preserves
 its completed pages. Only failing to discover the mailboxes makes a reading
 unavailable.
 
+`ReviewDesk.search` is a browser-safe discovery contract behind a POST server
+boundary; the root route does not use it until a UI direction is selected. It
+matches only sender and subject metadata from the loaded Spark `emails` pages.
+One opaque continuation adds at most one page per still-bounded mailbox. Its
+scope exposes per-mailbox page depth, unique mailbox copies scanned and
+matched, truncation, bounds, coarse failures and search completion time. It
+does not read bodies, classify, mutate mail or put query text in Spark logs.
+
 The workflow and mailbox filters move into a modal sheet from the top bar
 at 900px and below, so they remain reachable on narrow screens.
 

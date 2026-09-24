@@ -111,7 +111,11 @@ Spark mailbox. A person can request older ten-message pages or switch to the
 same bounded reading of read Inbox mail. One continuation reads at most one
 new page from each mailbox that may still have more; there is no fixed
 application page ceiling and completed pages are not requested again. Filters
-cover only the selected view's loaded rows. A first-page failure costs only
+cover only the selected view's loaded rows. The discovery contract, not yet
+wired into the root UI, searches sender and subject list metadata over those
+pages and can add one page per still-bounded mailbox for each explicit
+continuation. It reports that limited reach and that Spark may truncate listed
+values; it does not read bodies for search. A first-page failure costs only
 that mailbox; completed pages remain visible if a later page fails.
 Opening a row lazily reads its body/thread. Refreshing does not classify.
 

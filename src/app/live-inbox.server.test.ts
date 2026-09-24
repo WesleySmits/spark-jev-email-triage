@@ -5,7 +5,7 @@ import { sparkArguments, type SparkCommand } from '../spark/commands'
 import { SparkError } from '../spark/errors'
 import { accountsOutput, emailsTable, threadText } from '../spark/fixtures'
 import type { SparkTransport } from '../spark/process'
-import { createSparkMailReader } from '../spark/reader'
+import { createSparkMailReader, type SparkLogEntry } from '../spark/reader'
 import { BodyUnavailableError, createLiveInbox, isLoopback, perMailbox } from './live-inbox.server'
 
 // Synthetic mail only: every address uses a reserved `.example` domain.
@@ -863,6 +863,237 @@ describe('createLiveInbox scope', () => {
     expect(result.scope.mailboxes.every((mailbox) => !mailbox.bounded)).toBe(true)
     expect(result.scope.loaded).toBe(7)
     expect(result.scope.readable - result.scope.mailboxes.length).toBe(0)
+  })
+})
+
+describe('createLiveInbox controlled discovery', () => {
+  const fullPage = (mailboxId: string, page: number) =>
+    Array.from({ length: perMailbox }, (_, index) =>
+      listing(mailboxId, String(page * 100 + index + 1), null, {
+        sender: { text: `Routine sender ${String(index)}`, cut: false },
+        subject: { text: `Routine subject ${String(index)}`, cut: false },
+      }),
+    )
+
+  it('searches every already loaded page without reading bodies or repeating pages', async () => {
+    const requests: number[] = []
+    const threads: string[] = []
+    const reader: MailReader = {
+      listMailboxes: () => Promise.resolve([access(one)]),
+      listRecentEmails: ({ page = 1 }) => {
+        requests.push(page)
+        return Promise.resolve(
+          page === 1
+            ? fullPage(one, 1)
+            : [
+                listing(one, '301', null, {
+                  subject: { text: 'Quarterly invoice', cut: false },
+                }),
+              ],
+        )
+      },
+      readThread: ({ messageId }) => {
+        threads.push(messageId)
+        return Promise.resolve(thread([{ id: messageId, bodyText: 'Private body' }], one))
+      },
+    }
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+    const first = await live.list()
+    if (first.status !== 'ready') throw new Error('Expected first page')
+    await live.list(undefined, { view: 'unread', cursor: first.scope.cursor })
+    requests.length = 0
+
+    const result = await live.search({ view: 'unread', query: 'invoice' })
+    if (result.status !== 'ready') throw new Error('Expected discovery')
+
+    expect(requests).toEqual([])
+    expect(threads).toEqual([])
+    expect(result.messages.map((message) => message.messageId)).toEqual(['301'])
+    expect(result.scope).toMatchObject({
+      fields: ['sender', 'subject'],
+      valuesMayBeTruncated: true,
+      pageSize: perMailbox,
+      scanned: perMailbox + 1,
+      matched: 1,
+      bounded: false,
+      mailboxes: [{ id: one, pages: 2, scanned: perMailbox + 1, matched: 1, bounded: false }],
+    })
+  })
+
+  it('advances exactly one page per bounded mailbox and preserves alias copies', async () => {
+    const requests: { mailboxId: string; page: number }[] = []
+    const reader: MailReader = {
+      listMailboxes: () => Promise.resolve([access(one), access(two)]),
+      listRecentEmails: ({ mailboxId, page = 1 }) => {
+        requests.push({ mailboxId, page })
+        if (page === 1) return Promise.resolve(fullPage(mailboxId, page))
+        return Promise.resolve([
+          listing(mailboxId, '9001', null, {
+            subject: { text: 'Project Cedar decision', cut: false },
+          }),
+        ])
+      },
+      readThread: () => Promise.resolve(thread([])),
+    }
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+    await live.list()
+    const first = await live.search({ view: 'unread', query: 'cedar' })
+    if (first.status !== 'ready') throw new Error('Expected discovery')
+    requests.length = 0
+
+    const next = await live.search({
+      view: 'unread',
+      query: 'cedar',
+      cursor: first.scope.cursor,
+    })
+    if (next.status !== 'ready') throw new Error('Expected continued discovery')
+
+    expect(requests).toEqual([
+      { mailboxId: one, page: 2 },
+      { mailboxId: two, page: 2 },
+    ])
+    expect(next.messages.map(({ id, mailbox }) => ({ id, mailbox }))).toEqual([
+      { id: copy(one, '9001'), mailbox: one },
+      { id: copy(two, '9001'), mailbox: two },
+    ])
+    expect(next.scope.matched).toBe(2)
+    expect(next.scope.scanned).toBe(perMailbox * 2 + 2)
+  })
+
+  it('isolates a later-page failure and keeps matches from other mailboxes', async () => {
+    const reader: MailReader = {
+      listMailboxes: () => Promise.resolve([access(one), access(two)]),
+      listRecentEmails: ({ mailboxId, page = 1 }) => {
+        if (page === 1) return Promise.resolve(fullPage(mailboxId, page))
+        if (mailboxId === one) return Promise.reject(new SparkError('timeout'))
+        return Promise.resolve([
+          listing(two, '9002', null, { sender: { text: 'Cedar Studio', cut: false } }),
+        ])
+      },
+      readThread: () => Promise.resolve(thread([])),
+    }
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+    await live.list()
+    const first = await live.search({ view: 'unread', query: 'cedar' })
+    if (first.status !== 'ready') throw new Error('Expected discovery')
+    const next = await live.search({
+      view: 'unread',
+      query: 'cedar',
+      cursor: first.scope.cursor,
+    })
+    if (next.status !== 'ready') throw new Error('Expected partial discovery')
+
+    expect(next.messages.map((message) => message.id)).toEqual([copy(two, '9002')])
+    expect(next.scope.failed).toEqual([])
+    expect(next.scope.incomplete).toEqual([{ id: one, label: one, reason: 'failed' }])
+    expect(next.scope.mailboxes.find((mailbox) => mailbox.id === one)).toMatchObject({
+      pages: 1,
+      scanned: perMailbox,
+      matched: 0,
+      bounded: true,
+    })
+  })
+
+  it('does not advance twice when a discovery cursor is replayed', async () => {
+    const pages: number[] = []
+    const reader: MailReader = {
+      listMailboxes: () => Promise.resolve([access(one)]),
+      listRecentEmails: ({ page = 1 }) => {
+        pages.push(page)
+        return Promise.resolve(fullPage(one, page))
+      },
+      readThread: () => Promise.resolve(thread([])),
+    }
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+    await live.list()
+    const first = await live.search({ view: 'unread', query: 'routine' })
+    if (first.status !== 'ready') throw new Error('Expected discovery')
+    const cursor = first.scope.cursor
+    await live.search({ view: 'unread', query: 'routine', cursor })
+    await live.search({ view: 'unread', query: 'routine', cursor })
+
+    expect(pages).toEqual([1, 2])
+  })
+
+  it('does not continue an older discovery after a fresh inbox reading', async () => {
+    const pages: number[] = []
+    const reader: MailReader = {
+      listMailboxes: () => Promise.resolve([access(one)]),
+      listRecentEmails: ({ page = 1 }) => {
+        pages.push(page)
+        return Promise.resolve(fullPage(one, page))
+      },
+      readThread: () => Promise.resolve(thread([])),
+    }
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+    await live.list()
+    const discovery = await live.search({ view: 'unread', query: 'routine' })
+    if (discovery.status !== 'ready') throw new Error('Expected discovery')
+    await live.list()
+    pages.length = 0
+
+    await live.search({
+      view: 'unread',
+      query: 'routine',
+      cursor: discovery.scope.cursor,
+    })
+
+    expect(pages).toEqual([])
+  })
+
+  it('counts one mailbox copy once when shifting pages repeat it', async () => {
+    const repeated = listing(one, '199', null, {
+      subject: { text: 'Cedar repeated at a page boundary', cut: false },
+    })
+    const reader: MailReader = {
+      listMailboxes: () => Promise.resolve([access(one)]),
+      listRecentEmails: ({ page = 1 }) =>
+        Promise.resolve(
+          page === 1
+            ? [...fullPage(one, 1).slice(0, perMailbox - 1), repeated]
+            : [repeated, listing(one, '301', null)],
+        ),
+      readThread: () => Promise.resolve(thread([])),
+    }
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+    await live.list()
+    const first = await live.search({ view: 'unread', query: 'cedar' })
+    if (first.status !== 'ready') throw new Error('Expected discovery')
+    const next = await live.search({
+      view: 'unread',
+      query: 'cedar',
+      cursor: first.scope.cursor,
+    })
+    if (next.status !== 'ready') throw new Error('Expected continued discovery')
+
+    expect(next.messages.map((message) => message.id)).toEqual([copy(one, '199')])
+    expect(next.scope).toMatchObject({ scanned: perMailbox + 1, matched: 1 })
+  })
+
+  it('keeps private query and message data out of Spark call logs', async () => {
+    const entries: SparkLogEntry[] = []
+    const transport: SparkTransport = (command) => {
+      if (command.name === 'accounts') {
+        return Promise.resolve(`Email Account: ${one} (Access: read-only)\n`)
+      }
+      return Promise.resolve(
+        emailsTable([
+          ['7001', one, 'Private Person <private@mail.example>', '2026-09-22 09:00', 'Secret', ''],
+        ]),
+      )
+    }
+    const reader = createSparkMailReader({
+      transport,
+      timeZone: 'Europe/Amsterdam',
+      log: (entry) => entries.push(entry),
+    })
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+    await live.search({ view: 'unread', query: 'private' })
+
+    const logged = JSON.stringify(entries)
+    for (const privateValue of ['private', 'Secret', '7001', '@']) {
+      expect(logged).not.toContain(privateValue)
+    }
   })
 })
 
