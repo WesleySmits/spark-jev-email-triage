@@ -1,0 +1,188 @@
+/* Manual Jev run evidence inside the Compact workbench queue header. It uses
+ * the existing strip, badge, token and control patterns; it is not a card or
+ * a second navigation surface. */
+.triage-run {
+  min-width: 0;
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+  color: var(--ink-soft);
+  font: var(--text-ui);
+}
+
+.triage-run__head,
+.triage-run__actions,
+.triage-run__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.triage-run__title {
+  margin: 0;
+  color: var(--muted);
+  font: var(--text-overline);
+  letter-spacing: var(--tracking-overline);
+  text-transform: uppercase;
+}
+
+.triage-run__detail,
+.triage-run__feedback,
+.triage-run__meta,
+.triage-run__errors {
+  margin: var(--s2) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.triage-run__feedback,
+.triage-run__meta,
+.triage-run__errors {
+  color: var(--muted);
+  font: var(--text-meta);
+}
+
+.triage-run__feedback {
+  padding: var(--s2);
+  border-left: 2px solid var(--line-strong);
+  background: var(--surface);
+}
+
+.triage-run__feedback--attention {
+  border-left-color: var(--attention-line);
+  color: var(--attention);
+  background: var(--attention-soft);
+}
+
+.triage-run__feedback--danger,
+.triage-run__errors {
+  color: var(--danger);
+}
+
+.triage-run__feedback--danger {
+  border-left-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.triage-run progress {
+  width: 100%;
+  height: var(--s2);
+  display: block;
+  margin-top: var(--s3);
+  accent-color: var(--accent);
+}
+
+.triage-run__facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s2) var(--s3);
+  margin: var(--s3) 0 0;
+}
+
+.triage-run__facts div {
+  min-width: 0;
+}
+
+.triage-run__facts dt {
+  color: var(--muted);
+  font: var(--text-meta);
+}
+
+.triage-run__facts dd {
+  margin: var(--s1) 0 0;
+  color: var(--ink);
+  font: var(--text-control);
+  font-variant-numeric: tabular-nums;
+}
+
+.triage-run code {
+  font: 400 10px / 1.5 var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.triage-run__actions,
+.triage-run__form {
+  margin-top: var(--s3);
+}
+
+.triage-run__actions .button,
+.triage-run__form .button {
+  min-height: 36px;
+  padding-inline: var(--s3);
+}
+
+.triage-run__form label {
+  min-width: 0;
+  flex: 1 1 88px;
+  color: var(--muted);
+  font: var(--text-meta);
+}
+
+.triage-run__form label span {
+  display: block;
+  margin-bottom: var(--s1);
+}
+
+.triage-run__form input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 var(--s2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  color: var(--ink);
+  background: var(--paper);
+  font: var(--text-control);
+  font-variant-numeric: tabular-nums;
+}
+
+.triage-run__form input:focus-visible,
+.triage-run__results summary:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.triage-run__form .button {
+  align-self: flex-end;
+  flex: 1 1 140px;
+}
+
+.triage-run__results {
+  margin-top: var(--s3);
+  padding-top: var(--s2);
+  border-top: 1px solid var(--line);
+  font: var(--text-meta);
+}
+
+.triage-run__results summary {
+  width: fit-content;
+  color: var(--ink-soft);
+  font: var(--text-control);
+  cursor: pointer;
+}
+
+.triage-run__results ul {
+  margin: var(--s2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.triage-run__results li {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--s1) var(--s2);
+  padding: var(--s2) 0;
+  border-top: 1px solid var(--line);
+}
+
+.triage-run__results li > :nth-child(n + 3) {
+  grid-column: 2;
+  color: var(--muted);
+}
+
+@media (max-width: 360px) {
+  .triage-run__facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

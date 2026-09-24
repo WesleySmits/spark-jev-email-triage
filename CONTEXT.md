@@ -7,7 +7,7 @@ category reviews. The legacy Complete control remains off; the separate
 guarded Done panel can archive one selected Spark message ID after human
 approval and a second confirmation. The action server is disabled by default.
 The CLI `pnpm shadow --apply` stores classifications;
-the review desk appends human reviews to the same local schema-3 SQLite file.
+the review desk appends human reviews to the same local schema-4 SQLite file.
 The default is `.data/shadow-triage.sqlite`; `--db` selects the CLI path and
 `SHADOW_DATABASE_PATH` selects the app path.
 
@@ -28,8 +28,11 @@ unavailable.
 The workflow and mailbox filters move into a modal sheet from the top bar
 at 900px and below, so they remain reachable on narrow screens.
 
-Classifying is a CLI workflow; the app
-only reads existing judgments and saves reviews. It shows a raw category
+The workbench queue header can explicitly start a bounded Jev run over its
+loaded worklist, show progress, request a safe Stop and read the durable result.
+The control and server contract are default-off and loopback-only. Opening and
+refreshing only read and never start Jev. The CLI mailbox workflow remains
+available. The app otherwise reads existing judgments and saves reviews. It shows a raw category
 "Model score", which is not calibrated certainty. Reviews currently decide
 category, not reply expectations or deadlines; the UI retains priority but
 hides its uncertainty note after a review. See [README](README.md) for the

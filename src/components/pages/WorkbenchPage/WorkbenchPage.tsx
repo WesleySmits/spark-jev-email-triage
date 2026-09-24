@@ -24,6 +24,7 @@ import { ClassificationEvidence } from '../../molecules/ClassificationEvidence/C
 import { DisconnectedState } from '../../molecules/DisconnectedState/DisconnectedState'
 import { EmptyState } from '../../molecules/EmptyState/EmptyState'
 import { LocalStatusToast } from '../../molecules/LocalStatusToast/LocalStatusToast'
+import { TriageRunControl } from '../../molecules/TriageRunControl/TriageRunControl'
 import { FilterSheet } from '../../organisms/FilterSheet/FilterSheet'
 import { MessageQueue } from '../../organisms/MessageQueue/MessageQueue'
 import { MessageReader } from '../../organisms/MessageReader/MessageReader'
@@ -161,6 +162,8 @@ type WorkbenchPageProps = Readonly<{
   scope?: QueueScope | undefined
   /** Optional controls inside the queue header, below the loaded scope. */
   queueControls?: ReactNode
+  /** Explicit bounded Jev run control, inside the existing queue header. */
+  triage?: ComponentProps<typeof TriageRunControl> | undefined
   /**
    * What triage stored about the rows of one reading, and which reading that
    * was. A row with an entry shows that state instead of its own status and,
@@ -1174,7 +1177,12 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             mailboxes={mailboxes}
             evidence={evidence}
             scope={props.scope}
-            controls={props.queueControls}
+            controls={
+              <>
+                {props.queueControls}
+                {props.triage && <TriageRunControl {...props.triage} />}
+              </>
+            }
           />
         }
         reader={

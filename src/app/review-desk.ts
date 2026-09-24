@@ -31,6 +31,19 @@ import { getSparkReadiness } from './spark-readiness.functions'
 import { approveDoneAction, executeDoneAction } from './done-action.functions'
 import type { DoneApprovalResult, DoneExecutionRequest, DoneExecutionResult } from './done-action'
 import type { MailboxActionProposal } from '../domain/mailbox-action'
+import type {
+  TriageRunReadResult,
+  TriageRunRestart,
+  TriageRunStart,
+  TriageRunStartResult,
+  TriageRunStopResult,
+} from './triage-run'
+import {
+  readTriageRun,
+  restartTriageRun,
+  startTriageRun,
+  stopTriageRun,
+} from './triage-run.functions'
 
 /** Why the desk waits: a reason the server gave, or an app server that didn't answer. */
 export type DeskReason = ConnectionReason
@@ -115,4 +128,20 @@ export const ReviewDesk = {
 
   executeDone: (request: DoneExecutionRequest): Promise<DoneExecutionResult> =>
     executeDoneAction({ data: request }).catch(() => ({ status: 'uncertain' }) as const),
+
+  /** Explicit Start is the only desk operation that may invoke Jev. */
+  startTriage: (request: TriageRunStart): Promise<TriageRunStartResult> =>
+    startTriageRun({ data: request }),
+
+  /** A new run over the older run's durable selection; still an explicit action. */
+  restartTriage: (request: TriageRunRestart): Promise<TriageRunStartResult> =>
+    restartTriageRun({ data: request }),
+
+  /** Local durable readback only; it never reads mail or invokes Jev. */
+  triageStatus: (runId: string): Promise<TriageRunReadResult> =>
+    readTriageRun({ data: { runId } }).catch(() => ({ status: 'unavailable' }) as const),
+
+  /** Requests a cooperative stop and performs no mailbox mutation. */
+  stopTriage: (runId: string): Promise<TriageRunStopResult> =>
+    stopTriageRun({ data: { runId } }).catch(() => ({ status: 'unavailable' }) as const),
 } as const
