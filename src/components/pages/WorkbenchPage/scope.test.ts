@@ -280,6 +280,19 @@ describe('emptyScopeText', () => {
     expect(description).toContain('refresh to read them again')
   })
 
+  it('says one listed mailbox failing in the singular', () => {
+    const { description } = emptyScopeText(
+      scope({
+        mailboxes: [mailbox('one@mail.example', 0)],
+        failed: [unread('one@mail.example')],
+        loaded: 0,
+      }),
+    )
+
+    expect(description).toContain('The one listed mailbox did not answer')
+    expect(description).toContain('Nothing here says that mailbox is empty')
+  })
+
   it('keeps the filter wording when a mailbox failed but loaded mail is there', () => {
     // Rows did load, so an empty queue here is the filter's doing.
     expect(emptyScopeText(ofThree(['two@mail.example'])).title).toBe('No results in this filter')

@@ -196,12 +196,17 @@ export function syncScopeLabel(scope: QueueScope) {
  */
 export function emptyScopeText(scope: QueueScope | undefined) {
   if (scope && readNothing(scope)) {
+    const none =
+      scope.mailboxes.length === 1
+        ? 'The one listed mailbox did not answer'
+        : `None of the ${plural(scope.mailboxes.length, 'listed mailbox', 'listed mailboxes')} ` +
+          'answered'
     return {
       title: 'No mailbox could be read',
       description:
-        `None of the ${plural(scope.mailboxes.length, 'listed mailbox', 'listed mailboxes')} ` +
-        'answered, so this reading holds no mail. Nothing here says those mailboxes are ' +
-        'empty; refresh to read them again.',
+        `${none}, so this reading holds no mail. Nothing here says ` +
+        `${scope.mailboxes.length === 1 ? 'that mailbox is' : 'those mailboxes are'} empty; ` +
+        'refresh to read them again.',
     } as const
   }
   if (scope?.loaded === 0) {
