@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { syntheticMailValues } from '../domain/fixtures'
 import { jevFailure, jevJudgment } from '../jev/fixtures'
+import { evaluationMailValues } from './fixtures'
 import { summarizeQuality, type QualityObservation } from './quality-report'
 import { reviewedCases, type ReviewedCase, type ReviewedExpectation } from './reviewed-set'
 import { captureRunSnapshot, replayRunSnapshot, runSnapshotSchema } from './run-snapshot'
@@ -16,7 +16,7 @@ const caseOf = (cases: readonly ReviewedCase[], fixture: string) => {
 const reviewedFor = (fixture: string) => caseOf(reviewedCases, fixture)
 
 /**
- * The set as it would read after a person re-read one case and settled on
+ * The set as it would read after a reviewer re-read one case and settled on
  * other labels. Only the labels move: the thread, its digest and every
  * message id stay exactly as the run measured them.
  */
@@ -36,11 +36,11 @@ const run = (): QualityObservation[] =>
   reviewedCases.map((reviewed, index) => ({
     reviewed,
     classification:
-      index === 2
+      reviewed.fixture === 'suspicious'
         ? jevFailure(`thread-${reviewed.fixture}`)
         : jevJudgment(`thread-${reviewed.fixture}`, {
             category: index % 3 === 0 ? 'personal' : reviewed.expectation.category,
-            categoryShare: 0.7 + index / 50,
+            categoryShare: Math.min(0.99, 0.7 + index / 50),
           }),
     latencyMs: index === 1 ? null : 700 + index * 30,
   }))
@@ -95,10 +95,14 @@ describe('a run snapshot', () => {
 
   // A failure is kept as a failure, by its code alone.
   it('keeps a failed call as its content-free code, with no provider detail', () => {
-    const failed = roundTrip(run()).entries[2]
+    const snapshot = roundTrip(run())
+    const failed = snapshot.entries.find(({ fixture }) => fixture === 'suspicious')
+    const replayedFailure = replayed(snapshot).find(
+      ({ reviewed }) => reviewed.fixture === 'suspicious',
+    )
 
     expect(failed?.result).toEqual({ status: 'provider_failure', errorCode: 'timeout' })
-    expect(replayed(roundTrip(run()))[2]?.classification).toMatchObject({
+    expect(replayedFailure?.classification).toMatchObject({
       status: 'provider_failure',
       failure: { code: 'timeout', detail: null, httpStatus: null },
     })
@@ -114,7 +118,7 @@ describe('a run snapshot', () => {
   it('carries no subject, body, address, name or attachment from the mail it measures', () => {
     const written = JSON.stringify(roundTrip(run()))
 
-    for (const value of syntheticMailValues) expect(written).not.toContain(value)
+    for (const value of evaluationMailValues) expect(written).not.toContain(value)
   })
 })
 

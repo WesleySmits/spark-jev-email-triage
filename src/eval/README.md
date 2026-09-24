@@ -1,24 +1,27 @@
 # Reviewed evaluation set
 
 `reviewed-set.ts` holds the mail this repository measures triage against, and
-the outcome a person expects for each thread. It is data and judgment only:
+the outcome a named reviewer expects for each thread. It is data and judgment only:
 it calls nothing, so every test that uses it runs in CI without a provider, a
 network or a secret.
 
 ## Who stands behind a label
 
-Every case was proposed by Claude Opus 5, running in T3 Code, from the mail
-and the rubric alone, and then read by Wesley Smits. He kept nine proposals
-and corrected two.
+The original eleven cases were proposed by Claude Opus 5, running in T3 Code,
+from the mail and the rubric alone, and then read by Wesley Smits. He kept
+nine proposals and corrected two. The seven Feature 8 cases were proposed and
+reviewed in separate Codex passes. They say `reviewerKind: assistant`; they do
+not claim Wesley reviewed labels he has not yet reviewed. Human approval of
+the feature PR remains the release boundary.
 
 Each case carries its own `curation`:
 
-- `state` is `proposed` until a person reads the case, `confirmed` after.
+- `state` is `proposed` until a named reviewer reads the case, `confirmed` after.
 - `proposedBy` names who wrote the labels first and `proposedOn` the day.
   Neither is a review date.
-- `confirmedBy` and `confirmedOn` name the person who read the case and the
-  day they did. They stay `null` while a case is `proposed`, and the set's
-  test fails if a case claims a confirmation without naming both.
+- `confirmedBy`, `confirmedOn` and `reviewerKind` name who read the case, what
+  kind of reviewer they were and the day they did. They stay `null` while a
+  case is `proposed`, and the set's test fails if those claims disagree.
 - `changedOnReview` says whether that person changed the proposal or kept it.
   A case cannot be marked changed without having been read.
 
@@ -110,12 +113,16 @@ moved under a pinned name is visible rather than averaged away.
 
 What one slice holds:
 
-- **Category quality**: agreement with the expectation a person settled on,
+- **Category quality**: agreement with the expectation a reviewer settled on,
   over the run and per category. How often a category was expected and how
   often it was answered are counted separately, because a classifier that
   answers `other` for everything agrees with every `other` case while being
   useless. Each disagreement is named by its fixture.
-- **Review rate**: the share of judged threads policy sends to a person, with
+- **Priority quality**: agreement with the reviewed priority, per priority and
+  over the run, with each disagreement named. The report separately counts
+  the priorities policy calls uncertain; category confidence is never used as
+  a proxy for priority confidence.
+- **Review load**: the share of judged threads policy sends to a person, with
   the share the set expects beside it. They answer different questions, so
   the handling agreement is reported too: a run that reviews the right number
   of the wrong threads did not do well.
@@ -154,7 +161,7 @@ What a snapshot holds, and what it does not:
 
 - The mail is named, never copied: a fixture's name and the digest of the
   thread it was measured against. The mail itself stays in
-  `src/domain/fixtures.ts`, where a person reviewed it, so no subject,
+  `src/domain/fixtures.ts` or `src/eval/fixtures.ts`, where a reviewer read it, so no subject,
   address, body or attachment can travel in a snapshot. A test writes the
   whole set and fails if any of them does.
 - The labels the run was measured against: the category, the priority and the
@@ -183,8 +190,8 @@ a run this build cannot honestly count is refused rather than reported:
 - `changed_expectation`: the mail is the mail the run measured, but the case
   expects other labels now. The answers are still the answers; what they
   would be counted against is not, so the figures would be another comparison
-  printed under this run's name. Every label counts, including a priority no
-  figure reads today: an expectation is one judgment a person settled on.
+  printed under this run's name. Every label counts: an expectation is one
+  judgment a reviewer settled on.
 - `unsupported_rubric`: it was judged under a rubric this build no longer
   holds. See below.
 
@@ -217,7 +224,7 @@ never shown under thresholds that did not produce it.
 
 `defaultRubric.thresholds` are not calibrated, and the set is small. A report
 is the evidence to argue from, never the argument itself: fitting a threshold
-to eleven cases fits it to those eleven.
+to eighteen cases fits it to those eighteen.
 
 Changing one needs the report before and after the change, over the same set
 and the same classifier build, in the commit that changes it, and a rubric id
@@ -241,8 +248,8 @@ Every case records where its mail came from.
   away entirely, and what is left must read as invented mail.
 - Addresses and links use domains reserved by RFC 2606 or RFC 6761
   (`example.com`, `example.org`, `example.net`, `.example`, `.test`,
-  `.invalid`). `src/domain/fixtures.test.ts` enforces this over every thread
-  the set labels.
+  `.invalid`). `src/domain/fixtures.test.ts` and `src/eval/fixtures.test.ts`
+  enforce this over every thread the set labels.
 - Nothing here holds a credential, a real message id, a mailbox path or a
   provider response body. The set stores mail text on purpose, which is
   exactly why that text must be fictitious: the repository is public and its

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { syntheticMailValues } from '../domain/fixtures'
 import { jevFailure, jevJudgment } from '../jev/fixtures'
+import { evaluationMailValues } from './fixtures'
 import { formatQualityReport } from './quality-report-text'
 import { summarizeQuality, type QualityObservation } from './quality-report'
 import { reviewedCases } from './reviewed-set'
@@ -71,7 +71,10 @@ describe('formatQualityReport', () => {
     expect(text).toContain('Attempts: 3, provider failures 1/3 (33%): timeout 1')
     expect(text).toContain('Category agreement: 1/2 (50%)')
     expect(text).toContain('Disagreed on invoice: expected purchase, answered personal')
-    expect(text).toContain('Review rate: policy 0/2 (0%), the set expects 0/2 (0%)')
+    expect(text).toContain('Priority agreement: 1/2 (50%)')
+    expect(text).toContain('Priority disagreed on invoice: expected normal, answered high')
+    expect(text).toContain('Uncertain priorities: 0/2 (0%)')
+    expect(text).toContain('Review load: policy 0/2 (0%), the set expects 0/2 (0%)')
   })
 
   it('says why a figure it has no value for is missing', () => {
@@ -100,6 +103,6 @@ describe('formatQualityReport', () => {
   it('carries no subject, body, address, name or attachment from the mail it measures', () => {
     const text = rendered(wholeSet())
 
-    for (const value of syntheticMailValues) expect(text).not.toContain(value)
+    for (const value of evaluationMailValues) expect(text).not.toContain(value)
   })
 })
