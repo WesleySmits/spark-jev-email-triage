@@ -13,10 +13,15 @@ The default is `.data/shadow-triage.sqlite`; `--db` selects the CLI path and
 
 The root inbox is bounded to five readable mailboxes and ten recent Inbox
 messages each, without pagination. Those bounds are visible: each reading
-carries an inbox scope (loaded mailboxes and counts, readable mailboxes
-offered, both bounds, and the last successful refresh) that the queue header
-states on desktop and mobile, so a bounded selection never reads as a whole
-mailbox. Classifying is a CLI workflow; the app
+carries an inbox scope (loaded mailboxes and counts, the mailboxes that
+could not be read, readable mailboxes offered, both bounds, and when the
+reading finished) that the queue header states on desktop and mobile, so a
+bounded selection never reads as a whole mailbox. A mailbox listing that
+fails costs only that mailbox's rows; the reading is still delivered with
+the mailboxes that answered, and Refresh is the retry. Only failing to
+discover the mailboxes makes a reading unavailable.
+
+Classifying is a CLI workflow; the app
 only reads existing judgments and saves reviews. It shows a raw category
 "Model score", which is not calibrated certainty. Reviews currently decide
 category, not reply expectations or deadlines; the UI retains priority but
@@ -37,12 +42,18 @@ A Spark account or shared inbox that the application may read.
 
 ## Inbox scope
 
-What one reading of the inbox holds and what bounded it: the mailboxes it
-listed with their loaded counts, how many readable mailboxes the provider
+What one reading of the inbox holds, what bounded it and what it could not
+read: the mailboxes it listed with their loaded counts, which of those could
+not be read and coarsely why, how many readable mailboxes the provider
 offered before the mailbox bound, both bounds, and when that reading
 finished. Every figure is counted from the rows that were kept, so a scope
 describes a reading and never a mailbox. Mailbox copies are counted
 separately, so one delivery to a primary address and an alias counts in both.
+
+A mailbox that could not be read holds no rows in the scope. That is not the
+same as a mailbox that answered with nothing, and neither is a claim about
+what the mailbox holds; a failed mailbox is never reported as bounded
+either, because a listing that never arrived cut nothing.
 
 ## Mailbox copy
 

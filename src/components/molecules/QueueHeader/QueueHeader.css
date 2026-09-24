@@ -86,3 +86,14 @@
 .queue-header__scope-summary {
   font-weight: 700;
 }
+
+/* What could not be read. It sits inside the scope block but reads as its
+ * own failure, because a bound and a mailbox that did not answer are not the
+ * same problem and only one of them is worth retrying. */
+.queue-header__scope-unread {
+  padding: var(--s1) var(--s2);
+  border-left: 2px solid var(--danger);
+  color: var(--danger);
+  background: var(--danger-soft);
+  font-weight: 700;
+}

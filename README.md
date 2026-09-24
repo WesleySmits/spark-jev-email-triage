@@ -14,10 +14,11 @@ confirmation.
 The inbox includes the first five readable mailboxes in provider order and
 up to ten recent Inbox messages per mailbox, sorted newest first (at most
 50 rows before deduplication). It has no pagination or complete-history
-view. Search and mailbox filtering operate on those loaded rows. One failed
-mailbox listing currently makes the whole inbox unavailable. Copies in
-different mailboxes remain distinct even when message ids, subjects or
-contents match.
+view. Search and mailbox filtering operate on those loaded rows. A failure
+is isolated to the mailbox it happened in: the mailboxes that answered are
+still delivered, and only discovering the mailboxes at all makes the whole
+inbox unavailable. Copies in different mailboxes remain distinct even when
+message ids, subjects or contents match.
 
 That reach is stated on the page rather than left to be inferred. Every
 reading carries a scope: the mailboxes it listed with their counts, how
@@ -34,6 +35,21 @@ read. The
 mailbox filter is named "All loaded", the search says it searches loaded
 mail, and a reading that loaded nothing reads differently from a filter that
 matched nothing.
+
+The scope also names the mailboxes the reading could not read, so a partial
+failure is visible rather than silent. Such a mailbox contributes no rows
+and is counted as unread, never as empty and never as bounded: a listing
+that never arrived says nothing about how much mail is behind it. A mailbox
+that answered with nothing is a real, empty reading of it, and reads
+differently. Failed, partly failed and fully read readings are therefore
+distinguishable, as is an inbox where every listed mailbox failed, which
+says so instead of showing an empty queue. The failed mailbox keeps its
+place in the rail, so a chosen mailbox filter and the open message survive
+the failure. Retrying is Refresh, which reads every mailbox again; there is
+no per-mailbox retry, because a reading is delivered and dated as a whole.
+Nothing older is kept when a mailbox fails, so no row is ever shown as
+fresher than the reading it came from, and a failure carries the mailbox
+address and a coarse reason only, never mail content.
 
 Supported: reading mail, refreshing, opening one body, viewing stored triage,
 and confirming or correcting its category locally. The guarded Done panel
@@ -199,8 +215,11 @@ pnpm readback:spark                      # whether Spark answers on this host
 - `ReviewDesk.open` calls `getLiveInbox` in `src/app/live-inbox.functions.ts`,
   a server function: it discovers the readable mailboxes (at most 5), lists
   the 10 most recent Inbox messages in each, one Spark call at a time, and
-  returns strict summaries without a body, newest first. An app server that
-  doesn't answer is reported as `unreachable`, not as an error. Opening a
+  returns strict summaries without a body, newest first. A mailbox whose
+  listing fails is recorded in the reading's scope and costs only its own
+  rows; the remaining mailboxes are still listed, still one call at a time.
+  An app server that doesn't answer is reported as `unreachable`, not as an
+  error. Opening a
   message calls `getLiveBody` for that message only; it returns that
   message's plain-text body, or `null` when it has none, and reads only
   messages the last list offered. Both answer only requests from this

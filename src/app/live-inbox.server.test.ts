@@ -242,6 +242,7 @@ describe('createLiveInbox list', () => {
       status: 'ready',
       scope: {
         mailboxes: [],
+        failed: [],
         readable: 0,
         mailboxLimit: maxMailboxes,
         messageLimit: perMailbox,
@@ -256,26 +257,181 @@ describe('createLiveInbox list', () => {
     expect(calls).toEqual(['accounts'])
   })
 
+  it('is unavailable when the mailboxes cannot be discovered', async () => {
+    const { live, calls } = inbox({ mailboxes: new SparkError('not_installed') })
+
+    await expect(live.list()).resolves.toEqual({ status: 'unavailable', reason: 'missing' })
+    expect(calls).toEqual(['accounts'])
+  })
+})
+
+// Three mailboxes, the middle one failing: the acceptance case for isolating
+// a failure to the mailbox it happened in.
+const three = 'three@mail.example'
+const threeMailboxes = (middle: Listing[] | Error): FakeMail => ({
+  mailboxes: [access(one), access(two), access(three)],
+  listings: {
+    [one]: [listing(one, '11', '2026-09-22T09:15:00+02:00')],
+    [two]: middle,
+    [three]: [listing(three, '31', '2026-09-22T08:00:00+02:00')],
+  },
+})
+
+describe('createLiveInbox list with a mailbox that fails', () => {
+  it('keeps the mailboxes that answered and reads the ones after the failure', async () => {
+    const { live, calls } = inbox(threeMailboxes(new SparkError('timeout')))
+    const result = await live.list()
+    if (result.status !== 'ready') throw new Error('Expected a list')
+
+    // The failure did not stop the loop: the third mailbox was still read,
+    // and still one command at a time.
+    expect(calls).toEqual([
+      'accounts',
+      `emails ${one} ${String(perMailbox)}`,
+      `emails ${two} ${String(perMailbox)}`,
+      `emails ${three} ${String(perMailbox)}`,
+    ])
+    expect(result.messages.map((message) => message.mailbox)).toEqual([one, three])
+    expect(result.scope.loaded).toBe(2)
+    expect(result.scope.failed).toEqual([{ id: two, label: two, reason: 'failed' }])
+  })
+
+  it('keeps a failed mailbox in the rail and its scope, holding no rows', async () => {
+    const { live } = inbox(threeMailboxes(new SparkError('timeout')))
+    const result = await live.list()
+    if (result.status !== 'ready') throw new Error('Expected a list')
+
+    // The rail keeps every readable mailbox, so a filter on the one that
+    // failed is still there to return to.
+    expect(result.mailboxes.map((mailbox) => mailbox.id)).toEqual([one, two, three])
+    expect(result.scope.mailboxes).toEqual([
+      { id: one, label: one, loaded: 1, bounded: false },
+      { id: two, label: two, loaded: 0, bounded: false },
+      { id: three, label: three, loaded: 1, bounded: false },
+    ])
+  })
+
   it.each([
     ['missing', new SparkError('not_installed')],
     ['failed', new SparkError('timeout')],
     ['failed', new SparkError('exit_failure', null, 1)],
     ['malformed', new SparkError('malformed_output', 'emails: row 1 is invalid')],
     ['failed', new Error('Something unexpected')],
-  ])('is unavailable (%s) without any message when Spark fails', async (reason, error) => {
-    const { live } = inbox({
-      mailboxes: [access(one), access(two)],
-      listings: { [one]: [listing(one, '11', null)], [two]: error },
-    })
+  ])('reports one mailbox failure coarsely as %s, with no mail in it', async (reason, error) => {
+    const { live } = inbox(threeMailboxes(error))
+    const result = await live.list()
+    if (result.status !== 'ready') throw new Error('Expected a list')
 
-    await expect(live.list()).resolves.toEqual({ status: 'unavailable', reason })
+    expect(result.scope.failed).toEqual([{ id: two, label: two, reason }])
+    // Nothing the provider said travels with it: no subject, sender or body.
+    expect(JSON.stringify(result.scope.failed)).not.toContain('Subject')
+    expect(JSON.stringify(result.scope.failed)).not.toContain('row 1 is invalid')
   })
 
-  it('is unavailable when the mailboxes cannot be discovered', async () => {
-    const { live, calls } = inbox({ mailboxes: new SparkError('not_installed') })
+  it('tells an empty mailbox that answered from one that could not be read', async () => {
+    const { live } = inbox(threeMailboxes([]))
+    const result = await live.list()
+    if (result.status !== 'ready') throw new Error('Expected a list')
 
-    await expect(live.list()).resolves.toEqual({ status: 'unavailable', reason: 'missing' })
-    expect(calls).toEqual(['accounts'])
+    // It answered with nothing, which is a real, empty reading of it.
+    expect(result.scope.failed).toEqual([])
+    expect(result.scope.mailboxes.find((mailbox) => mailbox.id === two)).toEqual({
+      id: two,
+      label: two,
+      loaded: 0,
+      bounded: false,
+    })
+  })
+
+  it('is ready with no rows when every mailbox fails, and says so', async () => {
+    const { live } = inbox({
+      mailboxes: [access(one), access(two)],
+      listings: { [one]: new SparkError('timeout'), [two]: new SparkError('timeout') },
+    })
+    const result = await live.list()
+    if (result.status !== 'ready') throw new Error('Expected a list')
+
+    // Spark answered about the mailboxes, so this is not the same absence as
+    // an unavailable reading: the scope says every listed mailbox failed.
+    expect(result.messages).toEqual([])
+    expect(result.scope.loaded).toBe(0)
+    expect(result.scope.failed.map((mailbox) => mailbox.id)).toEqual([one, two])
+    expect(result.scope.mailboxes).toHaveLength(2)
+  })
+
+  it('recovers on the next read, with that reading holding no trace of the failure', async () => {
+    const failing = inbox(threeMailboxes(new SparkError('timeout')))
+    const failed = await failing.live.list()
+    const healthy = inbox(threeMailboxes([listing(two, '21', '2026-09-22T10:15:00+02:00')]))
+    const recovered = await healthy.live.list()
+    if (failed.status !== 'ready' || recovered.status !== 'ready') {
+      throw new Error('Expected a list')
+    }
+
+    expect(failed.scope.failed).toHaveLength(1)
+    expect(recovered.scope.failed).toEqual([])
+    expect(recovered.scope.loaded).toBe(3)
+    expect(recovered.scope.mailboxes.find((mailbox) => mailbox.id === two)?.loaded).toBe(1)
+  })
+
+  it('never calls a failed mailbox bounded: a listing that never came cut nothing', async () => {
+    const { live } = inbox(threeMailboxes(new SparkError('timeout')))
+    const result = await live.list()
+    if (result.status !== 'ready') throw new Error('Expected a list')
+
+    expect(result.scope.mailboxes.find((mailbox) => mailbox.id === two)?.bounded).toBe(false)
+    expect(result.scope.bounded).toBe(false)
+  })
+
+  it('dates the reading it delivered, so the mail beside a failure is not shown as older', async () => {
+    const { live } = inbox(threeMailboxes(new SparkError('timeout')))
+    const result = await live.list()
+    if (result.status !== 'ready') throw new Error('Expected a list')
+
+    // Every row here was read now; a failed mailbox keeps nothing from an
+    // earlier reading, so there is no older data to present as fresh.
+    expect(result.scope.readAt).toBe('12:00')
+    expect(result.scope.refreshedAt).toBe('2026-09-22T10:00:00.000Z')
+  })
+
+  it('offers bodies for the rows that did arrive, and none for the mailbox that failed', async () => {
+    const { live } = inbox({
+      ...threeMailboxes(new SparkError('timeout')),
+      threads: { [`${one} 11`]: thread([{ id: '11', bodyText: 'Still readable' }], one) },
+    })
+    await live.list()
+
+    await expect(live.body({ mailbox: one, id: '11' })).resolves.toMatchObject({
+      text: 'Still readable',
+    })
+    await expect(live.body({ mailbox: two, id: '21' })).rejects.toBeInstanceOf(BodyUnavailableError)
+  })
+
+  it('stops the whole read when the caller aborts, rather than reporting failed mailboxes', async () => {
+    const controller = new AbortController()
+    const fake = fakeReader({
+      mailboxes: [access(one), access(two), access(three)],
+      listings: { [one]: [listing(one, '11', null)] },
+    })
+    const reader: typeof fake.reader = {
+      ...fake.reader,
+      listRecentEmails: async (request, options) => {
+        if (request.mailboxId === two) {
+          controller.abort()
+          throw new Error('Aborted')
+        }
+        return fake.reader.listRecentEmails(request, options)
+      },
+    }
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+
+    await expect(live.list({ signal: controller.signal })).resolves.toEqual({
+      status: 'unavailable',
+      reason: 'failed',
+    })
+    // The third mailbox was never asked for: a caller that gave up gets no
+    // further Spark commands run on its behalf.
+    expect(fake.calls).not.toContain(`emails ${three} ${String(perMailbox)}`)
   })
 })
 
@@ -329,14 +485,18 @@ describe('createLiveInbox body', () => {
     expect(calls.filter((call) => call.startsWith('thread'))).toEqual([])
   })
 
-  it('offers no older body once a later list fails', async () => {
+  it('offers no older body once a later list fails to read that mailbox', async () => {
     const listings: Record<string, Listing[] | Error> = { [one]: [listing(one, '11', null)] }
     const { live, calls } = inbox({ ...mail, listings })
     await expect(live.list()).resolves.toMatchObject({ status: 'ready' })
 
     listings[one] = new SparkError('timeout')
-    await expect(live.list()).resolves.toEqual({ status: 'unavailable', reason: 'failed' })
+    const later = await live.list()
+    if (later.status !== 'ready') throw new Error('Expected a list')
+    expect(later.scope.failed).toEqual([{ id: one, label: one, reason: 'failed' }])
 
+    // The mailbox holds no rows in this reading, so its earlier rows are not
+    // offered: a row that is no longer listed is not readable again.
     await expect(live.body({ mailbox: one, id: '11' })).rejects.toThrow(BodyUnavailableError)
     expect(calls.filter((call) => call.startsWith('thread'))).toEqual([])
   })
@@ -480,6 +640,7 @@ describe('createLiveInbox scope', () => {
         { id: one, label: one, loaded: 2, bounded: false },
         { id: two, label: two, loaded: 0, bounded: false },
       ],
+      failed: [],
       readable: 2,
       mailboxLimit: maxMailboxes,
       messageLimit: perMailbox,

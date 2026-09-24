@@ -34,17 +34,48 @@ export type MailboxScope = Readonly<{
 }>
 
 /**
- * What one reading of the inbox actually holds, and what bounded it. It is
- * the honest answer to "is this the mailbox?": no, it is this many recent
- * Inbox messages from these mailboxes, read at this time.
+ * One listed mailbox this reading could not read, and how coarsely it went
+ * wrong. It names the mailbox and nothing it holds: no sender, subject,
+ * message id or provider text ever reaches the browser through here.
+ */
+export type MailboxFailure = Readonly<{
+  /** The mailbox id, as the rail and every row's `mailbox` name it. */
+  id: string
+  /** The address the rail shows for it. */
+  label: string
+  /**
+   * Why it could not be read. The same coarse reasons an unavailable
+   * reading gives, minus `local-only`, which decides a whole request.
+   */
+  reason: 'missing' | 'failed' | 'malformed'
+}>
+
+/**
+ * What one reading of the inbox actually holds, what bounded it, and what it
+ * could not read. It is the honest answer to "is this the mailbox?": no, it
+ * is this many recent Inbox messages from these mailboxes, read at this time.
  *
  * Every figure is counted from what was read. `readable` is how many
  * mailboxes the provider offered before the mailbox bound applied, which is
  * the one thing a reading learns about mail it did not load.
  */
 export type InboxScope = Readonly<{
-  /** The mailboxes this reading listed, in provider order. */
+  /**
+   * The mailboxes this reading listed, in provider order. A mailbox that
+   * failed stays here, so the rail and the mailbox filter survive a failure
+   * that only cost its rows; `failed` says which ones those are.
+   */
   mailboxes: readonly MailboxScope[]
+  /**
+   * The listed mailboxes that could not be read, in the same order. An empty
+   * list means every listed mailbox was read; while this list is shorter than
+   * `mailboxes`, the rest of the reading is real mail that was read now.
+   *
+   * A mailbox here contributes no rows, so its `loaded` is 0 because nothing
+   * could be read, never because the mailbox is empty. That difference is
+   * why this list exists rather than a count.
+   */
+  failed: readonly MailboxFailure[]
   /** Readable mailboxes the provider offered, before the mailbox bound. */
   readable: number
   /** At most this many mailboxes are listed. */
@@ -57,7 +88,11 @@ export type InboxScope = Readonly<{
   bounded: boolean
   /** When this reading finished, already formatted, e.g. "09:42". */
   readAt: string
-  /** Machine-readable form of `readAt`: the last successful refresh. */
+  /**
+   * Machine-readable form of `readAt`. Every row of this reading was read
+   * then, failures included: a mailbox that failed keeps nothing from an
+   * earlier reading, so no figure here is older than this instant.
+   */
   refreshedAt: string
 }>
 
