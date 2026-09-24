@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { threadSchema } from '../domain/email'
-import { syntheticThreads } from '../domain/fixtures'
 import { defaultRubric } from '../domain/rubric'
 import { categorySchema, prioritySchema } from '../domain/triage'
+import { evaluationThreads } from './fixtures'
 import {
   reviewedCases,
   reviewedMailboxAddress,
@@ -33,7 +33,7 @@ describe('reviewedCases', () => {
     const labelled = reviewedCases.map(({ fixture }) => fixture)
 
     expect(new Set(labelled).size).toBe(labelled.length)
-    expect([...labelled].sort()).toEqual(Object.keys(syntheticThreads).sort())
+    expect([...labelled].sort()).toEqual(Object.keys(evaluationThreads).sort())
   })
 
   it('name the thread version each expectation was written against', () => {
@@ -99,31 +99,76 @@ describe('reviewedCases', () => {
     }
   })
 
-  it('say who proposed the labels and claim no confirmation that has not happened', () => {
+  it('say who proposed and reviewed the labels without overstating the reviewer kind', () => {
     for (const { curation } of reviewedCases) {
       expect(curation.proposedBy.trim()).not.toBe('')
       expect(curation.proposedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-      expect(curation.confirmedBy !== null && curation.confirmedOn !== null).toBe(
-        curation.state === 'confirmed',
-      )
+      const hasReview =
+        curation.confirmedBy !== null &&
+        curation.confirmedOn !== null &&
+        curation.reviewerKind !== null
+      expect(hasReview).toBe(curation.state === 'confirmed')
     }
   })
 
   // Nobody can change a proposal without reading it first.
-  it('are read by a person before any of them is recorded as changed', () => {
+  it('are read by a reviewer before any of them is recorded as changed', () => {
     for (const { curation } of reviewedCases) {
       if (curation.changedOnReview) expect(curation.state).toBe('confirmed')
     }
   })
 
-  // Ticket 006 wants expectations a person authored. An assistant proposed
-  // these and a person then read every one, keeping most and correcting two.
-  it('have all been read by a named person', () => {
+  it('have all been read by a named reviewer', () => {
     for (const { curation } of reviewedCases) {
       expect(curation.state).toBe('confirmed')
-      expect(curation.confirmedBy).toBe('Wesley Smits')
+      expect(curation.confirmedBy?.trim()).not.toBe('')
       expect(curation.confirmedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     }
+  })
+
+  it('keep the original human review and identify Feature 8 assistant review honestly', () => {
+    expect(caseFor('customerQuestion').curation).toMatchObject({
+      confirmedBy: 'Wesley Smits',
+      reviewerKind: 'human',
+    })
+    for (const fixture of [
+      'personalDinner',
+      'invoiceDueToday',
+      'securityIncident',
+      'subscribedNewsletter',
+      'aliasNoticePersonal',
+      'aliasNoticeTeam',
+      'uncertainPriority',
+    ]) {
+      expect(caseFor(fixture).curation).toMatchObject({ reviewerKind: 'assistant' })
+    }
+  })
+
+  it('covers the reviewed personal, security, invoice, newsletter and priority edges', () => {
+    expect(caseFor('personalDinner').expectation).toMatchObject({ category: 'personal' })
+    expect(caseFor('securityIncident').expectation).toMatchObject({
+      category: 'security',
+      priority: 'urgent',
+    })
+    expect(caseFor('invoiceDueToday').expectation).toMatchObject({
+      category: 'purchase',
+      priority: 'urgent',
+    })
+    expect(caseFor('subscribedNewsletter').expectation).toMatchObject({
+      category: 'newsletter',
+      priority: 'low',
+    })
+    expect(caseFor('uncertainPriority').expectation.rationale).toContain('uncertain')
+  })
+
+  it('keeps identical alias deliveries as separate mailbox copies', () => {
+    const personal = reviewedThread(caseFor('aliasNoticePersonal'))
+    const team = reviewedThread(caseFor('aliasNoticeTeam'))
+
+    expect(personal.mailboxId).not.toBe(team.mailboxId)
+    expect(personal.messages[0]?.id).toBe(team.messages[0]?.id)
+    expect(personal.messages[0]?.bodyText).toBe(team.messages[0]?.bodyText)
+    expect(personal.messages[0]?.to).toEqual(team.messages[0]?.to)
   })
 
   it('record where every case came from', () => {

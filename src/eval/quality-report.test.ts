@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { defaultRubric } from '../domain/rubric'
 import type { JevClassification } from '../jev/classifier'
+import type { JevErrorCode } from '../jev/errors'
 import { jevFailure, jevJudgment } from '../jev/fixtures'
 import type { ResponseOptions } from '../jev/fixtures'
 import {
@@ -29,6 +30,14 @@ const observe = (
 
 const answered = (fixture: Fixture, options: ResponseOptions) =>
   jevJudgment(`thread-${fixture}`, options)
+
+const failed = (fixture: Fixture, code: JevErrorCode): JevClassification => ({
+  rubric: defaultRubric.id,
+  requestedModel: 'jev-1.13.0',
+  threadId: `thread-${fixture}`,
+  status: 'provider_failure',
+  failure: { code, detail: null, httpStatus: null },
+})
 
 /**
  * Three judged cases and one outage: `invoice` is answered `personal`, and
@@ -91,12 +100,63 @@ describe('summarizeQuality', () => {
     ])
   })
 
+  it('reports priority agreement, coverage and disagreements separately from category', () => {
+    const slice = onlySlice(run())
+
+    expect(slice.priorityAgreement).toEqual({ count: 1, total: 3 })
+    expect(slice.byPriority).toEqual([
+      { priority: 'high', expected: 1, answered: 3, agreed: 1 },
+      { priority: 'normal', expected: 2, answered: 0, agreed: 0 },
+    ])
+    expect(slice.priorityDisagreements).toEqual([
+      { fixture: 'invoice', expected: 'normal', answered: 'high' },
+      { fixture: 'newsletter', expected: 'normal', answered: 'high' },
+    ])
+  })
+
+  it('reports uncertain priority without turning it into category uncertainty or review', () => {
+    const uncertain = [
+      observe(
+        'uncertainPriority',
+        answered('uncertainPriority', {
+          category: 'personal',
+          priority: 'normal',
+          priorityShare: 0.45,
+        }),
+      ),
+    ]
+    const slice = onlySlice(uncertain)
+
+    expect(slice.priorityAgreement).toEqual({ count: 1, total: 1 })
+    expect(slice.uncertainPriorities).toEqual({ count: 1, total: 1 })
+    expect(slice.reviewRate).toEqual({ count: 0, total: 1 })
+  })
+
   it('reports what policy reviewed beside what the set expects, and their agreement', () => {
     const slice = onlySlice(run())
 
     expect(slice.reviewRate).toEqual({ count: 1, total: 3 })
     expect(slice.expectedReviewRate).toEqual({ count: 1, total: 3 })
     expect(slice.handlingAgreement).toEqual({ count: 3, total: 3 })
+  })
+
+  it('keeps several provider failure kinds outside all model-quality totals', () => {
+    const failures = [
+      observe('securityIncident', failed('securityIncident', 'rate_limited')),
+      observe('invoiceDueToday', failed('invoiceDueToday', 'unavailable')),
+      observe('subscribedNewsletter', failed('subscribedNewsletter', 'rate_limited')),
+    ]
+    const slice = onlySlice(failures)
+
+    expect(slice.providerFailures).toEqual({ count: 3, total: 3 })
+    expect(slice.failureCodes).toEqual([
+      { code: 'rate_limited', count: 2 },
+      { code: 'unavailable', count: 1 },
+    ])
+    expect(slice.categoryAgreement).toEqual({ count: 0, total: 0 })
+    expect(slice.priorityAgreement).toEqual({ count: 0, total: 0 })
+    expect(slice.reviewRate).toEqual({ count: 0, total: 0 })
+    expect(slice.calibration).toEqual({ bins: [], expectedCalibrationError: null })
   })
 
   it('bins confidence against agreement and weighs the error by what each bin holds', () => {

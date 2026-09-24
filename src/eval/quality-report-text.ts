@@ -18,6 +18,7 @@ import type {
   CalibrationBin,
   CategoryTally,
   Measured,
+  PriorityTally,
   QualityReport,
   QualitySlice,
   Tally,
@@ -58,7 +59,11 @@ function formatSlice(slice: QualitySlice): string[] {
     `  Category agreement: ${ratio(slice.categoryAgreement)}`,
     ...slice.byCategory.map(formatCategory),
     ...formatDisagreements(slice),
-    `  Review rate: policy ${ratio(slice.reviewRate)}, the set expects ` +
+    `  Priority agreement: ${ratio(slice.priorityAgreement)}`,
+    ...slice.byPriority.map(formatPriority),
+    ...formatPriorityDisagreements(slice),
+    `  Uncertain priorities: ${ratio(slice.uncertainPriorities)}`,
+    `  Review load: policy ${ratio(slice.reviewRate)}, the set expects ` +
       ratio(slice.expectedReviewRate),
     `  Handling agreement: ${ratio(slice.handlingAgreement)}`,
     ...formatCalibration(slice),
@@ -86,6 +91,16 @@ const formatDisagreements = ({ disagreements }: QualitySlice) =>
   disagreements.map(
     ({ fixture, expected, answered }) =>
       `  Disagreed on ${fixture}: expected ${expected}, answered ${answered}`,
+  )
+
+const formatPriority = ({ priority, expected, answered, agreed }: PriorityTally) =>
+  `    ${priority.padEnd(13)}expected ${String(expected)}, answered ${String(answered)}, ` +
+  `agreed ${String(agreed)}`
+
+const formatPriorityDisagreements = ({ priorityDisagreements }: QualitySlice) =>
+  priorityDisagreements.map(
+    ({ fixture, expected, answered }) =>
+      `  Priority disagreed on ${fixture}: expected ${expected}, answered ${answered}`,
   )
 
 /** The bins that hold something, and the error they add up to. */

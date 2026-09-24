@@ -47,6 +47,13 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+
+      - name: Gate classifier changes on reviewed offline evidence
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: pnpm eval:gate --base "$BASE_SHA"
+
       - run: pnpm test-storybook
       - run: pnpm fallow
 

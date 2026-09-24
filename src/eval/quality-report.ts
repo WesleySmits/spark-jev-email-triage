@@ -9,12 +9,15 @@
  *
  * What it counts, and why each figure is kept apart:
  *
- * - Category quality is agreement with the expectation a person settled on,
+ * - Category quality is agreement with the expectation a reviewer settled on,
  *   per category and over the run. Both directions are counted — how often a
  *   category was expected and how often it was answered — because a
  *   classifier that answers `other` for everything agrees with every `other`
  *   case while being useless.
- * - The review rate is the share of judged threads policy sends to a person.
+ * - Priority quality is kept beside category quality, including every
+ *   disagreement and how often policy marks the priority uncertain. Category
+ *   confidence never stands in for priority confidence.
+ * - The review load is the share of judged threads policy sends to a person.
  *   The set's own share is reported beside it: the two answer different
  *   questions, and a run that reviews the right number of the wrong threads
  *   is not a run that did well.
@@ -61,14 +64,15 @@
  * printed, logged and pasted as it is.
  */
 import type { z } from 'zod'
-import { defaultRubric, triageCategories } from '../domain/rubric'
-import { currentTriageRubric, type categorySchema } from '../domain/triage'
+import { defaultRubric, triageCategories, triagePriorities } from '../domain/rubric'
+import { currentTriageRubric, type categorySchema, type prioritySchema } from '../domain/triage'
 import type { JevClassification } from '../jev/classifier'
 import { resolveClassification } from '../jev/policy'
 import { handlingAgrees } from './handling-agreement'
 import type { ReviewedCase } from './reviewed-set'
 
 type Category = z.infer<typeof categorySchema>
+type Priority = z.infer<typeof prioritySchema>
 
 /** One reviewed case, and what one classifier answered for it. */
 export interface QualityObservation {
@@ -87,6 +91,14 @@ export interface Tally {
 /** How often a category was expected, answered, and both at once. */
 export interface CategoryTally {
   category: Category
+  expected: number
+  answered: number
+  agreed: number
+}
+
+/** How often a priority was expected, answered, and both at once. */
+export interface PriorityTally {
+  priority: Priority
   expected: number
   answered: number
   agreed: number
@@ -145,6 +157,11 @@ export interface QualitySlice {
   byCategory: readonly CategoryTally[]
   /** Every judged case whose category differs from the expectation. */
   disagreements: readonly { fixture: string; expected: Category; answered: Category }[]
+  priorityAgreement: Tally
+  byPriority: readonly PriorityTally[]
+  priorityDisagreements: readonly { fixture: string; expected: Priority; answered: Priority }[]
+  /** Judged threads whose priority score policy explicitly calls uncertain. */
+  uncertainPriorities: Tally
   /** Judged threads policy sends to a person. */
   reviewRate: Tally
   /** Judged threads the set wants in front of a person. */
@@ -187,6 +204,10 @@ interface JudgedRow {
   answered: Category
   agreed: boolean
   confidence: number
+  expectedPriority: Priority
+  answeredPriority: Priority
+  priorityAgreed: boolean
+  priorityUncertain: boolean
   needsReview: boolean
   expectsPerson: boolean
   handlingAgreed: boolean
@@ -262,6 +283,16 @@ function sliceOf(observations: readonly QualityObservation[]): QualitySlice {
     disagreements: rows
       .filter((row) => !row.agreed)
       .map(({ fixture, expected, answered }) => ({ fixture, expected, answered })),
+    priorityAgreement: tally(rows.filter((row) => row.priorityAgreed).length, rows.length),
+    byPriority: priorityTallies(rows),
+    priorityDisagreements: rows
+      .filter((row) => !row.priorityAgreed)
+      .map(({ fixture, expectedPriority, answeredPriority }) => ({
+        fixture,
+        expected: expectedPriority,
+        answered: answeredPriority,
+      })),
+    uncertainPriorities: tally(rows.filter((row) => row.priorityUncertain).length, rows.length),
     reviewRate: tally(rows.filter((row) => row.needsReview).length, rows.length),
     expectedReviewRate: tally(rows.filter((row) => row.expectsPerson).length, rows.length),
     handlingAgreement: tally(rows.filter((row) => row.handlingAgreed).length, rows.length),
@@ -289,6 +320,10 @@ function judgedRow({ reviewed, classification }: QualityObservation): JudgedRow[
       answered: outcome.category,
       agreed: outcome.category === expectation.category,
       confidence: outcome.confidence,
+      expectedPriority: expectation.priority,
+      answeredPriority: outcome.priority,
+      priorityAgreed: outcome.priority === expectation.priority,
+      priorityUncertain: outcome.priorityUncertain,
       needsReview: outcome.review === 'needs_review',
       expectsPerson: expectation.handling === 'needs_person',
       handlingAgreed: handlingAgrees(expectation, outcome) === true,
@@ -317,6 +352,18 @@ function categoryTallies(rows: readonly JudgedRow[]): CategoryTally[] {
       expected: rows.filter((row) => row.expected === category).length,
       answered: rows.filter((row) => row.answered === category).length,
       agreed: rows.filter((row) => row.agreed && row.expected === category).length,
+    }))
+    .filter(({ expected, answered }) => expected > 0 || answered > 0)
+}
+
+/** Priority coverage in rubric order, with empty rows omitted. */
+function priorityTallies(rows: readonly JudgedRow[]): PriorityTally[] {
+  return triagePriorities
+    .map((priority) => ({
+      priority,
+      expected: rows.filter((row) => row.expectedPriority === priority).length,
+      answered: rows.filter((row) => row.answeredPriority === priority).length,
+      agreed: rows.filter((row) => row.priorityAgreed && row.expectedPriority === priority).length,
     }))
     .filter(({ expected, answered }) => expected > 0 || answered > 0)
 }
