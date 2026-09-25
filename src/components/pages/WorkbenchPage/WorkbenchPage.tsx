@@ -21,6 +21,7 @@ import { sameSubject } from '../../../domain/review'
 import type { DeskReviewRequest } from '../../../app/desk-review'
 import type { StoredClassification } from '../../../domain/stored-classification'
 import type { Attention, TallyCoverage } from '../../../domain/attention'
+import { Checkbox } from '../../atoms/Checkbox/Checkbox'
 import { IconButton } from '../../atoms/IconButton/IconButton'
 import { ClassificationEvidence } from '../../molecules/ClassificationEvidence/ClassificationEvidence'
 import { DisconnectedState } from '../../molecules/DisconnectedState/DisconnectedState'
@@ -320,6 +321,10 @@ function usePageState(
   }))
   const [openId, setOpenId] = useState<string>()
   const [pane, setPane] = useState<Pane>('queue')
+  // Whether the worklist is grouped by attention, or flat in the caller's
+  // newest-first order. Only a worklist can be grouped.
+  const [groupedChoice, setGrouped] = useState(true)
+  const grouped = attentionOf !== undefined && groupedChoice
   const [generation, setGeneration] = useState(0)
   const moveOn = () => {
     setGeneration((current) => current + 1)
@@ -336,7 +341,7 @@ function usePageState(
   const kept = visibleMessages(live, filter)
   // A worklist orders by attention first; the rows keep the caller's order
   // within a group, and every step, neighbour and position follows it.
-  const shown = attentionOf === undefined ? kept : orderByAttention(kept, attentionOf)
+  const shown = grouped ? orderByAttention(kept, attentionOf) : kept
   const open = openedMessage(shown, openId)
   // With nothing to read, the reader can't be the mobile pane, now or later.
   if (!open && pane === 'reader') setPane('queue')
@@ -367,9 +372,12 @@ function usePageState(
       setOpenId(neighbour(shown, open?.id, by))
       moveOn()
     },
-    /** Opens the first row of the next group. Without a worklist, or at the last group, nothing. */
+    grouped,
+    /** Groups the worklist by attention, or flattens it to newest first. */
+    setGrouped,
+    /** Opens the first row of the next group. Ungrouped, or at the last group, nothing. */
     stepGroup: () => {
-      if (attentionOf === undefined) return
+      if (!grouped) return
       const next = nextGroupStart(shown, open?.id, attentionOf)
       if (next === undefined) return
       setOpenId(next)
@@ -890,7 +898,7 @@ function queueContent(
   worklist: Worklist | undefined,
 ) {
   const rows = queueRows(state.shown, evidence, worklist?.attentionOf)
-  if (worklist === undefined) return { rows, groups: undefined }
+  if (worklist === undefined || !state.grouped) return { rows, groups: undefined }
   return { rows, groups: queueGroups(state, worklist, scope, rows) }
 }
 
@@ -906,6 +914,17 @@ function Queue({
 }: QueueProps) {
   const count = state.shown.length
   const { rows, groups } = queueContent(state, evidence, scope, worklist)
+  const setting = worklist && (
+    <div className="workbench__worklist-setting">
+      <Checkbox
+        label="Group by attention"
+        checked={state.grouped}
+        onChange={(event) => {
+          state.setGrouped(event.target.checked)
+        }}
+      />
+    </div>
+  )
   // Nothing loaded is not a filter that matched nothing, so Reset is offered
   // only where resetting could bring a row back.
   const nothingLoaded = scope?.loaded === 0
@@ -917,7 +936,12 @@ function Queue({
         count: `${String(count)} ${count === 1 ? 'result' : 'results'}`,
         context: mailboxLabel(state.filter.mailbox, mailboxes),
         ...(scope && { scope: scopeText(scope, discovery) }),
-        controls,
+        controls: (
+          <>
+            {setting}
+            {controls}
+          </>
+        ),
       }}
       messages={rows}
       groups={groups}
@@ -1375,7 +1399,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
     <PageRail
       state={state}
       canComplete={canComplete}
-      canGroup={worklist !== undefined}
+      canGroup={state.grouped}
       shortcuts={shortcuts}
       workflows={workflows}
       mailboxes={mailboxes}

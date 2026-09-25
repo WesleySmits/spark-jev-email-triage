@@ -20,3 +20,9 @@
 .workbench__action-status:empty {
   margin: 0;
 }
+
+/* The worklist's one setting: grouped by attention, or flat and newest
+ * first. It sits under the scope line, above the other queue controls. */
+.workbench__worklist-setting {
+  margin-top: var(--s2);
+}
