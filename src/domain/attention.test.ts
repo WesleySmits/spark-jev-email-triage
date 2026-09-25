@@ -4,11 +4,10 @@ import {
   attentionRank,
   attentionStates,
   tallyAttention,
-  tallyReachOf,
   type Attention,
-  type AttentionReview,
 } from './attention'
 import type { ClassificationLabels, StoredClassification } from './stored-classification'
+import { currentTriageRubric } from './triage'
 
 // Fictional judgments, shaped as the domain states them. Which judgment a
 // row holds is decided in `stored-classification.test.ts`; this file covers
@@ -31,127 +30,166 @@ const askedForAPerson: ClassificationLabels = {
   grounds: { state: 'recorded', reasons: ['ambiguous_category'], suspicionSignals: [] },
 }
 
-const subject = {
-  copy: { mailboxId: 'one@mail.example', messageId: '11' },
-  threadId: 't-11',
-  latestMessageId: '11',
-  rubric: 'email-triage.v2',
-  classifierVersion: 'jev-1.13.0',
+const possibleScam: ClassificationLabels = {
+  ...askedForAPerson,
+  priority: 'low',
+  reviewPriority: 'elevated',
+  grounds: {
+    state: 'recorded',
+    reasons: ['ambiguous_category', 'suspicious'],
+    suspicionSignals: ['credential_request'],
+  },
+}
+
+const judged = {
+  subject: {
+    copy: { mailboxId: 'one@mail.example', messageId: '11' },
+    threadId: 't-11',
+    latestMessageId: '11',
+    rubric: currentTriageRubric,
+    classifierVersion: 'jev-1.13.0',
+  },
+  judgedAt: '2026-09-22T09:15:00.000Z',
 } as const
 
-const judged = { subject, judgedAt: '2026-09-22T09:15:00.000Z' } as const
-
-const unverified = (labels: ClassificationLabels): StoredClassification => ({
+const unverified = (change: Partial<ClassificationLabels> = {}): StoredClassification => ({
   ...judged,
   state: 'unverified',
-  labels,
+  labels: { ...accepted, ...change },
 })
 
-const current = (labels: ClassificationLabels): StoredClassification => ({
-  ...judged,
-  state: 'current',
-  labels,
-})
-
-const withLabels = (change: Partial<ClassificationLabels>): ClassificationLabels => ({
-  ...accepted,
-  ...change,
-})
-
-const correctedTo = (labels: AttentionReview['labels']): AttentionReview => ({
-  decision: 'corrected',
-  labels,
-})
+const complete = { result: 'complete' } as const
+const incomplete = { result: 'incomplete' } as const
 
 describe('attentionOf', () => {
   it('places a held judgment by the priority the model gave it', () => {
-    expect(attentionOf(unverified(withLabels({ priority: 'urgent' })))).toMatchObject({
+    expect(attentionOf(unverified({ priority: 'urgent' }))).toMatchObject({
       state: 'high_priority',
-      decidedBy: 'classifier',
+      categoryBy: 'classifier',
       evidence: 'unverified',
     })
-    expect(attentionOf(current(withLabels({ priority: 'high' })))).toMatchObject({
-      state: 'high_priority',
-      evidence: 'current',
+    const current: StoredClassification = {
+      ...judged,
+      state: 'current',
+      labels: { ...accepted, priority: 'high' },
+    }
+    expect(attentionOf(current)).toMatchObject({ state: 'high_priority', evidence: 'current' })
+    expect(attentionOf(unverified())).toMatchObject({ state: 'attention' })
+    expect(attentionOf(unverified({ priority: 'low' }))).toMatchObject({ state: 'informational' })
+  })
+
+  it('carries the model labels as advice and every signal the record holds', () => {
+    expect(attentionOf(unverified({ priorityUncertain: true }))).toEqual({
+      state: 'attention',
+      category: 'personal',
+      categoryBy: 'classifier',
+      priority: 'normal',
+      priorityUncertain: true,
+      advice: { category: 'personal', priority: 'normal' },
+      warning: false,
+      elevated: false,
+      evidence: 'unverified',
     })
-    expect(attentionOf(unverified(accepted))).toMatchObject({ state: 'attention' })
-    expect(attentionOf(unverified(withLabels({ priority: 'low' })))).toMatchObject({
+  })
+
+  it('files the rubric’s informational categories as information at any priority', () => {
+    expect(attentionOf(unverified({ category: 'newsletter', priority: 'urgent' }))).toMatchObject({
+      state: 'informational',
+    })
+    expect(attentionOf(unverified({ category: 'promotion', priority: 'high' }))).toMatchObject({
       state: 'informational',
     })
   })
 
-  it('keeps the model labels as both the labels and the advice where nobody reviewed', () => {
-    expect(attentionOf(unverified(accepted))).toEqual({
+  it('lets priority decide for notifications and purchases', () => {
+    expect(attentionOf(unverified({ category: 'notification', priority: 'high' }))).toMatchObject({
+      state: 'high_priority',
+    })
+    expect(attentionOf(unverified({ category: 'purchase', priority: 'normal' }))).toMatchObject({
       state: 'attention',
-      labels: { category: 'personal', priority: 'normal' },
-      decidedBy: 'classifier',
-      advice: { category: 'personal', priority: 'normal' },
-      evidence: 'unverified',
+    })
+    expect(attentionOf(unverified({ category: 'notification', priority: 'low' }))).toMatchObject({
+      state: 'informational',
     })
   })
 
-  it('files newsletters and promotions as informational whatever their priority', () => {
-    expect(
-      attentionOf(unverified(withLabels({ category: 'newsletter', priority: 'urgent' }))),
-    ).toMatchObject({ state: 'informational' })
-    expect(
-      attentionOf(unverified(withLabels({ category: 'promotion', priority: 'high' }))),
-    ).toMatchObject({ state: 'informational' })
-  })
-
-  it('does not let a category alone make a notification or purchase informational', () => {
-    expect(
-      attentionOf(unverified(withLabels({ category: 'notification', priority: 'high' }))),
-    ).toMatchObject({ state: 'high_priority' })
-    expect(
-      attentionOf(unverified(withLabels({ category: 'purchase', priority: 'normal' }))),
-    ).toMatchObject({ state: 'attention' })
+  it('treats suspicious mail as pressing, however low the model set its priority', () => {
+    expect(attentionOf(unverified({ category: 'suspicious', priority: 'low' }))).toMatchObject({
+      state: 'high_priority',
+    })
   })
 
   it('asks for a person before it trusts any label the policy questioned', () => {
     // An urgent label nobody trusts places nothing: the review comes first.
-    const questioned = withLabels({
-      ...askedForAPerson,
-      priority: 'urgent',
-      reviewPriority: 'elevated',
-    })
-    expect(attentionOf(unverified(questioned))).toMatchObject({
+    expect(attentionOf(unverified({ ...askedForAPerson, priority: 'urgent' }))).toMatchObject({
       state: 'needs_review',
-      labels: { category: 'other', priority: 'urgent' },
-      decidedBy: 'classifier',
+      category: 'other',
+      priority: 'urgent',
+      categoryBy: 'classifier',
     })
-    expect(attentionOf(current(askedForAPerson))).toMatchObject({ state: 'needs_review' })
+    expect(attentionOf(unverified(possibleScam))).toMatchObject({
+      state: 'needs_review',
+      warning: true,
+      elevated: true,
+    })
   })
 
   it('lets a confirmation settle a judgment that asked for a person', () => {
-    const confirmed: AttentionReview = {
-      decision: 'confirmed',
-      labels: { category: 'other', priority: 'normal' },
-    }
-    expect(attentionOf(unverified(askedForAPerson), confirmed)).toEqual({
+    const confirmed = { labels: { category: 'other', priority: 'normal' } } as const
+    expect(attentionOf(unverified(askedForAPerson), confirmed)).toMatchObject({
       state: 'attention',
-      labels: { category: 'other', priority: 'normal' },
-      decidedBy: 'reviewer',
+      category: 'other',
+      categoryBy: 'reviewer',
       advice: { category: 'other', priority: 'normal' },
-      evidence: 'unverified',
     })
   })
 
-  it('places a row by what a person chose and keeps the model advice beside it', () => {
-    const pressing = unverified(withLabels({ category: 'personal', priority: 'urgent' }))
-    const filed = attentionOf(pressing, correctedTo({ category: 'promotion', priority: 'urgent' }))
-    expect(filed).toEqual({
-      state: 'informational',
-      labels: { category: 'promotion', priority: 'urgent' },
-      decidedBy: 'reviewer',
-      advice: { category: 'personal', priority: 'urgent' },
-      evidence: 'unverified',
-    })
-    // A person raising a mail the model filed as low is equally decisive.
-    const quiet = unverified(withLabels({ category: 'notification', priority: 'low' }))
+  it('places a row by the category a person chose and keeps the advice beside it', () => {
+    const pressing = unverified({ category: 'personal', priority: 'urgent' })
     expect(
-      attentionOf(quiet, correctedTo({ category: 'personal', priority: 'high' })),
-    ).toMatchObject({ state: 'high_priority', decidedBy: 'reviewer' })
+      attentionOf(pressing, { labels: { category: 'promotion', priority: 'urgent' } }),
+    ).toMatchObject({
+      state: 'informational',
+      category: 'promotion',
+      categoryBy: 'reviewer',
+      priority: 'urgent',
+      advice: { category: 'personal', priority: 'urgent' },
+    })
+  })
+
+  it('never presents the priority that travels with a review as a person’s', () => {
+    // A category review carries the model's priority by shape. That
+    // priority was given to the model's category, so it can raise a row a
+    // person re-filed, but it cannot bury one as information.
+    const quiet = unverified({ category: 'notification', priority: 'low' })
+    expect(attentionOf(quiet, { labels: { category: 'personal', priority: 'low' } })).toMatchObject(
+      { state: 'attention', categoryBy: 'reviewer', priority: 'low' },
+    )
+    const pressing = unverified({ category: 'notification', priority: 'high' })
+    expect(
+      attentionOf(pressing, { labels: { category: 'personal', priority: 'high' } }),
+    ).toMatchObject({ state: 'high_priority' })
+    // Confirming the category keeps the model's low priority trusted for it.
+    expect(
+      attentionOf(quiet, { labels: { category: 'notification', priority: 'low' } }),
+    ).toMatchObject({ state: 'informational', categoryBy: 'reviewer' })
+  })
+
+  it('keeps a possible scam out of information whatever a person decides', () => {
+    const confirmed = attentionOf(unverified(possibleScam), {
+      labels: { category: 'other', priority: 'low' },
+    })
+    expect(confirmed).toMatchObject({ state: 'attention', warning: true, elevated: true })
+    const refiled = attentionOf(unverified(possibleScam), {
+      labels: { category: 'suspicious', priority: 'low' },
+    })
+    expect(refiled).toMatchObject({ state: 'high_priority', warning: true })
+  })
+
+  it('claims no warning where the record names no grounds', () => {
+    expect(attentionOf(unverified({ grounds: { state: 'unknown' } }))).toMatchObject({
+      warning: false,
+    })
   })
 
   it('never places a row by a judgment that no longer holds, and names why', () => {
@@ -159,9 +197,14 @@ describe('attentionOf', () => {
       ...judged,
       state: 'stale',
       reason: 'newer_message',
-      labels: withLabels({ priority: 'urgent' }),
+      labels: { ...accepted, priority: 'urgent' },
     }
     expect(attentionOf(stale)).toEqual({ state: 'unclassified', cause: 'stale' })
+    // An old version's review cannot make the row reliable again.
+    expect(attentionOf(stale, { labels: { category: 'personal', priority: 'urgent' } })).toEqual({
+      state: 'unclassified',
+      cause: 'stale',
+    })
     expect(attentionOf({ ...judged, state: 'provider_failure', errorCode: 'timeout' })).toEqual({
       state: 'unclassified',
       cause: 'provider_failure',
@@ -171,76 +214,38 @@ describe('attentionOf', () => {
       cause: 'unavailable',
     })
     expect(attentionOf({ state: 'none' })).toEqual({ state: 'unclassified', cause: 'none' })
-    expect(attentionOf(undefined)).toEqual({ state: 'unclassified', cause: 'none' })
-  })
-
-  it('ignores a review passed beside a judgment that no longer holds', () => {
-    // The page never passes one, and even if it did, an old version's review
-    // cannot make the row reliable again.
-    const stale: StoredClassification = {
-      ...judged,
-      state: 'stale',
-      reason: 'rubric',
-      labels: accepted,
-    }
-    expect(attentionOf(stale, correctedTo({ category: 'personal', priority: 'urgent' }))).toEqual({
-      state: 'unclassified',
-      cause: 'stale',
-    })
   })
 })
 
 describe('attentionRank', () => {
   it('orders review first, then pressing, ordinary, unjudged and informational', () => {
-    const ranked = [...attentionStates].sort((a, b) => attentionRank(b) - attentionRank(a))
-    expect(ranked).toEqual([
-      'informational',
-      'unclassified',
-      'attention',
-      'high_priority',
-      'needs_review',
-    ])
-    expect(attentionRank('needs_review')).toBe(0)
-  })
-})
-
-describe('tallyReachOf', () => {
-  it('counts a proven scope only for a complete, unbounded, fully read reading', () => {
-    expect(tallyReachOf({ bounded: false, failed: [] })).toBe('proven')
-    expect(tallyReachOf({ bounded: false, failed: [], incomplete: [] })).toBe('proven')
-  })
-
-  it('counts only what was loaded once anything may be missing', () => {
-    expect(tallyReachOf({ bounded: true, failed: [] })).toBe('loaded')
-    expect(tallyReachOf({ bounded: false, failed: [{ id: 'one' }] })).toBe('loaded')
-    expect(tallyReachOf({ bounded: false, failed: [], incomplete: [{ id: 'one' }] })).toBe('loaded')
+    expect(attentionStates.map(attentionRank)).toEqual([0, 1, 2, 3, 4])
+    expect(attentionRank('needs_review')).toBeLessThan(attentionRank('high_priority'))
+    expect(attentionRank('unclassified')).toBeLessThan(attentionRank('informational'))
   })
 })
 
 describe('tallyAttention', () => {
   const rows: readonly Attention[] = [
-    attentionOf(unverified(withLabels({ priority: 'urgent' }))),
+    attentionOf(unverified({ priority: 'urgent' })),
     attentionOf(unverified(askedForAPerson)),
-    attentionOf(unverified(accepted)),
-    attentionOf(unverified(withLabels({ category: 'newsletter' }))),
+    attentionOf(unverified()),
+    attentionOf(unverified({ category: 'newsletter' })),
     attentionOf({ state: 'none' }),
-    attentionOf(unverified(withLabels({ priority: 'high' }))),
+    attentionOf(unverified({ priority: 'high' })),
   ]
 
+  const counts = {
+    needs_review: 1,
+    high_priority: 2,
+    attention: 1,
+    unclassified: 1,
+    informational: 1,
+  }
+
   it('counts every state, at zero where none, and sums to the rows given', () => {
-    const tally = tallyAttention(rows, { bounded: false, failed: [] })
-    expect(tally).toEqual({
-      counts: {
-        needs_review: 1,
-        high_priority: 2,
-        attention: 1,
-        unclassified: 1,
-        informational: 1,
-      },
-      total: 6,
-      reach: 'proven',
-    })
-    expect(tallyAttention([], { bounded: false, failed: [] })).toEqual({
+    expect(tallyAttention(rows, complete)).toEqual({ counts, total: 6, reach: 'proven' })
+    expect(tallyAttention([], complete)).toEqual({
       counts: {
         needs_review: 0,
         high_priority: 0,
@@ -253,10 +258,8 @@ describe('tallyAttention', () => {
     })
   })
 
-  it('says a bounded or partly failed reading counted only what was loaded', () => {
-    expect(tallyAttention(rows, { bounded: true, failed: [] }).reach).toBe('loaded')
-    expect(tallyAttention(rows, { bounded: false, failed: ['two@mail.example'] }).reach).toBe(
-      'loaded',
-    )
+  it('counts only what was loaded unless the reading was proved complete', () => {
+    expect(tallyAttention(rows, incomplete)).toEqual({ counts, total: 6, reach: 'loaded' })
+    expect(tallyAttention(rows, { result: 'failed' })).toMatchObject({ reach: 'loaded' })
   })
 })

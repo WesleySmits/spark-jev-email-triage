@@ -11,9 +11,11 @@
  * a row asks of a person, never what the application did to the mail.
  *
  * Invariants:
- * - A person's decision beats the model's advice. Where a review names the
- *   version a row shows, its labels decide the state, and the model's own
- *   labels stay beside them as advice so both remain legible.
+ * - A person's decision beats the model's advice, for what the person
+ *   decided. A category review decides the category and nothing else, so the
+ *   category a person chose places the row and the model's own labels stay
+ *   beside it as advice. The priority is always the model's: no review here
+ *   assesses one, and none is ever presented as a person's.
  * - Only a judgment that still describes the row may steer it. One a reading
  *   proved `current`, or one the store holds and contradicts in no way, is
  *   reliable enough to place a row. A stale judgment, a failed attempt, a
@@ -24,12 +26,16 @@
  * - A judgment triage policy asked a person to look at stays `needs_review`
  *   until a person has reviewed that version. Its labels, urgent included,
  *   place nothing until then: a priority nobody trusts is not a priority.
- * - Every tally counts rows it was given and says which reach they came from.
- *   A reading that was bounded or lost a mailbox counts what was loaded and
- *   says so; only a reading that read everything it listed, unbounded and
- *   without failure, counts a proven scope. A count is never of a mailbox.
+ * - A suspicion policy recorded survives every review, as the reader's
+ *   warning does. A row that may be a scam is never filed as information,
+ *   whatever category a person decides on.
+ * - Every tally counts the rows it was given and says which reach they came
+ *   from. Only a reading the app already proved complete counts a proven
+ *   scope; anything less counts what was loaded and says so. A count is
+ *   never of a mailbox.
  */
 import type { ReviewedLabels } from './review'
+import { defaultRubric } from './rubric'
 import type { ClassificationLabels, StoredClassification } from './stored-classification'
 
 /**
@@ -51,14 +57,12 @@ export const attentionStates = [
 export type AttentionState = (typeof attentionStates)[number]
 
 /**
- * What a person decided about the version a row shows. Structurally the
- * reviewer branch of the row's effective outcome, so a page may pass what
- * a reading projected without converting it.
+ * What a person decided about the version a row shows: the labels their
+ * review settled on. Structurally the reviewer branch of the row's effective
+ * outcome, so a page may pass what a reading projected without converting
+ * it. Only the category is read from it; see the module invariants.
  */
-export type AttentionReview = Readonly<{
-  decision: 'confirmed' | 'corrected'
-  labels: ReviewedLabels
-}>
+export type AttentionReview = Readonly<{ labels: ReviewedLabels }>
 
 /**
  * Why a row is unclassified. `none` is the only one that means nothing was
@@ -74,12 +78,20 @@ export type AttentionEvidence = 'current' | 'unverified'
 /** A row placed by a judgment that holds, and by any review of it. */
 export type PlacedAttention = Readonly<{
   state: Exclude<AttentionState, 'unclassified'>
-  /** The labels that placed the row: a person's where one decided, else the model's. */
-  labels: ReviewedLabels
-  /** Whose labels those are. Priority is never assessed by a category review. */
-  decidedBy: 'reviewer' | 'classifier'
+  /** The category that placed the row: a person's where one decided, else the model's. */
+  category: ReviewedLabels['category']
+  /** Who decided that category. Nothing else about the row is a person's. */
+  categoryBy: 'reviewer' | 'classifier'
+  /** The model's priority. No review assesses one, so it is never a person's. */
+  priority: ReviewedLabels['priority']
+  /** The model was unsure of that priority. Shown, never acted on. */
+  priorityUncertain: boolean
   /** What the model proposed, kept beside a person's decision as advice. */
   advice: ReviewedLabels
+  /** Policy recorded a possible scam or phishing attempt. Survives every review. */
+  warning: boolean
+  /** Policy asked for a look sooner than usual, where it asked for one at all. */
+  elevated: boolean
   /** Whether a read proved the judgment current, or the store alone holds it. */
   evidence: AttentionEvidence
 }>
@@ -88,30 +100,38 @@ export type PlacedAttention = Readonly<{
 export type Attention =
   PlacedAttention | Readonly<{ state: 'unclassified'; cause: UnclassifiedCause }>
 
-const unclassified = (cause: UnclassifiedCause): Attention => ({ state: 'unclassified', cause })
+const informational: ReadonlySet<string> = new Set(defaultRubric.informationalCategories)
+
+const pressing: ReadonlySet<string> = new Set(['urgent', 'high'])
 
 /**
- * Categories the rubric defines as needing no action of themselves. A row
- * filed there is informational whatever priority travels with it: a category
- * a person chose was chosen over the model's priority, which no category
- * review assesses, and a model that files mail as a promotion while calling
- * it urgent has contradicted its own rubric.
+ * Whether policy recorded a suspicion for a judgment. Unknown grounds claim
+ * none: absence of a record is not evidence that a mail is safe, and this
+ * says nothing either way rather than inventing reassurance.
  */
-const informationalCategories: ReadonlySet<ClassificationLabels['category']> = new Set([
-  'newsletter',
-  'promotion',
-])
+const warned = ({ grounds }: ClassificationLabels) =>
+  grounds.state === 'recorded' &&
+  (grounds.reasons.includes('suspicious') || grounds.suspicionSignals.length > 0)
 
-const pressingPriorities: ReadonlySet<ClassificationLabels['priority']> = new Set([
-  'urgent',
-  'high',
-])
-
-/** The state the labels that hold for a row place it in. */
-function placeBy({ category, priority }: ReviewedLabels): PlacedAttention['state'] {
-  if (informationalCategories.has(category)) return 'informational'
-  if (pressingPriorities.has(priority)) return 'high_priority'
-  return priority === 'low' ? 'informational' : 'attention'
+/**
+ * The state the labels that hold for a row place it in.
+ *
+ * Category first: mail the rubric files as information is information at any
+ * priority, and mail read as a possible scam is pressing at any priority. Then
+ * the model's priority, with one reservation: a low priority files a row as
+ * information only where the model gave it to the category that holds. A
+ * person who corrected the category was not shown a priority for that
+ * category, and a warning keeps a row out of information whatever it is
+ * filed as.
+ */
+function placeBy(
+  category: ReviewedLabels['category'],
+  priority: ReviewedLabels['priority'],
+  lowTrusted: boolean,
+): PlacedAttention['state'] {
+  if (informational.has(category)) return 'informational'
+  if (category === 'suspicious' || pressing.has(priority)) return 'high_priority'
+  return priority === 'low' && lowTrusted ? 'informational' : 'attention'
 }
 
 /**
@@ -120,45 +140,47 @@ function placeBy({ category, priority }: ReviewedLabels): PlacedAttention['state
  *
  * Pass the review only when it names the version the classification shows.
  * The page already scopes reviews that way; a review of another version or
- * copy decides nothing about this row and must not be passed here.
+ * copy decides nothing about this row and must not be passed here. A row the
+ * reading listed nothing about is the caller's to name: `none` where it was
+ * never stored, `unavailable` where the store could not be read.
  */
 export function attentionOf(
-  classification: StoredClassification | undefined,
+  classification: StoredClassification,
   review?: AttentionReview,
 ): Attention {
-  if (classification === undefined) return unclassified('none')
   switch (classification.state) {
     case 'none':
     case 'stale':
     case 'provider_failure':
     case 'unavailable':
-      return unclassified(classification.state)
+      return { state: 'unclassified', cause: classification.state }
     case 'current':
     case 'unverified':
-      return placed(classification.labels, classification.state, review)
+      return placed(classification.labels, classification.state, review?.labels.category)
   }
 }
 
 function placed(
   labels: ClassificationLabels,
   evidence: AttentionEvidence,
-  review: AttentionReview | undefined,
+  chosen: ReviewedLabels['category'] | undefined,
 ): PlacedAttention {
   const advice: ReviewedLabels = { category: labels.category, priority: labels.priority }
-  if (review === undefined) {
-    return {
-      state: labels.review === 'needs_review' ? 'needs_review' : placeBy(advice),
-      labels: advice,
-      decidedBy: 'classifier',
-      advice,
-      evidence,
-    }
-  }
+  const category = chosen ?? labels.category
+  const warning = warned(labels)
+  const state =
+    chosen === undefined && labels.review === 'needs_review'
+      ? 'needs_review'
+      : placeBy(category, labels.priority, category === labels.category && !warning)
   return {
-    state: placeBy(review.labels),
-    labels: review.labels,
-    decidedBy: 'reviewer',
+    state,
+    category,
+    categoryBy: chosen === undefined ? 'classifier' : 'reviewer',
+    priority: labels.priority,
+    priorityUncertain: labels.priorityUncertain,
     advice,
+    warning,
+    elevated: labels.reviewPriority === 'elevated',
     evidence,
   }
 }
@@ -167,52 +189,48 @@ function placed(
 export const attentionRank = (state: AttentionState) => attentionStates.indexOf(state)
 
 /**
- * What one reading could and could not reach, as the tally needs it. The
- * page's queue scope carries these already; nothing else is read.
- */
-export type TallyReach = Readonly<{
-  /** Whether a bound may have cut the reading. */
-  bounded: boolean
-  /** Mailboxes that could not be read at all. */
-  failed: readonly unknown[]
-  /** Mailboxes whose later pages could not be read. */
-  incomplete?: readonly unknown[] | undefined
-}>
-
-/**
  * How far a tally reaches:
  * - `loaded`: it counts the rows this reading loaded, and older mail or a
  *   mailbox that could not be read may hold more. Never read as a total.
- * - `proven`: the reading read every mailbox it listed to the end, so the
- *   count is of everything that reading could have shown.
+ * - `proven`: the reading was proved complete, so the count is of everything
+ *   that reading could have shown.
  */
-export type TallyReachKind = 'loaded' | 'proven'
+export type TallyReach = 'loaded' | 'proven'
 
-/** Whether a reading's tally counts a proven scope or only what was loaded. */
-export function tallyReachOf(reach: TallyReach): TallyReachKind {
-  const incomplete = reach.incomplete?.length ?? 0
-  return reach.bounded || reach.failed.length > 0 || incomplete > 0 ? 'loaded' : 'proven'
-}
+/**
+ * What the app already proved about the reading the rows came from, as its
+ * Inbox coverage states it: `complete` only where every listed mailbox was
+ * read to the end without failure. That proof is made once, beside the
+ * Inbox Zero verdict, and never restated here.
+ */
+export type TallyCoverage = Readonly<{ result: 'complete' | 'incomplete' | 'failed' }>
 
 export type AttentionTally = Readonly<{
   /** Rows in each state. Every state is present, at zero where none is. */
   counts: Readonly<Record<AttentionState, number>>
   /** Rows counted in all: exactly the rows given, so the counts sum to it. */
   total: number
-  reach: TallyReachKind
+  reach: TallyReach
 }>
 
 /**
  * How many rows ask for each kind of attention, among the rows given, and
- * how far that count reaches. Pass exactly the rows the reading loaded, or
- * the rows a filter shows: the tally is of those rows and claims nothing
- * about any it was not given.
+ * how far that count reaches. Pass every row of the reading: the reach
+ * describes the reading, and a filtered subset is not what the coverage
+ * proved. The tally claims nothing about rows it was not given.
  */
-export function tallyAttention(attention: readonly Attention[], reach: TallyReach): AttentionTally {
+export function tallyAttention(
+  attention: readonly Attention[],
+  coverage: TallyCoverage,
+): AttentionTally {
   const counts = Object.fromEntries(attentionStates.map((state) => [state, 0])) as Record<
     AttentionState,
     number
   >
   for (const { state } of attention) counts[state] += 1
-  return { counts, total: attention.length, reach: tallyReachOf(reach) }
+  return {
+    counts,
+    total: attention.length,
+    reach: coverage.result === 'complete' ? 'proven' : 'loaded',
+  }
 }

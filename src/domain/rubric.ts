@@ -52,6 +52,14 @@ export const defaultRubric = {
     normal: 'Worth reading or handling at some point, with no time pressure.',
     low: 'Needs no action: notifications, newsletters, promotions, or information only.',
   } satisfies Record<Priority, string>,
+  /**
+   * Categories whose mail asks for no action of itself, whatever priority
+   * travels with it. A worklist files these as information. Notifications
+   * and purchases are not here: a review request or a delivery problem can
+   * need action, so their priority decides. This is a rule for reading
+   * judgments, not an instruction to the classifier.
+   */
+  informationalCategories: ['newsletter', 'promotion'],
   thresholds: {
     /** Minimum probability of the chosen category to accept it without review. */
     autoAccept: 0.8,
