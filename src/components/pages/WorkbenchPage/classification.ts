@@ -22,7 +22,7 @@
 import type { RowReview } from '../../../app/desk-review'
 import type { MailboxCopyRef } from '../../../domain/mailbox-copy'
 import { mailboxCopyId } from '../../../domain/mailbox-copy'
-import { sameSubject } from '../../../domain/review'
+import { reviewerOutcome, sameSubject } from '../../../domain/review'
 import type { BodyState } from './body'
 import type {
   ClassificationLabels,
@@ -138,31 +138,19 @@ function decidedLast<Field extends 'category' | 'priority'>(
 
 /**
  * Two answers about one row, merged field by field: every field comes from
- * whichever answer decided it last, and the summary from the newer answer.
+ * whichever answer decided it last, and `reviewerOutcome` assembles the two
+ * into one answer exactly as the store's own projection is assembled.
  *
  * Taking one answer whole would drop a field only the other one holds. A
  * reading folds every review of the subject, while a save answers for the one
  * review it recorded, so a newer save about the category would hide a
  * priority somebody had decided: the row would show that label as nobody's
- * while the store holds a decision for it.
+ * while the store holds a decision for it. Two answers that decided no field
+ * between them are not answers this can improve on, so the newer one stands.
  */
-function merged(a: RowReview, b: RowReview): RowReview {
-  const category = decidedLast(a, b, 'category')
-  const priority = decidedLast(a, b, 'priority')
-  const decided = [category?.decision, priority?.decision]
-  return {
-    ...(Date.parse(b.reviewedAt) > Date.parse(a.reviewedAt) ? b : a),
-    decision: decided.some((field) => field?.decision === 'corrected') ? 'corrected' : 'confirmed',
-    labels: {
-      ...(category !== undefined && { category: category.value }),
-      ...(priority !== undefined && { priority: priority.value }),
-    },
-    fields: {
-      ...(category !== undefined && { category: category.decision }),
-      ...(priority !== undefined && { priority: priority.decision }),
-    },
-  }
-}
+const merged = (a: RowReview, b: RowReview): RowReview =>
+  reviewerOutcome(decidedLast(a, b, 'category'), decidedLast(a, b, 'priority')) ??
+  (Date.parse(b.reviewedAt) > Date.parse(a.reviewedAt) ? b : a)
 
 /** What applies to each row of one reading. */
 export type Evidence = Readonly<{
@@ -267,7 +255,8 @@ export const categoryLabels = {
   other: 'Other',
 } as const satisfies Record<ClassificationLabels['category'], string>
 
-const priorities = {
+/** How each rubric priority reads. Shared with the review panel's options. */
+export const priorityLabels = {
   urgent: 'Urgent',
   high: 'High',
   normal: 'Normal',
@@ -339,8 +328,8 @@ const decisions = {
 const reviewPriorityNote = (priority: ClassificationLabels['reviewPriority']) =>
   priority === 'elevated' ? ' Marked as more urgent to look at.' : ''
 
-/** The category panel makes no decision about any other classification field. */
-export const categoryReviewScopeNote =
+/** A category review makes no decision about any other classification field. */
+const categoryReviewScopeNote =
   'This review covers the category only. Priority and reply expectations are not confirmed.'
 
 const priorityReviewScopeNote =
@@ -403,8 +392,8 @@ function categoryFact(
 /** The model's priority, and whether the model was sure of it. */
 const modelPriority = (labels: ClassificationLabels) =>
   labels.priorityUncertain
-    ? `${priorities[labels.priority]}, which it was not sure of`
-    : priorities[labels.priority]
+    ? `${priorityLabels[labels.priority]}, which it was not sure of`
+    : priorityLabels[labels.priority]
 
 /**
  * What the row shows for priority, and who decided it. Where nobody has, it
@@ -422,13 +411,13 @@ function priorityFact(
   if (decided === undefined || chosen === undefined) {
     return {
       term: 'Priority',
-      value: priorities[labels.priority],
+      value: priorityLabels[labels.priority],
       ...(labels.priorityUncertain && { note: 'The model was not sure of this priority.' }),
     }
   }
   return {
     term: 'Priority',
-    value: priorities[chosen],
+    value: priorityLabels[chosen],
     note:
       decided.decision === 'confirmed'
         ? `A person confirmed the model's priority, ${modelPriority(labels)}.`

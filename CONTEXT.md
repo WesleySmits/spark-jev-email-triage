@@ -3,7 +3,7 @@
 ## Implemented boundary
 
 `src/routes/index.tsx` reads mail through `ReviewDesk` and enables local
-category reviews. The legacy Complete control remains off; the separate
+reviews of a classification's category and priority. The legacy Complete control remains off; the separate
 guarded Done panel can archive one selected Spark message ID after human
 approval and a second confirmation. The action server is disabled by default.
 The CLI `pnpm shadow --apply` stores classifications;
@@ -55,10 +55,12 @@ loaded worklist, show progress, request a safe Stop and read the durable result.
 The control and server contract are default-off and loopback-only. Opening and
 refreshing only read and never start Jev. The CLI mailbox workflow remains
 available. The app otherwise reads existing judgments and saves reviews. It shows a raw category
-"Model score", which is not calibrated certainty. The stored review contract
-decides category and priority as separate fields, and neither reply
-expectations nor deadlines; the UI still asks only about the category, so a
-priority it did not decide stays the model's, uncertainty note included. See [README](README.md) for the
+"Model score", which is not calibrated certainty. The review contract and the panel
+decide category and priority as separate fields, and neither reply
+expectations nor deadlines. Jev's advice for each field is shown beside the
+decision a person makes about it; choosing the value marked as that advice is
+what records a confirmation, and a field nobody touched stays the model's,
+uncertainty note included, and reads as not reviewed. See [README](README.md) for the
 supported workflows and current limitations.
 
 `/health` reports the configured deployment commit. Spark readiness separately
@@ -107,7 +109,7 @@ One classifier judgment about one classification subject. A classification propo
 
 ## Review
 
-A human confirmation or correction of one exact classification subject, stored append-only beside the original classification. A review decides the category, the priority or both, one field at a time: each field carries its own confirmation or correction, and a field no review named stays the classifier's and is attributed to it. Reply expectation and deadline are not reviewable; what to do about a message is a work decision, not a classifier label anyone confirms here. The current UI asks only about category. Reviews are shown for their matching subject, including historical labels when stale; they never make an unverified or stale judgment current and are not transferred to a newer subject.
+A human confirmation or correction of one exact classification subject, stored append-only beside the original classification. A review decides the category, the priority or both, one field at a time: each field carries its own confirmation or correction, and a field no review named stays the classifier's and is attributed to it. Reply expectation and deadline are not reviewable; what to do about a message is a work decision, not a classifier label anyone confirms here. One Save records every field a person decided and no other. Reviews are shown for their matching subject, including historical labels when stale; they never make an unverified or stale judgment current and are not transferred to a newer subject.
 
 ## Logical message
 

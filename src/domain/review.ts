@@ -241,7 +241,8 @@ export type ReviewDecisions = Readonly<{
   reviewedAt: string
 }>
 
-type Decided<Value> = Readonly<{ value: Value; decision: FieldDecision }>
+/** One field's decision, and the value it settled on. */
+export type DecidedField<Value> = Readonly<{ value: Value; decision: FieldDecision }>
 
 /**
  * The newest decision about one field, from sources given newest first, with
@@ -255,7 +256,7 @@ function newestDecision<Value>(
     verdict: ReviewVerdict,
   ) => Readonly<{ decision: 'confirmed' } | { decision: 'corrected'; value: Value }> | undefined,
   confirmed: Value,
-): Decided<Value> | undefined {
+): DecidedField<Value> | undefined {
   for (const source of sources) {
     const decision = decisionIn(source.verdict)
     if (decision === undefined) continue
@@ -288,6 +289,23 @@ function foldDecisions(
 ): ReviewerOutcome | undefined {
   const category = newestDecision(sources, (verdict) => verdict.category, labels.category)
   const priority = newestDecision(sources, (verdict) => verdict.priority, labels.priority)
+  return reviewerOutcome(category, priority)
+}
+
+/**
+ * One reviewer outcome over the fields somebody decided: the value each of
+ * them settled on, who decided it, and a summary of the review as a whole,
+ * taken from the newest of those decisions. Nothing where no field was
+ * decided, because a reviewer and a time behind no decision say nothing.
+ *
+ * This is the one place that shape is assembled. A page that merges two
+ * answers about the same row decides each field for itself and then comes
+ * here, so a merged answer is put together exactly as a stored one is.
+ */
+export function reviewerOutcome(
+  category: DecidedField<ReviewedLabels['category']> | undefined,
+  priority: DecidedField<ReviewedLabels['priority']> | undefined,
+): ReviewerOutcome | undefined {
   const decisions = [category?.decision, priority?.decision].flatMap((decision) =>
     decision === undefined ? [] : [decision],
   )
