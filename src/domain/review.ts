@@ -245,8 +245,9 @@ type Decided<Value> = Readonly<{ value: Value; decision: FieldDecision }>
 
 /**
  * The newest decision about one field, from sources given newest first, with
- * the value it settled on: the corrected value, or `confirmed`, the label the
- * reviewer confirmed. Nothing where no source decided that field.
+ * the value it settled on: the value a correction chose, or `confirmed`, which
+ * is the classifier's own label for that field. Nothing where no source
+ * decided it.
  */
 function newestDecision<Value>(
   sources: readonly ReviewDecisions[],
@@ -282,11 +283,11 @@ function newestDecision<Value>(
  * covered the other. Nothing where no review decided any field.
  */
 function foldDecisions(
-  newestFirst: readonly ReviewDecisions[],
+  sources: readonly ReviewDecisions[],
   labels: ReviewedLabels,
 ): ReviewerOutcome | undefined {
-  const category = newestDecision(newestFirst, (verdict) => verdict.category, labels.category)
-  const priority = newestDecision(newestFirst, (verdict) => verdict.priority, labels.priority)
+  const category = newestDecision(sources, (verdict) => verdict.category, labels.category)
+  const priority = newestDecision(sources, (verdict) => verdict.priority, labels.priority)
   const decisions = [category?.decision, priority?.decision].flatMap((decision) =>
     decision === undefined ? [] : [decision],
   )
