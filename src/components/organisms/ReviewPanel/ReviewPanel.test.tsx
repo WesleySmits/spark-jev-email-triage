@@ -234,11 +234,13 @@ describe('ReviewPanel', () => {
     expect(text('span')).toContain('Decided by')
   })
 
-  it('offers undo only for a field whose caller gives one', () => {
+  it('offers undo only for a field whose caller gives one, named for that field', () => {
     const { buttons } = render()
     const undos = buttons.filter((button) => button.props['variant'] === 'quiet')
     expect(undos).toHaveLength(1)
     expect(undos[0]?.props['children']).toBe('Undo')
+    // Two fields would otherwise offer two buttons of the same name.
+    expect(undos[0]?.props['aria-label']).toBe('Undo, Priority')
     expect(undos[0]?.props['onClick']).toBe(priority.onUndo)
   })
 
@@ -308,7 +310,11 @@ describe('ReviewPanel', () => {
     expect(text('strong')).toEqual(['Saved'])
     expect(text('span')).toContain('Advice stays.')
     const live = find((element) => 'aria-live' in element.props || 'role' in element.props)
-    expect(live.map((element) => element.props['role'])).toEqual(['radiogroup', 'radiogroup'])
+    expect(live.map((element) => element.props['role'])).toEqual([
+      'group',
+      'radiogroup',
+      'radiogroup',
+    ])
     expect(render({ result: undefined }).text('strong')).toEqual([])
   })
 })

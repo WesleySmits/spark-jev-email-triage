@@ -184,6 +184,10 @@ function ReviewFieldRow({ field, cells }: FieldProps) {
           <Button
             className="review-panel__undo"
             variant="quiet"
+            // Every field offers one of these, so the field it belongs to is
+            // part of its name. The visible word leads it, so anyone who says
+            // the button's name out loud still reaches it.
+            aria-label={`${field.undoLabel}, ${field.label}`}
             disabled={field.disabled === true}
             onClick={field.onUndo}
           >
@@ -228,7 +232,12 @@ function ReviewFields({ Subheading, ...props }: FieldsProps) {
           {props.fieldsHint}
         </p>
       )}
-      <div className="review-panel__fields" aria-labelledby={titleId} aria-describedby={hintId}>
+      <div
+        className="review-panel__fields"
+        role="group"
+        aria-labelledby={titleId}
+        aria-describedby={hintId}
+      >
         {props.fields.map((field) => (
           <ReviewFieldRow key={field.name} field={field} cells={props.cells} />
         ))}
