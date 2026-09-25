@@ -52,6 +52,11 @@
   text-transform: uppercase;
 }
 
+/* Keyboard navigation scrolls the button, which must clear the sticky title. */
+.message-queue__list--grouped .message-row__button {
+  scroll-margin-block-start: calc(var(--s2) * 2 + 15px + 1px);
+}
+
 .message-queue__group-note {
   margin-left: auto;
   font: var(--text-meta);
