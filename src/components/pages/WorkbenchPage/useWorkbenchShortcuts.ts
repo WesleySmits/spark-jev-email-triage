@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 
-export type WorkbenchShortcut = 'next' | 'previous' | 'complete' | 'search'
+export type WorkbenchShortcut = 'next' | 'previous' | 'group' | 'complete' | 'search'
 
 // A Map, so keys such as "constructor" don't find Object.prototype members.
 const shortcuts: ReadonlyMap<string, WorkbenchShortcut> = new Map([
   ['k', 'next'],
   ['j', 'previous'],
+  ['g', 'group'],
   ['e', 'complete'],
   ['/', 'search'],
 ])
@@ -18,19 +19,24 @@ export type LegendShortcut = Readonly<{
 /** What the rail's legend shows. The search field shows `/` itself. */
 export const shortcutLegend: readonly LegendShortcut[] = [
   { label: 'Next / previous', keys: ['K', 'J'] },
+  { label: 'Next group', keys: ['G'] },
   { label: 'Complete', keys: ['E'] },
 ]
 
 /**
  * The legend rows to show: none while the keys are off, so the help never
- * offers a key that does nothing, and Complete only where it is offered.
+ * offers a key that does nothing, Complete only where it is offered and
+ * Next group only where the queue is grouped.
  */
 export function legendFor(
-  options: Readonly<{ singleKeys: boolean; canComplete: boolean }>,
+  options: Readonly<{ singleKeys: boolean; canComplete: boolean; canGroup?: boolean | undefined }>,
 ): readonly LegendShortcut[] {
   if (!options.singleKeys) return []
-  if (options.canComplete) return shortcutLegend
-  return shortcutLegend.filter((item) => item.label !== 'Complete')
+  return shortcutLegend.filter(
+    (item) =>
+      (options.canComplete || item.label !== 'Complete') &&
+      (options.canGroup === true || item.label !== 'Next group'),
+  )
 }
 
 // Controls and fields that own their keys: text entry, buttons, checkboxes,

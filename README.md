@@ -73,7 +73,21 @@ loading, refreshing and reviewing in the app make no model calls. There is no
 reply-expectation or deadline editor, no persisted completion and no Undo of a
 saved review.
 
-The workbench's single-key shortcuts (K, J, E and `/`) can be turned off in
+The queue is a worklist grouped by attention: needs review, high priority,
+attention, not triaged and informational, in that order. A row's group comes
+from the stored judgment and from what a person decided about that exact
+version; a person's decision on the category or the priority wins for that
+field, and every other field stays the model's. A recorded suspicion keeps a
+row out of the informational group whatever it is filed as, and an outdated,
+failed, unreadable or missing judgment places nothing: such a row is grouped
+as not triaged and says why. Every row shows one line naming the labels that
+placed it and who decided each, with the model's advice beside a person's
+decision. Group counts are of loaded rows, of every message in the view only
+when the Inbox Zero scan proved the reading complete, or of the current
+filter, and say which. Grouping never moves mail. `G` opens the first message
+of the next group.
+
+The workbench's single-key shortcuts (K, J, G, E and `/`) can be turned off in
 the rail, under the shortcut help. The choice is kept in that browser's local
 storage, holds after a reload, and carries no mail. With the keys off nothing
 in the page claims one, and Tab, Enter and Escape keep working. On narrow

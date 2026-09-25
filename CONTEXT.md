@@ -47,6 +47,17 @@ The route uses this contract for Refresh, keeps the page mounted within one
 view so stable mailbox-copy selections survive, and shows only changes proved
 by complete per-mailbox reads.
 
+The queue is a worklist. Every loaded row is placed in one of five attention
+groups, in this order: needs review, high priority, attention, not triaged and
+informational. A row is placed by the judgment a reading holds for it and by
+what a person decided about that exact version; a stale, failed, unreadable or
+missing judgment places nothing and is grouped as not triaged with its cause
+named. Each row carries one line saying which labels placed it and who decided
+each, with the model's advice kept beside a person's decision. Each group
+counts its rows and says whether the count is of loaded rows, of every message
+the view holds when the Inbox Zero scan proved the reading complete, or of a
+filter. Placing a row moves no mail.
+
 The workflow and mailbox filters move into a modal sheet from the top bar
 at 900px and below, so they remain reachable on narrow screens.
 
