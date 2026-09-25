@@ -32,3 +32,30 @@
   padding: 0;
   list-style: none;
 }
+
+/* A grouped worklist: each group is a labelled section with a sticky title,
+ * so the group a row is in stays readable while the list scrolls. */
+.message-queue__group-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  background: var(--surface-2);
+  font: var(--text-overline);
+  letter-spacing: var(--tracking-overline);
+  text-transform: uppercase;
+}
+
+.message-queue__group-note {
+  margin-left: auto;
+  font: var(--text-meta);
+  letter-spacing: 0;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+}

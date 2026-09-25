@@ -234,6 +234,81 @@ export const ManyRows: Story = {
   render: (args) => <Stateful {...args} />,
 }
 
+/**
+ * A grouped worklist: every group is a labelled section with a sticky title
+ * and its count, an empty group shows its title alone, and each row says why
+ * it sits where it does.
+ */
+const [first, second, third, fourth] = messages as [
+  QueueMessage,
+  QueueMessage,
+  QueueMessage,
+  QueueMessage,
+]
+
+export const Grouped: Story = {
+  args: {
+    header: { title: 'Unread', count: '4 results', context: 'All readable mailboxes' },
+    groups: [
+      {
+        id: 'needs_review',
+        title: 'Needs review',
+        note: '1 of 4 loaded',
+        messages: [
+          {
+            ...first,
+            reason:
+              'Policy asked for a person. No person has reviewed it. Model advice: Other, Normal.',
+          },
+        ],
+      },
+      {
+        id: 'high_priority',
+        title: 'High priority',
+        note: '1 of 4 loaded',
+        messages: [
+          {
+            ...second,
+            status: { label: 'Triage from earlier', tone: 'neutral' },
+            category: 'Purchase',
+            reason: "Purchase, the model's; priority High, the model's.",
+          },
+        ],
+      },
+      { id: 'attention', title: 'Attention', note: '0 of 4 loaded', messages: [] },
+      {
+        id: 'unclassified',
+        title: 'Not triaged',
+        note: '1 of 4 loaded',
+        messages: [
+          {
+            ...third,
+            status: { label: 'Not triaged', tone: 'neutral' },
+            category: undefined,
+            reason:
+              'Not triaged. No run has stored anything for this message, so nothing places it.',
+          },
+        ],
+      },
+      {
+        id: 'informational',
+        title: 'Informational',
+        note: '1 of 4 loaded',
+        messages: [
+          {
+            ...fourth,
+            status: { label: 'Triage current', tone: 'done' },
+            reason:
+              "Newsletter, decided by a person; priority Low, the model's. Model advice: Promotion, Low.",
+          },
+        ],
+      },
+    ],
+    currentId: 'm2',
+  },
+  render: (args) => <Stateful {...args} />,
+}
+
 /** No messages: the caller's `empty` content fills the list area. */
 export const EmptySlot: Story = {
   args: {

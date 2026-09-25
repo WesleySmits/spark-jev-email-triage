@@ -84,6 +84,7 @@ describe('attentionOf', () => {
       category: 'personal',
       categoryBy: 'classifier',
       priority: 'normal',
+      priorityBy: 'classifier',
       priorityUncertain: true,
       advice: { category: 'personal', priority: 'normal' },
       warning: false,
@@ -134,55 +135,79 @@ describe('attentionOf', () => {
     })
   })
 
-  it('lets a confirmation settle a judgment that asked for a person', () => {
-    const confirmed = { labels: { category: 'other', priority: 'normal' } } as const
-    expect(attentionOf(unverified(askedForAPerson), confirmed)).toMatchObject({
+  it('lets a decision about either field settle a judgment that asked for a person', () => {
+    expect(
+      attentionOf(unverified(askedForAPerson), { labels: { category: 'other' } }),
+    ).toMatchObject({
       state: 'attention',
       category: 'other',
       categoryBy: 'reviewer',
+      priorityBy: 'classifier',
       advice: { category: 'other', priority: 'normal' },
     })
+    expect(
+      attentionOf(unverified(askedForAPerson), { labels: { priority: 'high' } }),
+    ).toMatchObject({ state: 'high_priority', categoryBy: 'classifier', priorityBy: 'reviewer' })
   })
 
   it('places a row by the category a person chose and keeps the advice beside it', () => {
     const pressing = unverified({ category: 'personal', priority: 'urgent' })
-    expect(
-      attentionOf(pressing, { labels: { category: 'promotion', priority: 'urgent' } }),
-    ).toMatchObject({
+    expect(attentionOf(pressing, { labels: { category: 'promotion' } })).toMatchObject({
       state: 'informational',
       category: 'promotion',
       categoryBy: 'reviewer',
       priority: 'urgent',
+      priorityBy: 'classifier',
       advice: { category: 'personal', priority: 'urgent' },
     })
   })
 
-  it('never presents the priority that travels with a review as a person’s', () => {
-    // A category review carries the model's priority by shape. That
-    // priority was given to the model's category, so it can raise a row a
-    // person re-filed, but it cannot bury one as information.
+  it('places a row by the priority a person chose', () => {
     const quiet = unverified({ category: 'notification', priority: 'low' })
-    expect(attentionOf(quiet, { labels: { category: 'personal', priority: 'low' } })).toMatchObject(
-      { state: 'attention', categoryBy: 'reviewer', priority: 'low' },
-    )
+    expect(attentionOf(quiet, { labels: { priority: 'urgent' } })).toMatchObject({
+      state: 'high_priority',
+      priority: 'urgent',
+      priorityBy: 'reviewer',
+    })
+    const pressing = unverified({ category: 'personal', priority: 'urgent' })
+    expect(attentionOf(pressing, { labels: { priority: 'low' } })).toMatchObject({
+      state: 'informational',
+      priorityBy: 'reviewer',
+    })
+  })
+
+  it('never lets the model’s low priority bury a row a person re-filed', () => {
+    // The model gave its priority to its own category. A person who chose
+    // another category decided nothing about that priority, so it can still
+    // raise the row but cannot file it as information.
+    const quiet = unverified({ category: 'notification', priority: 'low' })
+    expect(attentionOf(quiet, { labels: { category: 'personal' } })).toMatchObject({
+      state: 'attention',
+      categoryBy: 'reviewer',
+      priority: 'low',
+      priorityBy: 'classifier',
+    })
     const pressing = unverified({ category: 'notification', priority: 'high' })
-    expect(
-      attentionOf(pressing, { labels: { category: 'personal', priority: 'high' } }),
-    ).toMatchObject({ state: 'high_priority' })
-    // Confirming the category keeps the model's low priority trusted for it.
-    expect(
-      attentionOf(quiet, { labels: { category: 'notification', priority: 'low' } }),
-    ).toMatchObject({ state: 'informational', categoryBy: 'reviewer' })
+    expect(attentionOf(pressing, { labels: { category: 'personal' } })).toMatchObject({
+      state: 'high_priority',
+    })
+    // Confirming the category keeps the model's low priority trusted for it,
+    // and a person's own low priority is trusted for any category.
+    expect(attentionOf(quiet, { labels: { category: 'notification' } })).toMatchObject({
+      state: 'informational',
+      categoryBy: 'reviewer',
+    })
+    expect(attentionOf(quiet, { labels: { category: 'personal', priority: 'low' } })).toMatchObject(
+      { state: 'informational', priorityBy: 'reviewer' },
+    )
   })
 
   it('keeps a possible scam out of information whatever a person decides', () => {
-    const confirmed = attentionOf(unverified(possibleScam), {
-      labels: { category: 'other', priority: 'low' },
-    })
+    const confirmed = attentionOf(unverified(possibleScam), { labels: { category: 'other' } })
     expect(confirmed).toMatchObject({ state: 'attention', warning: true, elevated: true })
-    const refiled = attentionOf(unverified(possibleScam), {
-      labels: { category: 'suspicious', priority: 'low' },
-    })
+    const lowered = attentionOf(unverified(possibleScam), { labels: { priority: 'low' } })
+    expect(lowered).toMatchObject({ state: 'attention', warning: true })
+    const refiled = attentionOf(unverified(possibleScam), { labels: { category: 'suspicious' } })
     expect(refiled).toMatchObject({ state: 'high_priority', warning: true })
   })
 
@@ -201,7 +226,7 @@ describe('attentionOf', () => {
     }
     expect(attentionOf(stale)).toEqual({ state: 'unclassified', cause: 'stale' })
     // An old version's review cannot make the row reliable again.
-    expect(attentionOf(stale, { labels: { category: 'personal', priority: 'urgent' } })).toEqual({
+    expect(attentionOf(stale, { labels: { priority: 'urgent' } })).toEqual({
       state: 'unclassified',
       cause: 'stale',
     })
