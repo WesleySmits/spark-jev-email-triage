@@ -84,8 +84,10 @@ as not triaged and says why. Every row shows one line naming the labels that
 placed it and who decided each, with the model's advice beside a person's
 decision. Group counts are of loaded rows, of every message in the view only
 when the Inbox Zero scan proved the reading complete, or of the current
-filter, and say which. Grouping never moves mail. `G` opens the first message
-of the next group.
+filter, and say which. "Group by attention" in the queue header turns the
+grouping off, which lists the same rows newest first with their reason lines
+and turns the `G` shortcut off with it. Grouping never moves mail. `G` opens
+the first message of the next group.
 
 The workbench's single-key shortcuts (K, J, G, E and `/`) can be turned off in
 the rail, under the shortcut help. The choice is kept in that browser's local

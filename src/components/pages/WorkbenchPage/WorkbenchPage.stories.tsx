@@ -1637,6 +1637,24 @@ export const AttentionWorklist: Story = {
     await keysChangeNothing(canvasElement, 'g', row(/Newsletter: work/))
     await expect(shortcutHelp(canvasElement)).toContain('Next group')
 
+    // Ungrouped, the rows fall back to newest first, keep their reason lines,
+    // and G does nothing; grouping again restores the worklist.
+    const grouping = canvas.getByRole('checkbox', { name: 'Group by attention' })
+    await userEvent.click(grouping)
+    await expect(groupTitles(canvasElement)).toEqual([])
+    await expect(rowOrder(canvasElement)).toEqual([
+      'Can delivery move a week earlier?',
+      'Correction on invoice AL-2048',
+      'Move Friday dinner?',
+      'Newsletter: work that makes room',
+    ])
+    await expect(row(/Move Friday dinner/)).toHaveTextContent('Triage failed.')
+    await expect(shortcutHelp(canvasElement)).not.toContain('Next group')
+    await userEvent.click(row(/Can delivery move/))
+    await keysChangeNothing(canvasElement, 'g', row(/Can delivery move/))
+    await userEvent.click(grouping)
+    await expect(groupTitles(canvasElement)).toHaveLength(5)
+
     // A mailbox filter narrows the rows, and the counts say so.
     await rail(canvasElement, 'Atelier Linden')
     await expect(groupTitles(canvasElement)).toEqual([
