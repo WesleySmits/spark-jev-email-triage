@@ -76,6 +76,28 @@ const adviceLine = ({ advice }: PlacedAttention) =>
 
 const warningLine = 'Possible scam or phishing, whatever it is filed as.'
 
+const said = (lines: readonly (string | undefined)[]) =>
+  lines.filter((line) => line !== undefined).join(' ')
+
+/** The model was unsure of a priority that is still its own. */
+const unsureLine = (placed: PlacedAttention) =>
+  placed.priorityUncertain && placed.priorityBy === 'classifier'
+    ? 'The model was not sure of its priority.'
+    : undefined
+
+/**
+ * Why a row still needs a person. The question is about the category, so a
+ * priority a person decided is theirs and says so, and leaves it open.
+ */
+function askedLine(placed: PlacedAttention) {
+  const sooner = placed.elevated ? ', sooner' : ''
+  const awaits =
+    placed.priorityBy === 'reviewer'
+      ? 'No person has decided the category; a person decided the priority.'
+      : 'No person has reviewed it.'
+  return `Policy asked for a person${sooner}. ${awaits}`
+}
+
 /**
  * One line saying why a row sits in its group. It names the labels that
  * placed it and who decided each, the model's advice where a person decided
@@ -85,29 +107,17 @@ const warningLine = 'Possible scam or phishing, whatever it is filed as.'
  */
 export function attentionReason(attention: Attention): string {
   if (attention.state === 'unclassified') return unclassifiedReasons[attention.cause]
-  const reviewed = attention.categoryBy === 'reviewer' || attention.priorityBy === 'reviewer'
-  const unsure =
-    attention.priorityUncertain && attention.priorityBy === 'classifier'
-      ? 'The model was not sure of its priority.'
-      : undefined
+  const warning = attention.warning ? warningLine : undefined
   if (attention.state === 'needs_review') {
-    return [
-      `Policy asked for a person${attention.elevated ? ', sooner' : ''}. No person has reviewed it.`,
-      attention.warning ? warningLine : undefined,
-      adviceLine(attention),
-      unsure,
-    ]
-      .filter((line) => line !== undefined)
-      .join(' ')
+    return said([askedLine(attention), warning, adviceLine(attention), unsureLine(attention)])
   }
-  return [
+  const reviewed = attention.categoryBy === 'reviewer' || attention.priorityBy === 'reviewer'
+  return said([
     labelsLine(attention),
     reviewed ? adviceLine(attention) : undefined,
-    attention.warning ? warningLine : undefined,
-    unsure,
-  ]
-    .filter((line) => line !== undefined)
-    .join(' ')
+    warning,
+    unsureLine(attention),
+  ])
 }
 
 /** How far a group's count reaches, in the words its note uses. */

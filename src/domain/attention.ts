@@ -25,8 +25,11 @@
  *   they held, and the cause stays named so it is never mistaken for a row
  *   that was simply never triaged.
  * - A judgment triage policy asked a person to look at stays `needs_review`
- *   until a person has reviewed that version. Its labels, urgent included,
- *   place nothing until then: a priority nobody trusts is not a priority.
+ *   until a person has decided its category. Every ground policy records is
+ *   about the category: a low score for it, an answer of Other, or a
+ *   possible scam, so a decision about the priority alone leaves that
+ *   question open. Its labels, urgent included, place nothing until then: a
+ *   priority nobody trusts is not a priority.
  * - A suspicion policy recorded survives every review, as the reader's
  *   warning does. A row that may be a scam is never filed as information,
  *   whatever category a person decides on.
@@ -170,13 +173,12 @@ const decider = (value: unknown): PlacedAttention['categoryBy'] =>
 
 /**
  * The state a held judgment and a person's decisions place a row in. Policy's
- * request for a person stands until a person decided something about this
- * version; any field they decided answers it, because the row has then been
- * looked at.
+ * request for a person is a question about the category, and stands until a
+ * person decided the category of this version. A priority they decided is
+ * kept and shown, but answers no question about the category.
  */
 function stateOf(labels: ClassificationLabels, decided: DecidedLabels, warning: boolean) {
-  const reviewed = decided.category !== undefined || decided.priority !== undefined
-  if (!reviewed && labels.review === 'needs_review') return 'needs_review'
+  if (decided.category === undefined && labels.review === 'needs_review') return 'needs_review'
   const category = decided.category ?? labels.category
   const lowTrusted = !warning && (decided.priority !== undefined || category === labels.category)
   return placeBy(category, decided.priority ?? labels.priority, lowTrusted)
