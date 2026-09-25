@@ -37,7 +37,7 @@ function press(key: string, overrides: Partial<KeyEvent> = {}, context: Context 
   )
 }
 
-const singleKeys = ['k', 'j', 'e', '/']
+const singleKeys = ['k', 'j', 'g', 'e', '/']
 // Keys the browser and the controls own. They are no shortcut in either mode.
 const ownKeys = ['Tab', 'Enter', 'Escape', 'ArrowDown', ' ']
 
@@ -45,6 +45,7 @@ describe('shortcutFor', () => {
   it.each([
     ['k', 'next'],
     ['j', 'previous'],
+    ['g', 'group'],
     ['e', 'complete'],
     ['/', 'search'],
   ])('maps %s to %s', (key, shortcut) => {
@@ -79,7 +80,7 @@ describe('shortcutFor', () => {
     ['an ARIA checkbox', focused('[role="checkbox"]')],
     ['an ARIA button', focused('[role="button"]')],
   ])('leaves every key to %s', (_, target) => {
-    for (const key of ['k', 'j', 'e', '/']) expect(press(key, { target })).toBeNull()
+    for (const key of ['k', 'j', 'g', 'e', '/']) expect(press(key, { target })).toBeNull()
   })
 
   it('acts from the controls named in actsFrom, and only those', () => {
@@ -97,7 +98,7 @@ describe('shortcutFor', () => {
     ['a handled press', { defaultPrevented: true }],
     ['IME composition', { isComposing: true }],
   ])('ignores %s', (_, overrides) => {
-    for (const key of ['k', 'j', 'e', '/']) expect(press(key, overrides)).toBeNull()
+    for (const key of ['k', 'j', 'g', 'e', '/']) expect(press(key, overrides)).toBeNull()
   })
 
   it('ignores modifiers even on the controls named in actsFrom', () => {
@@ -158,12 +159,24 @@ describe('legendFor', () => {
   })
 
   it('lists every shortcut where Complete is offered', () => {
-    expect(legendFor({ singleKeys: true, canComplete: true })).toEqual(shortcutLegend)
+    expect(legendFor({ singleKeys: true, canComplete: true, canGroup: true })).toEqual(
+      shortcutLegend,
+    )
   })
 
   it('leaves out Complete where the page cannot complete', () => {
     expect(legendFor({ singleKeys: true, canComplete: false }).map((item) => item.label)).toEqual([
       'Next / previous',
+    ])
+  })
+
+  it('lists Next group only where the queue is grouped', () => {
+    expect(
+      legendFor({ singleKeys: true, canComplete: false, canGroup: true }).map((item) => item.label),
+    ).toEqual(['Next / previous', 'Next group'])
+    expect(legendFor({ singleKeys: true, canComplete: true }).map((item) => item.label)).toEqual([
+      'Next / previous',
+      'Complete',
     ])
   })
 })
