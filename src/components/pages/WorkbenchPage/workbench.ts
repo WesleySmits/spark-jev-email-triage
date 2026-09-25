@@ -72,6 +72,16 @@ function matches(message: WorkbenchMessage, { workflow, mailbox, query }: Workbe
   return message.workflow === workflow && inMailbox(message, mailbox) && hasText(message, query)
 }
 
+/**
+ * Whether a filter shows fewer rows than the page holds: a mailbox other
+ * than all of them, a search, or a workflow where there is more than one to
+ * choose from. The one workflow live mail has narrows nothing, so a count
+ * over it may still speak for the whole reading.
+ */
+export function narrows(filter: WorkbenchFilter, workflows: readonly SidebarItem[]) {
+  return filter.mailbox !== allMailboxes || filter.query.trim() !== '' || workflows.length > 1
+}
+
 /** The rows the queue shows for a filter, in the caller's order. */
 export function visibleMessages(messages: readonly WorkbenchMessage[], filter: WorkbenchFilter) {
   return messages.filter((message) => matches(message, filter))

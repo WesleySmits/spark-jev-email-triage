@@ -6,6 +6,7 @@ import {
   appliedFilter,
   defaultFilter,
   mailboxLabel,
+  narrows,
   neighbour,
   openedMessage,
   railGroups,
@@ -91,6 +92,25 @@ describe('visibleMessages', () => {
   it('shows nothing when nothing matches', () => {
     expect(visibleMessages(messages, filter({ workflow: 'done' }))).toEqual([])
     expect(visibleMessages(messages, filter({ query: 'zzz' }))).toEqual([])
+  })
+})
+
+describe('narrows', () => {
+  const one: SidebarItem[] = [{ id: 'inbox', icon: 'inbox', label: 'Inbox' }]
+  const two: SidebarItem[] = [...one, { id: 'review', icon: 'clock', label: 'Needs review' }]
+  const all = { workflow: 'inbox', mailbox: allMailboxes, query: '' }
+
+  it('is false for the one workflow, every mailbox and no search', () => {
+    expect(narrows(all, one)).toBe(false)
+    expect(narrows({ ...all, query: '   ' }, one)).toBe(false)
+  })
+
+  it('is true once a mailbox, a search or a workflow choice leaves rows out', () => {
+    expect(narrows({ ...all, mailbox: 'studio' }, one)).toBe(true)
+    expect(narrows({ ...all, query: 'invoice' }, one)).toBe(true)
+    // With two workflows to choose from, whichever is chosen leaves the other out.
+    expect(narrows(all, two)).toBe(true)
+    expect(narrows({ ...all, workflow: 'review' }, two)).toBe(true)
   })
 })
 

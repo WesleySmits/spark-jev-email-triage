@@ -1669,6 +1669,32 @@ export const AttentionWorklist: Story = {
 }
 
 /**
+ * With more than one workflow to choose from, the chosen one leaves rows out,
+ * so every group count says it is of the filter even with every mailbox
+ * shown and the reading proved complete: a count over a subset never claims
+ * the reading's reach.
+ */
+export const AttentionWorklistWorkflows: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: {
+    ...worklist,
+    messages,
+    workflows: workflowGroup?.items ?? [],
+    worklist: { coverage: { result: 'complete' } },
+    loadBody: fn(provingBodies({})),
+  },
+  play: async ({ canvasElement }) => {
+    await expect(groupTitles(canvasElement)).toEqual([
+      'Needs review0 of 2 in this filter',
+      'High priority1 of 2 in this filter',
+      'Attention0 of 2 in this filter',
+      'Not triaged1 of 2 in this filter',
+      'Informational0 of 2 in this filter',
+    ])
+  },
+}
+
+/**
  * A person's decision re-places a row. The reading carries a category
  * correction for m2, so it leaves Needs review for Attention, its line names
  * the person's category beside the model's advice, and the model's priority
