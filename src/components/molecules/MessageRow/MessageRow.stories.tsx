@@ -47,6 +47,16 @@ export const Default: Story = {}
 
 export const Unread: Story = { args: { unread: true } }
 
+/** A row with a reason line: who decided its labels, in words that wrap. */
+export const WithReason: Story = {
+  args: {
+    status: { label: 'Triage from earlier', tone: 'neutral' },
+    category: 'Personal',
+    reason:
+      "Personal, decided by a person; priority Low, the model's. Model advice: Notification, Low.",
+  },
+}
+
 /** The row open in the reader: accent rule, soft fill, `aria-current="true"`. */
 export const Selected: Story = { args: { unread: true, selected: true } }
 

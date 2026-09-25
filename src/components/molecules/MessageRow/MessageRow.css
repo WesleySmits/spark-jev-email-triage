@@ -115,6 +115,15 @@
   font-size: 12px;
 }
 
+/* Why the row is where it is. It wraps: a reason cut short would say less
+ * than it means, and the row's height is not fixed. */
+.message-row__reason {
+  margin-top: var(--s1);
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .message-row--unread .message-row__sender,
 .message-row--unread .message-row__subject {
   font-weight: 780;

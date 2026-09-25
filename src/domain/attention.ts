@@ -12,10 +12,11 @@
  *
  * Invariants:
  * - A person's decision beats the model's advice, for what the person
- *   decided. A category review decides the category and nothing else, so the
- *   category a person chose places the row and the model's own labels stay
- *   beside it as advice. The priority is always the model's: no review here
- *   assesses one, and none is ever presented as a person's.
+ *   decided. A review decides the category, the priority or both, one field
+ *   at a time, so each field a person decided places the row and every other
+ *   field stays the model's. The model's own labels stay beside the
+ *   decision as advice, and a field nobody decided is never presented as a
+ *   person's.
  * - Only a judgment that still describes the row may steer it. One a reading
  *   proved `current`, or one the store holds and contradicts in no way, is
  *   reliable enough to place a row. A stale judgment, a failed attempt, a
@@ -34,7 +35,7 @@
  *   scope; anything less counts what was loaded and says so. A count is
  *   never of a mailbox.
  */
-import type { ReviewedLabels } from './review'
+import type { DecidedLabels, ReviewedLabels } from './review'
 import { defaultRubric } from './rubric'
 import type { ClassificationLabels, StoredClassification } from './stored-classification'
 
@@ -57,12 +58,12 @@ export const attentionStates = [
 export type AttentionState = (typeof attentionStates)[number]
 
 /**
- * What a person decided about the version a row shows: the labels their
- * review settled on. Structurally the reviewer branch of the row's effective
- * outcome, so a page may pass what a reading projected without converting
- * it. Only the category is read from it; see the module invariants.
+ * What a person decided about the version a row shows: the value of each
+ * field their review settled on, and no field they did not decide.
+ * Structurally the reviewer branch of the row's effective outcome, so a page
+ * may pass what a reading projected without converting it.
  */
-export type AttentionReview = Readonly<{ labels: ReviewedLabels }>
+export type AttentionReview = Readonly<{ labels: DecidedLabels }>
 
 /**
  * Why a row is unclassified. `none` is the only one that means nothing was
@@ -80,11 +81,13 @@ export type PlacedAttention = Readonly<{
   state: Exclude<AttentionState, 'unclassified'>
   /** The category that placed the row: a person's where one decided, else the model's. */
   category: ReviewedLabels['category']
-  /** Who decided that category. Nothing else about the row is a person's. */
+  /** Who decided that category. */
   categoryBy: 'reviewer' | 'classifier'
-  /** The model's priority. No review assesses one, so it is never a person's. */
+  /** The priority that placed the row: a person's where one decided, else the model's. */
   priority: ReviewedLabels['priority']
-  /** The model was unsure of that priority. Shown, never acted on. */
+  /** Who decided that priority. */
+  priorityBy: 'reviewer' | 'classifier'
+  /** The model was unsure of its own priority. Shown, never acted on. */
   priorityUncertain: boolean
   /** What the model proposed, kept beside a person's decision as advice. */
   advice: ReviewedLabels
@@ -118,11 +121,12 @@ const warned = ({ grounds }: ClassificationLabels) =>
  *
  * Category first: mail the rubric files as information is information at any
  * priority, and mail read as a possible scam is pressing at any priority. Then
- * the model's priority, with one reservation: a low priority files a row as
- * information only where the model gave it to the category that holds. A
- * person who corrected the category was not shown a priority for that
- * category, and a warning keeps a row out of information whatever it is
- * filed as.
+ * the priority, with one reservation: a low priority files a row as
+ * information only where it can be trusted for the category that holds. A
+ * person's own low priority can; the model's can only where the category is
+ * still the one the model gave it to, because a person who corrected the
+ * category decided nothing about a priority given to another one. A warning
+ * keeps a row out of information whatever it is filed as.
  */
 function placeBy(
   category: ReviewedLabels['category'],
@@ -156,29 +160,42 @@ export function attentionOf(
       return { state: 'unclassified', cause: classification.state }
     case 'current':
     case 'unverified':
-      return placed(classification.labels, classification.state, review?.labels.category)
+      return placed(classification.labels, classification.state, review?.labels ?? {})
   }
+}
+
+/** Who decided one field: a person where the review carries a value for it. */
+const decider = (value: unknown): PlacedAttention['categoryBy'] =>
+  value === undefined ? 'classifier' : 'reviewer'
+
+/**
+ * The state a held judgment and a person's decisions place a row in. Policy's
+ * request for a person stands until a person decided something about this
+ * version; any field they decided answers it, because the row has then been
+ * looked at.
+ */
+function stateOf(labels: ClassificationLabels, decided: DecidedLabels, warning: boolean) {
+  const reviewed = decided.category !== undefined || decided.priority !== undefined
+  if (!reviewed && labels.review === 'needs_review') return 'needs_review'
+  const category = decided.category ?? labels.category
+  const lowTrusted = !warning && (decided.priority !== undefined || category === labels.category)
+  return placeBy(category, decided.priority ?? labels.priority, lowTrusted)
 }
 
 function placed(
   labels: ClassificationLabels,
   evidence: AttentionEvidence,
-  chosen: ReviewedLabels['category'] | undefined,
+  decided: DecidedLabels,
 ): PlacedAttention {
-  const advice: ReviewedLabels = { category: labels.category, priority: labels.priority }
-  const category = chosen ?? labels.category
   const warning = warned(labels)
-  const state =
-    chosen === undefined && labels.review === 'needs_review'
-      ? 'needs_review'
-      : placeBy(category, labels.priority, category === labels.category && !warning)
   return {
-    state,
-    category,
-    categoryBy: chosen === undefined ? 'classifier' : 'reviewer',
-    priority: labels.priority,
+    state: stateOf(labels, decided, warning),
+    category: decided.category ?? labels.category,
+    categoryBy: decider(decided.category),
+    priority: decided.priority ?? labels.priority,
+    priorityBy: decider(decided.priority),
     priorityUncertain: labels.priorityUncertain,
-    advice,
+    advice: { category: labels.category, priority: labels.priority },
     warning,
     elevated: labels.reviewPriority === 'elevated',
     evidence,

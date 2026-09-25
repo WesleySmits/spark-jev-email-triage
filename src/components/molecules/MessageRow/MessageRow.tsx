@@ -27,6 +27,12 @@ type MessageRowProps = Readonly<{
   status: Readonly<{ label: string; tone: NonNullable<ComponentProps<typeof Badge>['tone']> }>
   /** Optional category, shown as a neutral badge after the status. */
   category?: string | undefined
+  /**
+   * Optional line under the snippet saying why the row is where it is, e.g.
+   * who decided its labels. Wraps rather than truncates, and is part of the
+   * button's description.
+   */
+  reason?: string | undefined
   /** Strengthens sender and subject and prefixes the name with `unreadLabel`. */
   unread?: boolean | undefined
   /** Hidden text announced for unread rows. Defaults to "Unread". */
@@ -85,6 +91,7 @@ export function MessageRow({
     time: `${id}-time`,
     subject: `${id}-subject`,
     snippet: `${id}-snippet`,
+    reason: `${id}-reason`,
     account: `${id}-account`,
     tags: `${id}-tags`,
   }
@@ -116,7 +123,15 @@ export function MessageRow({
         type="button"
         aria-current={selected ? 'true' : undefined}
         aria-labelledby={[unread && ids.unread, ids.sender, ids.subject].filter(Boolean).join(' ')}
-        aria-describedby={[ids.tags, ids.account, ids.time, ids.snippet].join(' ')}
+        aria-describedby={[
+          ids.tags,
+          ids.account,
+          ids.time,
+          ids.snippet,
+          content.reason !== undefined && ids.reason,
+        ]
+          .filter(Boolean)
+          .join(' ')}
         onClick={onActivate}
       >
         <MessageRowText {...content} ids={ids} unreadLabel={unread ? unreadLabel : undefined} />
@@ -127,11 +142,22 @@ export function MessageRow({
 
 type MessageRowTextProps = Pick<
   MessageRowProps,
-  'sender' | 'time' | 'dateTime' | 'subject' | 'snippet' | 'account' | 'status' | 'category'
+  | 'sender'
+  | 'time'
+  | 'dateTime'
+  | 'subject'
+  | 'snippet'
+  | 'reason'
+  | 'account'
+  | 'status'
+  | 'category'
 > &
   Readonly<{
     ids: Readonly<
-      Record<'unread' | 'sender' | 'time' | 'subject' | 'snippet' | 'account' | 'tags', string>
+      Record<
+        'unread' | 'sender' | 'time' | 'subject' | 'snippet' | 'reason' | 'account' | 'tags',
+        string
+      >
     >
     /** Set only for unread rows. */
     unreadLabel: string | undefined
@@ -144,6 +170,7 @@ function MessageRowText({
   dateTime,
   subject,
   snippet,
+  reason,
   account,
   status,
   category,
@@ -171,6 +198,11 @@ function MessageRowText({
       <span id={ids.snippet} className="message-row__snippet message-row__truncate">
         {snippet}
       </span>
+      {reason !== undefined && (
+        <span id={ids.reason} className="message-row__reason">
+          {reason}
+        </span>
+      )}
       <span className="message-row__foot">
         <span id={ids.account} className="message-row__account">
           <AccountMarker account={account.marker} />
