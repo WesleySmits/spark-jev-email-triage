@@ -1624,7 +1624,9 @@ const answering =
 
 const recorded: DeskReviewOutcome = { status: 'recorded' }
 
-const suspicious = { category: 'suspicious', priority: 'urgent' } as const
+/** A correction of the category alone, which is all this panel decides. */
+const correctedTo = (category: 'suspicious' | 'notification') =>
+  ({ category: { decision: 'corrected', value: category } }) as const
 
 // The same judgment of m1, but one the model was unsure of, so its panel
 // opens itself. `m1Unverified` keeps the auto-accepted labels, for the story
@@ -1709,17 +1711,14 @@ async function saveChosen(root: HTMLElement, category: string) {
   await userEvent.click(save(root))
 }
 
-/** A correction keeps the judged priority and names the version shown. */
+/** A correction decides the category alone and names the version shown. */
 function expectSavedCorrection(
   args: Props,
   classification: DeskReviewRequest['classification'],
   category: 'suspicious' | 'notification',
 ) {
   return expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith(
-    expect.objectContaining({
-      classification,
-      verdict: { decision: 'corrected', labels: { category, priority: 'high' } },
-    }),
+    expect.objectContaining({ classification, verdict: correctedTo(category) }),
   )
 }
 
@@ -1758,7 +1757,9 @@ export const ReviewConfirm: Story = {
     await expect(saveReview).toHaveBeenCalledWith(
       expect.objectContaining({
         classification: subjectOf('m1'),
-        verdict: { decision: 'confirmed' },
+        // It confirmed the category and decided nothing else: no priority
+        // travels with a choice nobody was asked to make.
+        verdict: { category: { decision: 'confirmed' } },
       }),
     )
     await expect(
@@ -1768,8 +1769,8 @@ export const ReviewConfirm: Story = {
 }
 
 /**
- * Correcting one classification. Choosing another category corrects it and
- * keeps the judged priority; the model's own suggestion stays visible beside
+ * Correcting one classification. Choosing another category corrects that
+ * field and decides no other; the model's own suggestion stays visible beside
  * the result, so what it proposed and what a person made of it both read.
  */
 export const ReviewCorrect: Story = {
@@ -1945,18 +1946,24 @@ export const ReviewMobile: Story = {
 const reviewer = 'wesley'
 
 /** What the store would hold after one review of m1, as a reading projects it. */
-function projected(verdict: DeskReviewRequest['verdict']): RowReview {
+function projected(chosen?: RowReview['labels']['category']): RowReview {
+  const reviewedAt = '2026-09-23T08:30:00.000Z'
+  const decision = chosen === undefined ? 'confirmed' : 'corrected'
   return {
     decidedBy: 'reviewer',
-    decision: verdict.decision,
-    labels:
-      verdict.decision === 'corrected'
-        ? verdict.labels
-        : { category: unsureLabels.category, priority: unsureLabels.priority },
+    decision,
+    // The panel decides the category, so the priority stays the model's and
+    // is no part of what a person decided.
+    labels: { category: chosen ?? unsureLabels.category },
+    fields: { category: { decision, reviewer, reviewedAt } },
     reviewer,
-    reviewedAt: '2026-09-23T08:30:00.000Z',
+    reviewedAt,
   }
 }
+
+/** The category one request corrected, or nothing where it confirmed one. */
+const chosenIn = (verdict: DeskReviewRequest['verdict']) =>
+  verdict.category?.decision === 'corrected' ? verdict.category.value : undefined
 
 /**
  * Stands in for the store and the route's loader together: a saved review is
@@ -1978,7 +1985,7 @@ function WithStoredReviews(args: Props) {
         mode: 'enabled',
         onCheckReview: () => Promise.resolve({ status: 'unavailable' }),
         onSaveReview: (request) => {
-          setReviews({ m1: projected(request.verdict) })
+          setReviews({ m1: projected(chosenIn(request.verdict)) })
           return Promise.resolve(recorded)
         },
       }}
@@ -2081,7 +2088,7 @@ export const ReviewStaysOnItsOwnRow: Story = {
       reading: 'reading-1',
       states: unsureStates,
       // Another row was reviewed, not this one.
-      reviews: { m2: projected({ decision: 'corrected', labels: suspicious }) },
+      reviews: { m2: projected('suspicious') },
     },
   },
   play: async ({ canvasElement }) => {
@@ -2109,7 +2116,7 @@ const newerStates: Readonly<Record<string, StoredClassification>> = {
   m1: m1Newer,
 }
 
-const reviewedSince = projected({ decision: 'corrected', labels: suspicious })
+const reviewedSince = projected('suspicious')
 
 /**
  * Stands in for the route's loader across a refresh that changes something
@@ -2141,7 +2148,7 @@ function WithNextReading({ next, ...args }: Props & { next: ListedEvidence }) {
  */
 const recording = (request: DeskReviewRequest): DeskReviewOutcome => ({
   status: 'recorded',
-  review: projected(request.verdict),
+  review: projected(chosenIn(request.verdict)),
 })
 
 /** The reading a Refresh brings: the same row, judged again since. */
@@ -2367,7 +2374,7 @@ export const OutdatedCategoryReviewKeepsPriorityUncertain: Story = {
     ...reviewingUncertainPriority(),
     classifications: {
       ...reading('reading-1', priorityUncertainStates),
-      reviews: { m1: projected({ decision: 'confirmed' }) },
+      reviews: { m1: projected() },
     },
     loadBody: fn(
       provingBodies({

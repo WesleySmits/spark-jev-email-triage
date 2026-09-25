@@ -46,6 +46,7 @@ describe('migrations', () => {
       'judgments',
       'manual_run_items',
       'manual_runs',
+      'review_fields',
       'review_requests',
       'reviews',
       'runs',
@@ -70,13 +71,18 @@ describe('migrations', () => {
   it('upgrades the previous app schema without Spark or Jev', () => {
     const path = disposablePath()
     const old = openDatabase(path)
-    old.exec('DROP TABLE manual_run_items; DROP TABLE manual_runs; PRAGMA user_version = 3;')
+    old.exec(
+      `DROP TABLE review_fields;
+       DROP TABLE manual_run_items;
+       DROP TABLE manual_runs;
+       PRAGMA user_version = 3;`,
+    )
     old.close()
 
     expect(migrateExistingDatabase(path)).toBe('migrated')
     const upgraded = openReadOnly(path)
     expect(userVersion(upgraded)).toBe(schemaVersion)
-    expect(tableNames(upgraded)).toContain('manual_runs')
+    expect(tableNames(upgraded)).toEqual(expect.arrayContaining(['manual_runs', 'review_fields']))
     upgraded.close()
   })
 

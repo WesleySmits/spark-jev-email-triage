@@ -58,21 +58,43 @@ export function reviewableIn(
   return { subject: classification.subject, labels: classification.labels }
 }
 
+/** The decision one request carries about the category, where it carries one. */
+type CategoryDecision = NonNullable<DeskReviewRequest['verdict']['category']>
+
 /**
  * What the chosen category amounts to. Choosing what the classifier chose is
- * a confirmation, and carries no labels of its own, so it can never read as
- * having proposed them. Any other choice is a correction of the category;
- * the priority stays the one that was judged, because this panel asks about
- * the category and a person decides nothing they were not shown. Carrying
- * the priority forward does not confirm it or clear its uncertainty.
+ * a confirmation, and carries no value of its own, so it can never read as
+ * having proposed one. Any other choice corrects the category.
+ *
+ * It decides the category and says nothing about any other field. This panel
+ * asks about the category, and a person decides nothing they were not shown,
+ * so no priority travels with the choice: the judged one keeps holding, still
+ * the classifier's and still as uncertain as it was recorded.
  */
 export function verdictFor(
   chosen: ReviewCategoryValue,
   labels: ClassificationLabels,
-): DeskReviewRequest['verdict'] {
+): CategoryDecision {
   return chosen === labels.category
     ? { decision: 'confirmed' }
-    : { decision: 'corrected', labels: { category: chosen, priority: labels.priority } }
+    : { decision: 'corrected', value: chosen }
+}
+
+/**
+ * What one request decided about the category, and the category that decision
+ * settles on. Nothing where the request decided no category at all: this
+ * panel builds none such, so one recovered from storage that decides another
+ * field is not a save it can report on.
+ */
+export function categoryDecisionIn(
+  request: DeskReviewRequest,
+  labels: ClassificationLabels,
+): Readonly<{ chosen: ReviewCategoryValue; decision: CategoryDecision['decision'] }> | undefined {
+  const decided = request.verdict.category
+  if (decided === undefined) return undefined
+  return decided.decision === 'corrected'
+    ? { chosen: decided.value, decision: 'corrected' }
+    : { chosen: labels.category, decision: 'confirmed' }
 }
 
 /** The exact version a subject names, as one comparable value. */
@@ -108,7 +130,8 @@ export const reviewSignature = (reviewable: Reviewable, saved: RowReview | undef
     subjectId(reviewable.subject),
     reviewable.labels.category,
     reviewable.labels.priority,
-    saved?.decision ?? null,
+    saved?.fields.category?.decision ?? null,
+    saved?.fields.priority?.decision ?? null,
     saved?.labels.category ?? null,
     saved?.labels.priority ?? null,
     saved?.reviewedAt ?? null,
@@ -120,7 +143,7 @@ export const reviewRequest = (
   chosen: ReviewCategoryValue,
 ): Omit<DeskReviewRequest, 'requestId'> => ({
   classification: reviewable.subject,
-  verdict: verdictFor(chosen, reviewable.labels),
+  verdict: { category: verdictFor(chosen, reviewable.labels) },
 })
 
 /**

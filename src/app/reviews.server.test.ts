@@ -48,13 +48,23 @@ const subject = (mailboxId: string, latestMessageId = '11') => ({
 const confirm = (mailboxId = one): DeskReviewRequest => ({
   requestId: randomUUID(),
   classification: subject(mailboxId),
-  verdict: { decision: 'confirmed' },
+  verdict: { category: { decision: 'confirmed' } },
 })
 
 const correct: DeskReviewRequest = {
   requestId: randomUUID(),
   classification: subject(one),
-  verdict: { decision: 'corrected', labels: { category: 'suspicious', priority: 'urgent' } },
+  verdict: {
+    category: { decision: 'corrected', value: 'suspicious' },
+    priority: { decision: 'corrected', value: 'urgent' },
+  },
+}
+
+/** A review of the priority alone, which decides nothing about the category. */
+const correctPriority: DeskReviewRequest = {
+  requestId: randomUUID(),
+  classification: subject(one),
+  verdict: { priority: { decision: 'corrected', value: 'urgent' } },
 }
 
 let directory: string
@@ -110,9 +120,17 @@ describe('storeReview', () => {
       review: {
         decidedBy: 'reviewer',
         decision: 'confirmed',
-        // A confirmation carries no labels of its own, so these are the
-        // classifier's, exactly as the row already showed them.
-        labels: { category: 'personal', priority: 'high' },
+        // A confirmation carries no label of its own, so this is the
+        // classifier's category, exactly as the row already showed it. The
+        // priority nobody decided is absent rather than reported as theirs.
+        labels: { category: 'personal' },
+        fields: {
+          category: {
+            decision: 'confirmed',
+            reviewer: localReviewer(),
+            reviewedAt: '2026-09-23T08:30:00.000Z',
+          },
+        },
         reviewer: localReviewer(),
         reviewedAt: '2026-09-23T08:30:00.000Z',
       },
@@ -120,7 +138,7 @@ describe('storeReview', () => {
     expect(stored()).toEqual([
       {
         classification: subject(one),
-        verdict: { decision: 'confirmed' },
+        verdict: { category: { decision: 'confirmed' } },
         reviewer: localReviewer(),
         reviewedAt: '2026-09-23T08:30:00.000Z',
       },
@@ -136,7 +154,10 @@ describe('storeReview', () => {
       review: { decision: 'corrected', labels: { category: 'suspicious', priority: 'urgent' } },
     })
 
-    expect(stored().map((review) => review.verdict.decision)).toEqual(['corrected', 'confirmed'])
+    expect(stored().map((review) => review.verdict.category?.decision)).toEqual([
+      'corrected',
+      'confirmed',
+    ])
   })
 
   it('refuses a review of a version the store has moved past, and writes nothing', () => {
@@ -186,10 +207,7 @@ describe('storeReview', () => {
     judged()
     const impossible = {
       classification: subject(one),
-      verdict: {
-        decision: 'corrected',
-        labels: { category: 'not-a-category', priority: 'urgent' },
-      },
+      verdict: { category: { decision: 'corrected', value: 'not-a-category' } },
     } as unknown as DeskReviewRequest
 
     expect(storeReview(impossible, env)).toEqual({ status: 'failed' })
@@ -202,7 +220,7 @@ describe('storeReview', () => {
       status: 'recorded',
       review: { reviewer: localReviewer(), reviewedAt: '2026-09-23T08:30:00.000Z' },
     })
-    expect(stored()).toMatchObject([{ verdict: { decision: 'confirmed' } }])
+    expect(stored()).toMatchObject([{ verdict: { category: { decision: 'confirmed' } } }])
   })
 
   it('replays one Save id without appending a second review', () => {
@@ -217,10 +235,48 @@ describe('storeReview', () => {
     judged()
     const impossible = {
       classification: subject(one),
-      verdict: { decision: 'corrected', labels: { category: 'not-a-category', priority: 'low' } },
+      verdict: { priority: { decision: 'corrected', value: 'not-a-priority' } },
     } as unknown as DeskReviewRequest
 
     expect(storeReview(impossible, env)).toEqual({ status: 'failed' })
+    expect(stored()).toEqual([])
+  })
+
+  // The store keeps the priority a person chose and says who chose it, while
+  // the category stays the model's and says so.
+  it('records a priority correction that claims no decision about the category', () => {
+    judged()
+
+    expect(storeReview(correctPriority, env, at('2026-09-23T08:30:00.000Z'))).toEqual({
+      status: 'recorded',
+      review: {
+        decidedBy: 'reviewer',
+        decision: 'corrected',
+        labels: { priority: 'urgent' },
+        fields: {
+          priority: {
+            decision: 'corrected',
+            reviewer: localReviewer(),
+            reviewedAt: '2026-09-23T08:30:00.000Z',
+          },
+        },
+        reviewer: localReviewer(),
+        reviewedAt: '2026-09-23T08:30:00.000Z',
+      },
+    })
+    expect(stored()).toMatchObject([
+      { verdict: { priority: { decision: 'corrected', value: 'urgent' } } },
+    ])
+  })
+
+  it('refuses a review that decides no field at all, and stores nothing', () => {
+    judged()
+    const empty = {
+      classification: subject(one),
+      verdict: {},
+    } as unknown as DeskReviewRequest
+
+    expect(storeReview(empty, env)).toEqual({ status: 'failed' })
     expect(stored()).toEqual([])
   })
 
