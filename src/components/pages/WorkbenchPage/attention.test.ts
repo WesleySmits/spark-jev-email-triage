@@ -121,7 +121,7 @@ describe('attentionReason', () => {
     )
   })
 
-  it('keeps the warning after a review and drops the uncertainty once a person set the priority', () => {
+  it('keeps asking about the category when a person decided only the priority', () => {
     const asked = unverified({
       category: 'other',
       priority: 'low',
@@ -130,7 +130,22 @@ describe('attentionReason', () => {
       grounds: { state: 'recorded', reasons: ['suspicious'], suspicionSignals: [] },
     })
     expect(attentionReason(rowAttention(asked, reviewOf({ priority: 'normal' })))).toBe(
-      "Other, the model's; priority Normal, decided by a person. Model advice: Other, Low. Possible scam or phishing, whatever it is filed as.",
+      'Policy asked for a person. No person has decided the category; a person decided the priority. Possible scam or phishing, whatever it is filed as. Model advice: Other, Low.',
+    )
+  })
+
+  it('keeps the warning after a decision and drops the uncertainty once a person set the priority', () => {
+    const asked = unverified({
+      category: 'other',
+      priority: 'low',
+      review: 'needs_review',
+      priorityUncertain: true,
+      grounds: { state: 'recorded', reasons: ['suspicious'], suspicionSignals: [] },
+    })
+    expect(
+      attentionReason(rowAttention(asked, reviewOf({ category: 'other', priority: 'normal' }))),
+    ).toBe(
+      'Other, decided by a person; priority Normal, decided by a person. Model advice: Other, Low. Possible scam or phishing, whatever it is filed as.',
     )
   })
 
