@@ -55,22 +55,56 @@ export type DeskReviewReadback =
  *
  * Only that branch travels. The other two say the classifier decides or
  * nobody does, and the browser already holds the classification those are
- * read from, so a row nobody reviewed simply carries none of this. The labels
- * here are the ones the row shows; the classification keeps what the model
- * proposed, so both stay legible side by side.
+ * read from, so a row nobody reviewed simply carries none of this. The
+ * classification keeps what the model proposed, so both stay legible side by
+ * side.
+ *
+ * It says what a person decided and no more than that. `labels` holds only
+ * the fields somebody decided, and `fields` says who decided each of them and
+ * how, so a row whose priority nobody reviewed carries no priority here and
+ * keeps showing the model's. `decision`, `reviewer` and `reviewedAt` summarize
+ * the review as a whole, from the newest of those field decisions.
  *
  * It is scoped exactly as the store scopes it: a review decides this only for
  * the mailbox copy and the subject version it named. A review of another copy
  * or of a version that has moved on decides nothing here and is not sent.
  */
-export const rowReviewSchema = z.strictObject({
-  decidedBy: z.literal('reviewer'),
+const fieldDecisionSchema = z.strictObject({
   decision: z.enum(['confirmed', 'corrected']),
-  labels: z.strictObject({ category: categorySchema, priority: prioritySchema }),
-  /** How this computer names the reviewer. Never a mailbox address. */
+  /** How this computer names the reviewer who decided this field. */
   reviewer: z.string().min(1),
-  /** When they reviewed, in UTC, as the store keeps it. */
+  /** When they decided it, in UTC, as the store keeps it. */
   reviewedAt: z.iso.datetime(),
 })
+
+export const rowReviewSchema = z
+  .strictObject({
+    decidedBy: z.literal('reviewer'),
+    /** The whole review in one word: `corrected` where any field was. */
+    decision: z.enum(['confirmed', 'corrected']),
+    /** The value of each field a person decided. A field nobody decided is absent. */
+    labels: z.strictObject({
+      category: categorySchema.optional(),
+      priority: prioritySchema.optional(),
+    }),
+    /** Who decided each of those fields, how and when. The same fields as `labels`. */
+    fields: z.strictObject({
+      category: fieldDecisionSchema.optional(),
+      priority: fieldDecisionSchema.optional(),
+    }),
+    /** How this computer names the reviewer of the newest of those decisions. */
+    reviewer: z.string().min(1),
+    /** When that newest decision was made, in UTC, as the store keeps it. */
+    reviewedAt: z.iso.datetime(),
+  })
+  // A value with nobody behind it would read as a decision, and a decision
+  // with no value would leave the page nothing to show for it. Neither is
+  // something the store produces, so neither is accepted here.
+  .refine(
+    ({ labels, fields }) =>
+      (labels.category === undefined) === (fields.category === undefined) &&
+      (labels.priority === undefined) === (fields.priority === undefined),
+    { message: 'Every decided field carries both its value and who decided it' },
+  )
 
 export type RowReview = Readonly<z.infer<typeof rowReviewSchema>>

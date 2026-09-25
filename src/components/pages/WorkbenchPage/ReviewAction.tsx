@@ -9,6 +9,7 @@ import { ReviewPanel } from '../../organisms/ReviewPanel/ReviewPanel'
 import { categoryLabels } from './classification'
 import { beginReview, finishReview } from './review-attempt'
 import {
+  categoryDecisionIn,
   reviewAnnouncement,
   reviewCategories,
   reviewPanelCopy,
@@ -51,32 +52,35 @@ type Held = Readonly<{
   pending?: Readonly<{
     request: DeskReviewRequest
     chosen: ReviewCategoryValue
+    decision: 'confirmed' | 'corrected'
   }>
 }>
 
-/** Where the panel starts: on a review already stored, or on nothing chosen. */
+/**
+ * Where the panel starts: on a category decision already stored, or on
+ * nothing chosen. A review that decided another field and not the category
+ * leaves this panel with nothing chosen, because nobody has decided what it
+ * asks about.
+ */
 function startFrom(signature: string, saved: RowReview | undefined, announcement = ''): Held {
-  if (saved === undefined) {
+  const decided = saved?.fields.category
+  const chosen = saved?.labels.category
+  if (decided === undefined || chosen === undefined) {
     return { signature, chosen: null, state: { status: 'choosing' }, announcement }
   }
-  const chosen = saved.labels.category
   return {
     signature,
     chosen,
-    state: { status: 'saved', decision: saved.decision, chosen },
+    state: { status: 'saved', decision: decided.decision, chosen },
     announcement,
   }
 }
 
 /** What one outcome leaves behind. A recorded review names what it decided. */
-function stateFor(
-  outcome: DeskReviewOutcome,
-  request: DeskReviewRequest,
-  chosen: ReviewCategoryValue,
-): ReviewState {
+function stateFor(outcome: DeskReviewOutcome, pending: NonNullable<Held['pending']>): ReviewState {
   switch (outcome.status) {
     case 'recorded':
-      return { status: 'saved', decision: request.verdict.decision, chosen }
+      return { status: 'saved', decision: pending.decision, chosen: pending.chosen }
     case 'refused':
       return { status: 'refused', reason: outcome.reason }
     case 'failed':
@@ -85,12 +89,6 @@ function stateFor(
       return { status: 'unknown' }
   }
 }
-
-/** A pending confirmation uses the model's category; a correction names its own. */
-const chosenFor = (request: DeskReviewRequest, reviewable: Reviewable) =>
-  request.verdict.decision === 'confirmed'
-    ? reviewable.labels.category
-    : request.verdict.labels.category
 
 /**
  * The selection and the save, with only the latest save counting. Choices
@@ -157,7 +155,7 @@ function useReview(
     }
     finishReview(pending.request)
     onResolved()
-    settle(stateFor(outcome, pending.request, pending.chosen), original)
+    settle(stateFor(outcome, pending), original)
   }
   const verify = (
     pending: NonNullable<Held['pending']>,
@@ -204,9 +202,17 @@ function useReview(
       settle({ status: 'failed' }, original)
       return
     }
+    // A save recovered from storage that decided another field is not one
+    // this panel can report on, so nothing is sent for it. The stored request
+    // stays, so whatever did send it keeps its own id.
+    const decided = categoryDecisionIn(request, reviewable.labels)
+    if (decided === undefined) {
+      settle({ status: 'failed' }, original)
+      return
+    }
     latest.current += 1
     const attempt = latest.current
-    const pending = { request, chosen: chosenFor(request, reviewable) }
+    const pending = { request, ...decided }
     if (JSON.stringify(request.verdict) !== JSON.stringify(draft.verdict)) {
       setHeld((current) => ({
         ...current,

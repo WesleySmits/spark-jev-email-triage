@@ -297,35 +297,96 @@ const reviewPriorityNote = (priority: ClassificationLabels['reviewPriority']) =>
 export const categoryReviewScopeNote =
   'This review covers the category only. Priority and reply expectations are not confirmed.'
 
+const priorityReviewScopeNote =
+  'This review covers the priority only. Category and reply expectations are not confirmed.'
+
+const bothReviewScopeNote =
+  'This review covers the category and priority. Reply expectations are not confirmed.'
+
 /**
- * Name the category decision, who made it and when. Other model signals
- * still apply: recording a category review does not assess another field.
+ * What one review covered, so nothing beside it reads as decided by a person
+ * who never saw it. Reply expectations are never part of one: what to do
+ * about a message is a work decision, not a label anyone confirms here.
+ */
+function reviewScopeNote(fields: RowReview['fields']): string {
+  if (fields.category === undefined) return priorityReviewScopeNote
+  return fields.priority === undefined ? categoryReviewScopeNote : bothReviewScopeNote
+}
+
+/** Which fields a review decided, as the strip names the decision. */
+function reviewTerm(fields: RowReview['fields']): string {
+  if (fields.category === undefined) return 'Priority review'
+  return fields.priority === undefined ? 'Category review' : 'Category and priority review'
+}
+
+/**
+ * Name the decision a person made, which fields it covered, who made it and
+ * when. Other model signals still apply: reviewing one field assesses no
+ * other one.
  */
 const personReviewFact = (review: RowReview, labels: ClassificationLabels): ClassificationFact => ({
-  term: 'Category review',
+  term: reviewTerm(review.fields),
   value: decisions[review.decision],
-  note: `By ${review.reviewer} on ${judgedText(review.reviewedAt)}. ${categoryReviewScopeNote} Your mail is unchanged.${reviewPriorityNote(labels.reviewPriority)}`,
+  note: `By ${review.reviewer} on ${judgedText(review.reviewedAt)}. ${reviewScopeNote(review.fields)} Your mail is unchanged.${reviewPriorityNote(labels.reviewPriority)}`,
 })
 
 /**
- * What the row shows for category, and where a person chose it, the model's
+ * What the row shows for category, and where a person decided it, the model's
  * own suggestion beside it. The suggestion is never replaced: a correction is
- * added to what was judged, and both stay readable.
+ * added to what was judged, and both stay readable. A review that decided
+ * another field leaves this the model's own, unannotated.
  */
 function categoryFact(
   labels: ClassificationLabels,
   review: RowReview | undefined,
 ): ClassificationFact {
   const suggested = categoryLabels[labels.category]
-  if (review === undefined) return { term: 'Category', value: suggested }
-  const chosen = categoryLabels[review.labels.category]
+  const decided = review?.fields.category
+  const chosen = review?.labels.category
+  if (decided === undefined || chosen === undefined) return { term: 'Category', value: suggested }
   return {
     term: 'Category',
-    value: chosen,
+    value: categoryLabels[chosen],
     note:
-      review.decision === 'confirmed'
+      decided.decision === 'confirmed'
         ? `A person confirmed the model's suggestion, ${suggested}.`
         : `Chosen by a person. The model suggested ${suggested}.`,
+  }
+}
+
+/** The model's priority, and whether the model was sure of it. */
+const modelPriority = (labels: ClassificationLabels) =>
+  labels.priorityUncertain
+    ? `${priorities[labels.priority]}, which it was not sure of`
+    : priorities[labels.priority]
+
+/**
+ * What the row shows for priority, and who decided it. Where nobody has, it
+ * is the model's, and its uncertainty is said plainly. Where a person did,
+ * what the model proposed stays beside their decision, uncertainty and all:
+ * a person's priority never quietly takes the place of the model's, and
+ * never inherits its uncertainty note as if the model had chosen it.
+ */
+function priorityFact(
+  labels: ClassificationLabels,
+  review: RowReview | undefined,
+): ClassificationFact {
+  const decided = review?.fields.priority
+  const chosen = review?.labels.priority
+  if (decided === undefined || chosen === undefined) {
+    return {
+      term: 'Priority',
+      value: priorities[labels.priority],
+      ...(labels.priorityUncertain && { note: 'The model was not sure of this priority.' }),
+    }
+  }
+  return {
+    term: 'Priority',
+    value: priorities[chosen],
+    note:
+      decided.decision === 'confirmed'
+        ? `A person confirmed the model's priority, ${modelPriority(labels)}.`
+        : `Chosen by a person. The model suggested ${modelPriority(labels)}.`,
   }
 }
 
@@ -351,14 +412,9 @@ function factsOf(
   labels: ClassificationLabels,
   review: RowReview | undefined,
 ): readonly ClassificationFact[] {
-  const priority = review?.labels.priority ?? labels.priority
   return [
     categoryFact(labels, review),
-    {
-      term: 'Priority',
-      value: priorities[priority],
-      ...(labels.priorityUncertain && { note: 'The model was not sure of this priority.' }),
-    },
+    priorityFact(labels, review),
     review === undefined ? modelReviewFact(labels) : personReviewFact(review, labels),
     ...groundFacts(labels),
   ]
@@ -403,13 +459,15 @@ export function classificationView(
 /**
  * What one queue row shows: its state, and the category when labels apply.
  * Where a person decided the category, that is the one the row shows, so a
- * list read after a correction shows what it was corrected to.
+ * list read after a correction shows what it was corrected to. A review that
+ * decided another field leaves the model's own category showing.
  */
 export function rowState(classification: StoredClassification, review?: RowReview) {
-  const labels = review?.labels ?? ('labels' in classification ? classification.labels : undefined)
+  const proposed = 'labels' in classification ? classification.labels : undefined
+  const category = review?.labels.category ?? proposed?.category
   return {
     status: states[classification.state],
-    category: labels && categoryLabels[labels.category],
+    category: category && categoryLabels[category],
   } as const
 }
 

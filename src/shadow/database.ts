@@ -210,6 +210,45 @@ const migrations: readonly string[] = [
 
   CREATE INDEX manual_run_items_by_shadow_run ON manual_run_items (shadow_run_id);
   `,
+  // 5: which fields of a classification each review decided. A review names
+  //    one subject version and decides its fields one at a time, so a person
+  //    can confirm or correct the category and the priority separately, and a
+  //    field nobody reviewed stays the classifier's rather than being carried
+  //    along beside one that was decided.
+  //
+  //    `reviews` keeps every column and every row it had. Its `decision`,
+  //    `category` and `priority` say what a review came to as a whole: the
+  //    labels that hold after it, where it changed any. They never said which
+  //    field a person assessed, and these rows are what does.
+  //
+  //    Existing reviews are backfilled as the category decisions they were.
+  //    The UI that wrote them asked about the category alone and carried the
+  //    judged priority along to fill out the stored shape, which is no
+  //    evidence that anyone assessed a priority; recording a priority
+  //    decision for them would invent one nobody made. Both tables refuse an
+  //    update and a delete, because a decision is history like the review
+  //    that carries it.
+  `
+  CREATE TABLE review_fields (
+    review_id INTEGER NOT NULL REFERENCES reviews (id),
+    field TEXT NOT NULL CHECK (field IN ('category', 'priority')),
+    decision TEXT NOT NULL CHECK (decision IN ('confirmed', 'corrected')),
+    value TEXT,
+    PRIMARY KEY (review_id, field),
+    CHECK ((decision = 'corrected') = (value IS NOT NULL))
+  ) STRICT;
+
+  INSERT INTO review_fields (review_id, field, decision, value)
+  SELECT id, 'category', decision, category FROM reviews;
+
+  CREATE TRIGGER review_fields_are_never_changed BEFORE UPDATE ON review_fields BEGIN
+    SELECT RAISE(ABORT, 'A stored review decision is history and cannot be changed');
+  END;
+
+  CREATE TRIGGER review_fields_are_never_removed BEFORE DELETE ON review_fields BEGIN
+    SELECT RAISE(ABORT, 'A stored review decision is history and cannot be removed');
+  END;
+  `,
 ]
 
 export const schemaVersion = migrations.length

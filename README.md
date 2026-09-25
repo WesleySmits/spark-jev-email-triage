@@ -7,7 +7,8 @@ TanStack Start app with React, Vite, and strict TypeScript.
 The root route reads unread mail first from the local Spark CLI and shows
 classifications previously stored by the shadow CLI. `shadow --apply`
 stores classifications and the app saves human category reviews in the same
-SQLite database. Neither classification nor review changes mail. A separate,
+SQLite database, which records category and priority as separate human
+decisions even though the app asks only about the category. Neither classification nor review changes mail. A separate,
 default-off Done panel can archive one message after explicit approval and
 confirmation.
 

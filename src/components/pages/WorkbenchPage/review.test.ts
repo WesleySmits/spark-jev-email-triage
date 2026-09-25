@@ -13,6 +13,7 @@ import type {
 } from '../../../domain/stored-classification'
 import type { ReviewRefusal } from '../../../domain/review'
 import {
+  categoryDecisionIn,
   reviewAnnouncement,
   reviewCategories,
   reviewPanelCopy,
@@ -97,22 +98,61 @@ describe('reviewableIn', () => {
 })
 
 describe('verdictFor', () => {
-  it('reads the category the model chose as a confirmation, carrying no labels of its own', () => {
+  it('reads the category the model chose as a confirmation, carrying no value of its own', () => {
     expect(verdictFor('newsletter', labels)).toEqual({ decision: 'confirmed' })
   })
 
-  it('reads another category as a correction that keeps the judged priority', () => {
-    expect(verdictFor('personal', labels)).toEqual({
-      decision: 'corrected',
-      labels: { category: 'personal', priority: 'low' },
-    })
+  it('reads another category as a correction of the category', () => {
+    expect(verdictFor('personal', labels)).toEqual({ decision: 'corrected', value: 'personal' })
   })
 
-  it('names the exact version the reviewer was shown', () => {
+  // The panel asks about the category. Sending a priority would record a
+  // decision the person was never shown, judged or unjudged.
+  it('names the exact version shown, and decides the category only', () => {
     expect(reviewRequest({ subject, labels }, 'personal')).toEqual({
       classification: subject,
-      verdict: { decision: 'corrected', labels: { category: 'personal', priority: 'low' } },
+      verdict: { category: { decision: 'corrected', value: 'personal' } },
     })
+  })
+})
+
+/** A Save id, which nothing here depends on the value of. */
+const id = '7f1d2f3e-0000-4000-8000-000000000001'
+
+const verdictOf = (category: 'personal') =>
+  ({ category: { decision: 'corrected', value: category } }) as const
+
+describe('categoryDecisionIn', () => {
+  it('reads back the category decision a request carries, and what it settles on', () => {
+    expect(
+      categoryDecisionIn(
+        { requestId: id, classification: subject, verdict: verdictOf('personal') },
+        labels,
+      ),
+    ).toEqual({ chosen: 'personal', decision: 'corrected' })
+    expect(
+      categoryDecisionIn(
+        {
+          requestId: id,
+          classification: subject,
+          verdict: { category: { decision: 'confirmed' } },
+        },
+        labels,
+      ),
+    ).toEqual({ chosen: labels.category, decision: 'confirmed' })
+  })
+
+  it('reads nothing from a request that decided no category', () => {
+    expect(
+      categoryDecisionIn(
+        {
+          requestId: id,
+          classification: subject,
+          verdict: { priority: { decision: 'corrected', value: 'urgent' } },
+        },
+        labels,
+      ),
+    ).toBeUndefined()
   })
 })
 
@@ -121,7 +161,14 @@ describe('reviewSignature', () => {
   const saved = {
     decidedBy: 'reviewer',
     decision: 'corrected',
-    labels: { category: 'suspicious', priority: 'urgent' },
+    labels: { category: 'suspicious' },
+    fields: {
+      category: {
+        decision: 'corrected',
+        reviewer: 'wesley',
+        reviewedAt: '2026-09-23T08:30:00.000Z',
+      },
+    },
     reviewer: 'wesley',
     reviewedAt: '2026-09-23T08:30:00.000Z',
   } as const
@@ -162,11 +209,22 @@ describe('reviewSignature', () => {
 
   it('changes when a review is stored, changed or gone', () => {
     expect(reviewSignature(reviewable, saved)).not.toBe(signature)
-    expect(reviewSignature(reviewable, { ...saved, decision: 'confirmed' })).not.toBe(
+    expect(
+      reviewSignature(reviewable, {
+        ...saved,
+        fields: { category: { ...saved.fields.category, decision: 'confirmed' } },
+      }),
+    ).not.toBe(reviewSignature(reviewable, saved))
+    expect(reviewSignature(reviewable, { ...saved, labels: { category: 'personal' } })).not.toBe(
       reviewSignature(reviewable, saved),
     )
+    // A decision about another field is a change to what the panel shows too.
     expect(
-      reviewSignature(reviewable, { ...saved, labels: { category: 'personal', priority: 'low' } }),
+      reviewSignature(reviewable, {
+        ...saved,
+        labels: { ...saved.labels, priority: 'urgent' },
+        fields: { ...saved.fields, priority: { ...saved.fields.category, decision: 'corrected' } },
+      }),
     ).not.toBe(reviewSignature(reviewable, saved))
     expect(
       reviewSignature(reviewable, { ...saved, reviewedAt: '2026-09-23T09:30:00.000Z' }),
