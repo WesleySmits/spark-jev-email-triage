@@ -114,9 +114,55 @@ export type RecordedReviews = Readonly<Record<string, RecordedReview>>
 const namesShown = (recorded: RecordedReview, shown: StoredClassification | undefined) =>
   shown !== undefined && 'subject' in shown && sameSubject(recorded.subject, shown.subject)
 
-/** The later of two answers about one row, by when each was decided. */
-const later = (a: RowReview, b: RowReview) =>
-  Date.parse(a.reviewedAt) >= Date.parse(b.reviewedAt) ? a : b
+/** One field of one answer: its value and who decided it, or nothing. */
+function decidedIn<Field extends 'category' | 'priority'>(review: RowReview, field: Field) {
+  const value = review.labels[field]
+  const decision = review.fields[field]
+  return value === undefined || decision === undefined ? undefined : { value, decision }
+}
+
+/** Which of two answers decided one field last, where either decided it. */
+function decidedLast<Field extends 'category' | 'priority'>(
+  a: RowReview,
+  b: RowReview,
+  field: Field,
+) {
+  const first = decidedIn(a, field)
+  const second = decidedIn(b, field)
+  if (first === undefined) return second
+  if (second === undefined) return first
+  return Date.parse(second.decision.reviewedAt) > Date.parse(first.decision.reviewedAt)
+    ? second
+    : first
+}
+
+/**
+ * Two answers about one row, merged field by field: every field comes from
+ * whichever answer decided it last, and the summary from the newer answer.
+ *
+ * Taking one answer whole would drop a field only the other one holds. A
+ * reading folds every review of the subject, while a save answers for the one
+ * review it recorded, so a newer save about the category would hide a
+ * priority somebody had decided: the row would show that label as nobody's
+ * while the store holds a decision for it.
+ */
+function merged(a: RowReview, b: RowReview): RowReview {
+  const category = decidedLast(a, b, 'category')
+  const priority = decidedLast(a, b, 'priority')
+  const decided = [category?.decision, priority?.decision]
+  return {
+    ...(Date.parse(b.reviewedAt) > Date.parse(a.reviewedAt) ? b : a),
+    decision: decided.some((field) => field?.decision === 'corrected') ? 'corrected' : 'confirmed',
+    labels: {
+      ...(category !== undefined && { category: category.value }),
+      ...(priority !== undefined && { priority: priority.value }),
+    },
+    fields: {
+      ...(category !== undefined && { category: category.decision }),
+      ...(priority !== undefined && { priority: priority.decision }),
+    },
+  }
+}
 
 /** What applies to each row of one reading. */
 export type Evidence = Readonly<{
@@ -186,7 +232,7 @@ export function evidenceIn(
     const found = id === openId ? (answering?.review ?? reviewed(id)) : reviewed(id)
     const own = recorded[id]
     if (own === undefined || !namesShown(own, shown)) return found
-    return found === undefined ? own.review : later(found, own.review)
+    return found === undefined ? own.review : merged(found, own.review)
   }
   const openReview = openId === undefined ? undefined : withRecorded(openId, open)
   return {

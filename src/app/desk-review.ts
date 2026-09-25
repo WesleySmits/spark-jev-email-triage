@@ -106,5 +106,10 @@ export const rowReviewSchema = z
       (labels.priority === undefined) === (fields.priority === undefined),
     { message: 'Every decided field carries both its value and who decided it' },
   )
+  // A reviewer and a time with no field behind them would say somebody
+  // decided something about this row without saying what.
+  .refine(({ fields }) => fields.category !== undefined || fields.priority !== undefined, {
+    message: 'A review decided at least one field',
+  })
 
 export type RowReview = Readonly<z.infer<typeof rowReviewSchema>>

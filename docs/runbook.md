@@ -168,7 +168,7 @@ ID; inspect Spark manually before any further action. Spark may affect
 another visible copy of the message, and a new message may arrive between
 preflight and the command.
 
-## Upgrade an existing shadow database to schema 4
+## Upgrade an existing shadow database to schema 5
 
 Do this on the machine that holds the local SQLite file before using the
 review desk with an older database. Stop the app and any `pnpm shadow --apply`
@@ -190,8 +190,9 @@ sqlite3 "$db" ".backup '$backup'"
 sqlite3 "$backup" 'PRAGMA integrity_check; PRAGMA foreign_key_check; PRAGMA user_version;'
 ```
 
-The backup check must print `ok`, no foreign-key rows, then `1`, `2` or `3`. If it does
-not, stop and investigate the original database before changing anything.
+The backup check must print `ok`, no foreign-key rows, then `1`, `2`, `3` or `4`.
+If it does not, stop and investigate the original database before changing
+anything.
 Keep the backup until the upgraded app and stored classifications have been
 checked. With the app still stopped, run:
 

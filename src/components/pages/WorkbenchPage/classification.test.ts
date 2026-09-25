@@ -36,8 +36,8 @@ const unverified: StoredClassification = { ...judged, state: 'unverified', label
 const reviewedAt = '2026-09-23T08:30:00.000Z'
 
 /** One field decision, as the store records who made it and when. */
-const by = (decision: 'confirmed' | 'corrected') =>
-  ({ decision, reviewer: 'wesley', reviewedAt }) as const
+const by = (decision: 'confirmed' | 'corrected', at: string = reviewedAt) =>
+  ({ decision, reviewer: 'wesley', reviewedAt: at }) as const
 
 /**
  * What a person decided about that judgment, as a reading projects it. The
@@ -226,8 +226,14 @@ describe('evidenceIn, what a person decided', () => {
     labels,
   }
 
+  const laterAt = '2026-09-24T08:00:00.000Z'
+
   /** A review of that other judgment, distinct from the listed one. */
-  const reviewOfOther: RowReview = { ...confirmed, reviewedAt: '2026-09-24T08:00:00.000Z' }
+  const reviewOfOther: RowReview = {
+    ...confirmed,
+    reviewedAt: laterAt,
+    fields: { category: by('confirmed', laterAt) },
+  }
 
   it('shows what the reading projected, so a refresh keeps a saved review', () => {
     const evidence = evidenceIn(listed, 'm1', idleBody)
@@ -327,12 +333,36 @@ describe('evidenceIn, what a person decided', () => {
   })
 
   it('lets the later of a recorded and a listed review decide, as the store would', () => {
-    const older = { subject, review: { ...corrected, reviewedAt: '2026-09-22T08:00:00.000Z' } }
+    const earlier = '2026-09-22T08:00:00.000Z'
+    const older = {
+      subject,
+      review: {
+        ...corrected,
+        reviewedAt: earlier,
+        fields: { category: by('corrected', earlier) },
+      },
+    }
     const newer = { subject, review: reviewOfOther }
 
     // `corrected` is the listed one, at 2026-09-23T08:30.
-    expect(evidenceIn(listed, 'm1', idleBody, { m1: older }).openReview).toBe(corrected)
-    expect(evidenceIn(listed, 'm1', idleBody, { m1: newer }).openReview).toBe(reviewOfOther)
+    expect(evidenceIn(listed, 'm1', idleBody, { m1: older }).openReview).toEqual(corrected)
+    expect(evidenceIn(listed, 'm1', idleBody, { m1: newer }).openReview).toEqual(reviewOfOther)
+  })
+
+  // Each field is its own decision, and the two answers hold different ones:
+  // the reading folds every review of the subject, while a save answers for
+  // the one review it recorded. Taking either whole would show a label the
+  // store has a decision for as nobody's.
+  it('keeps a field only one of the two answers decided', () => {
+    const own = { subject, review: reviewOfOther }
+    const withPriority = { ...listed, reviews: { m1: priorityCorrected } }
+
+    expect(evidenceIn(withPriority, 'm1', idleBody, { m1: own }).openReview).toEqual({
+      ...reviewOfOther,
+      decision: 'corrected',
+      labels: { category: labels.category, priority: 'low' },
+      fields: { category: by('confirmed', laterAt), priority: by('corrected') },
+    })
   })
 
   it('has nothing to show without a reading, an open row or any reviews', () => {

@@ -388,7 +388,7 @@ pnpm readback:spark                      # whether Spark answers on this host
 - `src/app/demo.ts` keeps fictional sample data for tests; the app no
   longer shows it.
 - Classifications, reviews and manual-run control state persist in the local
-  shadow-triage SQLite file (Node's built-in `node:sqlite`, schema 4 via
+  shadow-triage SQLite file (Node's built-in `node:sqlite`, schema 5 via
   `PRAGMA user_version`).
   Evaluation snapshots are separate local JSON files under `.data/`.
 - A `current` or `unverified` classification offers a category review;
