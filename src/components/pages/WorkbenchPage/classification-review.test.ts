@@ -72,7 +72,8 @@ function reviewed(state: Currency, decision: Decision, values: Fields) {
   })
   const chosen = decision === 'corrected' ? 'notification' : 'personal'
   const review = humanReviewSchema.parse({
-    ...reviewRequest({ subject, labels }, chosen),
+    // The category alone, as this panel's own request builder composes it.
+    ...reviewRequest({ subject, labels }, { category: chosen }, undefined),
     reviewer: 'fixture-reviewer',
     reviewedAt: '2026-09-22T10:00:00.000Z',
   })

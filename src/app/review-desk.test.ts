@@ -540,7 +540,7 @@ function shownSubject(view: DeskView, id: string) {
 const confirming = (view: DeskView, id: string): DeskReviewRequest => ({
   requestId: randomUUID(),
   classification: shownSubject(view, id),
-  verdict: { decision: 'confirmed' },
+  verdict: { category: { decision: 'confirmed' } },
 })
 
 describe('ReviewDesk.review', () => {
@@ -568,7 +568,10 @@ describe('ReviewDesk.review', () => {
       ReviewDesk.review({
         requestId: randomUUID(),
         classification: shownSubject(view, copy(one, '11')),
-        verdict: { decision: 'corrected', labels: { category: 'suspicious', priority: 'urgent' } },
+        verdict: {
+          category: { decision: 'corrected', value: 'suspicious' },
+          priority: { decision: 'corrected', value: 'urgent' },
+        },
       }),
     ).resolves.toMatchObject({
       status: 'recorded',
@@ -603,7 +606,7 @@ describe('ReviewDesk.review', () => {
       ReviewDesk.review({
         requestId: randomUUID(),
         classification: { ...shown, copy: { mailboxId: two, messageId: '11' } },
-        verdict: { decision: 'confirmed' },
+        verdict: { category: { decision: 'confirmed' } },
       }),
     ).resolves.toEqual({ status: 'refused', reason: 'unclassified' })
   })
@@ -624,7 +627,10 @@ const reviewOf = (view: DeskView, id: string) =>
 const correcting = (view: DeskView, id: string): DeskReviewRequest => ({
   requestId: randomUUID(),
   classification: shownSubject(view, id),
-  verdict: { decision: 'corrected', labels: { category: 'suspicious', priority: 'urgent' } },
+  verdict: {
+    category: { decision: 'corrected', value: 'suspicious' },
+    priority: { decision: 'corrected', value: 'urgent' },
+  },
 })
 
 describe('ReviewDesk.open, projecting what a person decided', () => {
@@ -651,17 +657,41 @@ describe('ReviewDesk.open, projecting what a person decided', () => {
     expect(jev.createJevClassifier).not.toHaveBeenCalled()
   })
 
-  it('lets a later confirmation take effect over the correction before it', async () => {
+  it('lets a later confirmation take effect over the correction of that field', async () => {
     shadowRun([{ mailboxId: one, messageIds: ['11'], classification: jevJudgment('11') }])
     const view = await ReviewDesk.open()
     await ReviewDesk.review(correcting(view, copy(one, '11')))
     await ReviewDesk.review(confirming(view, copy(one, '11')))
 
-    // A confirmation carries no labels of its own, so the row shows what the
-    // classifier proposed again — decided by a person this time.
+    // The later review confirmed the category, so the row shows what the
+    // classifier proposed for it again, decided by a person this time. It
+    // said nothing about the priority, so the correction of that field the
+    // same person made before it still stands and still reads as theirs.
     expect(reviewOf(await ReviewDesk.open(), copy(one, '11'))).toMatchObject({
       decidedBy: 'reviewer',
-      decision: 'confirmed',
+      decision: 'corrected',
+      labels: { category: 'personal', priority: 'urgent' },
+      fields: { category: { decision: 'confirmed' }, priority: { decision: 'corrected' } },
+    })
+  })
+
+  it('reads a priority a person decided back on the next reading', async () => {
+    shadowRun([{ mailboxId: one, messageIds: ['11'], classification: jevJudgment('11') }])
+    const view = await ReviewDesk.open()
+    await ReviewDesk.review({
+      requestId: randomUUID(),
+      classification: shownSubject(view, copy(one, '11')),
+      verdict: { priority: { decision: 'corrected', value: 'low' } },
+    })
+
+    const refreshed = await ReviewDesk.open()
+
+    // Their priority is there again, and the category is still the model's:
+    // nobody reviewed it, so the reading claims no decision about it.
+    const review = reviewOf(refreshed, copy(one, '11'))
+    expect(review).toMatchObject({ decision: 'corrected', labels: { priority: 'low' } })
+    expect(review).not.toHaveProperty('labels.category')
+    expect(classificationOf(refreshed, copy(one, '11'))).toMatchObject({
       labels: { category: 'personal', priority: 'high' },
     })
   })

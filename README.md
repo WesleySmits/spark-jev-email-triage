@@ -6,8 +6,9 @@ TanStack Start app with React, Vite, and strict TypeScript.
 
 The root route reads unread mail first from the local Spark CLI and shows
 classifications previously stored by the shadow CLI. `shadow --apply`
-stores classifications and the app saves human category reviews in the same
-SQLite database. Neither classification nor review changes mail. A separate,
+stores classifications and the app saves human reviews in the same
+SQLite database, which records the category and the priority as separate human
+decisions. Neither classification nor review changes mail. A separate,
 default-off Done panel can archive one message after explicit approval and
 confirmation.
 
@@ -61,14 +62,16 @@ to the button. What was open, where back leads and what was searched all stay
 as they were.
 
 Supported: reading mail, refreshing, opening one body, viewing stored triage,
-and confirming or correcting its category locally. The guarded Done panel
+and confirming or correcting its category and its priority locally, each as its
+own decision. The guarded Done panel
 can archive a selected message when explicitly enabled. The queue header has
 an explicit **Start Jev triage** control for the loaded worklist, with message
 and Jev-call limits, durable readback, cooperative Stop and idempotent Restart.
 It is loopback-only, default-off behind `JEV_MANUAL_RUNS_ENABLED=1`, and also
 requires `TYPESAFE_API_KEY`. A run sends minimized thread content to Jev;
 loading, refreshing and reviewing in the app make no model calls. There is no
-priority/reply/deadline editor, persisted completion or Undo.
+reply-expectation or deadline editor, no persisted completion and no Undo of a
+saved review.
 
 The workbench's single-key shortcuts (K, J, E and `/`) can be turned off in
 the rail, under the shortcut help. The choice is kept in that browser's local
@@ -360,9 +363,9 @@ pnpm readback:spark                      # whether Spark answers on this host
   was judged. `auto_accepted` reads as the model accepting its labels, never
   as a review by a person. The review panel shows category confidence as a
   percentage labelled "Model score"; this is the model's raw score, not a
-  calibrated probability of correctness. The page can save a category
-  review but cannot change a mailbox. The separate guarded Done panel can
-  execute only after explicit approval and confirmation. Spark's list
+  calibrated probability of correctness. The page can save a review of the
+  category, the priority or both, but cannot change a mailbox. The separate
+  guarded Done panel can execute only after explicit approval and confirmation. Spark's list
   shows at most 30 characters of a sender
   and 50 of a subject and has no uncut or structured form. A cut sender keeps its whole name when the address
   was cut, otherwise the visible start; a cut subject keeps its visible
@@ -387,25 +390,31 @@ pnpm readback:spark                      # whether Spark answers on this host
 - `src/app/demo.ts` keeps fictional sample data for tests; the app no
   longer shows it.
 - Classifications, reviews and manual-run control state persist in the local
-  shadow-triage SQLite file (Node's built-in `node:sqlite`, schema 4 via
+  shadow-triage SQLite file (Node's built-in `node:sqlite`, schema 5 via
   `PRAGMA user_version`).
   Evaluation snapshots are separate local JSON files under `.data/`.
-- A `current` or `unverified` classification offers a category review;
-  stale, failed, absent or unreadable classifications do not. The save
+- A `current` or `unverified` classification offers a review of its category
+  and its priority; stale, failed, absent or unreadable classifications do not. The save
   rechecks the exact subject against the store in a transaction, without
   reading Spark; `unverified` is not proof of live currency. Reviews are
   append-only, retain the original judgment, and record the server's local
-  OS account name and timestamp. The latest applicable review determines
-  the displayed labels after reload; it never makes a classification current.
+  OS account name and timestamp. For each field, the latest applicable review
+  that decided it determines the displayed label after reload; a review never
+  makes a classification current.
   Review POSTs and save readback are loopback-only with `no-store` responses.
   A lost response is an unknown outcome, with readback and a retry using the
   same request id to avoid duplicate reviews. The pending subject, chosen
   labels and request id are kept in the browser tab's `sessionStorage` before
   sending; saving is blocked if that storage cannot retain the request.
-- The review UI only asks about category and retains the model priority.
+- The review UI asks about the category and the priority, each as its own
+  decision, and about nothing else. Jev's advice for a field sits beside the
+  decision a person makes about it, and choosing the value marked as that
+  advice is what records a confirmation. A field nobody touched reads as not
+  reviewed, is left out of the request, and is never counted in what Save
+  would store; Save says how many fields it would record before it is pressed.
   A saved review is never evidence that another field was confirmed: the
-  model's own signals stay beside it, and the copy says the review covers
-  the category only.
+  model's own signals stay beside it, uncertainty included, and the copy says
+  which fields the review covered.
 - The panel and the reader say why review was asked for, from the grounds the
   run recorded beside the judgment: a category score under the accept level,
   an answer of Other, a mail read as a possible scam, and the signals cited

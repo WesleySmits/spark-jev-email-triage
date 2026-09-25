@@ -33,19 +33,44 @@ const judged = { subject, judgedAt } as const
 
 const unverified: StoredClassification = { ...judged, state: 'unverified', labels }
 
-/** What a person decided about that judgment, as a reading projects it. */
+const reviewedAt = '2026-09-23T08:30:00.000Z'
+
+/** One field decision, as the store records who made it and when. */
+const by = (decision: 'confirmed' | 'corrected', at: string = reviewedAt) =>
+  ({ decision, reviewer: 'wesley', reviewedAt: at }) as const
+
+/**
+ * What a person decided about that judgment, as a reading projects it. The
+ * panel asks about the category, so these decide that field alone.
+ */
 const corrected = {
   decidedBy: 'reviewer',
   decision: 'corrected',
-  labels: { category: 'suspicious', priority: 'urgent' },
+  labels: { category: 'suspicious' },
+  fields: { category: by('corrected') },
   reviewer: 'wesley',
-  reviewedAt: '2026-09-23T08:30:00.000Z',
+  reviewedAt,
 } as const
 
 const confirmed = {
   ...corrected,
   decision: 'confirmed',
-  labels: { category: labels.category, priority: labels.priority },
+  labels: { category: labels.category },
+  fields: { category: by('confirmed') },
+} as const
+
+/** A decision about the priority alone, which says nothing about the category. */
+const priorityCorrected = {
+  ...corrected,
+  labels: { priority: 'low' },
+  fields: { priority: by('corrected') },
+} as const
+
+/** One person deciding both fields at once. */
+const bothDecided = {
+  ...corrected,
+  labels: { category: 'suspicious', priority: 'low' },
+  fields: { category: by('corrected'), priority: by('corrected') },
 } as const
 const current: StoredClassification = { ...judged, state: 'current', labels }
 const stale: StoredClassification = { ...judged, state: 'stale', reason: 'newer_message', labels }
@@ -201,8 +226,14 @@ describe('evidenceIn, what a person decided', () => {
     labels,
   }
 
+  const laterAt = '2026-09-24T08:00:00.000Z'
+
   /** A review of that other judgment, distinct from the listed one. */
-  const reviewOfOther: RowReview = { ...confirmed, reviewedAt: '2026-09-24T08:00:00.000Z' }
+  const reviewOfOther: RowReview = {
+    ...confirmed,
+    reviewedAt: laterAt,
+    fields: { category: by('confirmed', laterAt) },
+  }
 
   it('shows what the reading projected, so a refresh keeps a saved review', () => {
     const evidence = evidenceIn(listed, 'm1', idleBody)
@@ -302,12 +333,36 @@ describe('evidenceIn, what a person decided', () => {
   })
 
   it('lets the later of a recorded and a listed review decide, as the store would', () => {
-    const older = { subject, review: { ...corrected, reviewedAt: '2026-09-22T08:00:00.000Z' } }
+    const earlier = '2026-09-22T08:00:00.000Z'
+    const older = {
+      subject,
+      review: {
+        ...corrected,
+        reviewedAt: earlier,
+        fields: { category: by('corrected', earlier) },
+      },
+    }
     const newer = { subject, review: reviewOfOther }
 
     // `corrected` is the listed one, at 2026-09-23T08:30.
-    expect(evidenceIn(listed, 'm1', idleBody, { m1: older }).openReview).toBe(corrected)
-    expect(evidenceIn(listed, 'm1', idleBody, { m1: newer }).openReview).toBe(reviewOfOther)
+    expect(evidenceIn(listed, 'm1', idleBody, { m1: older }).openReview).toEqual(corrected)
+    expect(evidenceIn(listed, 'm1', idleBody, { m1: newer }).openReview).toEqual(reviewOfOther)
+  })
+
+  // Each field is its own decision, and the two answers hold different ones:
+  // the reading folds every review of the subject, while a save answers for
+  // the one review it recorded. Taking either whole would show a label the
+  // store has a decision for as nobody's.
+  it('keeps a field only one of the two answers decided', () => {
+    const own = { subject, review: reviewOfOther }
+    const withPriority = { ...listed, reviews: { m1: priorityCorrected } }
+
+    expect(evidenceIn(withPriority, 'm1', idleBody, { m1: own }).openReview).toEqual({
+      ...reviewOfOther,
+      decision: 'corrected',
+      labels: { category: labels.category, priority: 'low' },
+      fields: { category: by('confirmed', laterAt), priority: by('corrected') },
+    })
   })
 
   it('has nothing to show without a reading, an open row or any reviews', () => {
@@ -412,7 +467,8 @@ describe('classificationView, once a person has reviewed', () => {
       value: 'Suspicious',
       note: 'Chosen by a person. The model suggested Personal.',
     })
-    expect(facts[1]).toMatchObject({ term: 'Priority', value: 'Urgent' })
+    // Nobody decided the priority, so it is still the model's own.
+    expect(facts[1]).toEqual({ term: 'Priority', value: 'High' })
   })
 
   it("shows a confirmation as the model's own labels, decided by a person", () => {
@@ -444,9 +500,43 @@ describe('classificationView, once a person has reviewed', () => {
     expect(JSON.stringify(facts)).not.toContain('No person has reviewed this')
     expect(facts[1]).toEqual({
       term: 'Priority',
-      value: 'Urgent',
+      value: 'High',
       note: 'The model was not sure of this priority.',
     })
+  })
+
+  it("shows a priority a person decided, and says the category is still the model's", () => {
+    const facts = classificationView(current, priorityCorrected).facts
+
+    expect(facts[0]).toEqual({ term: 'Category', value: 'Personal' })
+    expect(facts[1]).toEqual({
+      term: 'Priority',
+      value: 'Low',
+      note: 'Chosen by a person. The model suggested High.',
+    })
+    expect(facts[2]?.term).toBe('Priority review')
+    expect(facts[2]?.note).toContain('This review covers the priority only.')
+  })
+
+  // The model's doubt about its own priority is not dropped because a person
+  // chose another one: it says what the model did, beside what they decided.
+  it("keeps the model's priority doubt beside a priority a person chose", () => {
+    const unsure = { ...labels, priorityUncertain: true } as const
+    const facts = classificationView({ ...current, labels: unsure }, priorityCorrected).facts
+
+    expect(facts[1]).toEqual({
+      term: 'Priority',
+      value: 'Low',
+      note: 'Chosen by a person. The model suggested High, which it was not sure of.',
+    })
+  })
+
+  it('names a review of both fields as covering both, and confirms nothing else', () => {
+    const fact = classificationView(current, bothDecided).facts[2]
+
+    expect(fact?.term).toBe('Category and priority review')
+    expect(fact?.note).toContain('This review covers the category and priority.')
+    expect(fact?.note).toContain('Reply expectations are not confirmed.')
   })
 
   it('leaves the state beside the labels alone: reviewing makes nothing current', () => {
@@ -465,6 +555,8 @@ describe('rowState', () => {
       category: 'Suspicious',
     })
     expect(rowState(current, confirmed).category).toBe('Personal')
+    // Nobody decided the category, so the model's own still shows.
+    expect(rowState(current, priorityCorrected).category).toBe('Personal')
     // A review decides labels, never the state the badge names.
     expect(rowState(stale, corrected).status).toEqual({ label: 'Triage outdated', tone: 'review' })
   })

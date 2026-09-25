@@ -16,7 +16,7 @@ import {
 } from '../domain/stored-classification'
 import { currentTriageRubric } from '../domain/triage'
 import { jevModel } from '../jev/questions'
-import { openDatabase } from './database'
+import { migrate, openDatabase, schemaVersion, userVersion } from './database'
 import { jevFailure, jevJudgment, storeJudgments } from './fixtures'
 import { readJudgments } from './judgments'
 import { readReviews, recordReview } from './reviews'
@@ -52,17 +52,21 @@ interface ReviewOptions {
 function review({ classification = subject(one), ...rest }: ReviewOptions = {}): HumanReview {
   return humanReviewSchema.parse({
     classification,
-    verdict: { decision: 'confirmed' },
+    verdict: { category: { decision: 'confirmed' } },
     reviewer: 'wesley',
     reviewedAt: '2026-09-21T10:00:00.000Z',
     ...rest,
   })
 }
 
+/** One person deciding both fields at once, correcting each. */
 const correction = {
-  decision: 'corrected',
-  labels: { category: 'suspicious', priority: 'urgent' },
+  category: { decision: 'corrected', value: 'suspicious' },
+  priority: { decision: 'corrected', value: 'urgent' },
 } as const
+
+/** A correction of the priority alone, which says nothing about the category. */
+const priorityOnly = { priority: { decision: 'corrected', value: 'urgent' } } as const
 
 /** One classified judgment of thread `11`, as one run would have stored it. */
 function judged(): DatabaseSync {
@@ -79,11 +83,20 @@ const reviewsOf = (db: DatabaseSync, ref: MailboxCopyRef) =>
 const judgmentsOf = (db: DatabaseSync, ref: MailboxCopyRef): readonly StoredJudgment[] =>
   readJudgments(db, [ref]).get(mailboxCopyId(ref)) ?? []
 
-/** A row written straight to the table, as another writer might leave one. */
-const insertRow = (
-  db: DatabaseSync,
-  row: { decision: string; category: string; priority: string; reviewedAt: string },
-) => {
+/**
+ * A review written straight to the tables, as another writer might leave one:
+ * the row, and the category decision that goes with it, exactly as the
+ * migration reads one written before field decisions existed.
+ */
+interface RawReview {
+  decision: string
+  category: string
+  priority: string
+  reviewedAt: string
+}
+
+/** The review row alone, with no decision recorded about any field. */
+const insertReviewRow = (db: DatabaseSync, row: RawReview) => {
   db.exec(
     `INSERT INTO reviews (
        judgment_id, mailbox_id, message_id, thread_id, latest_message_id, rubric,
@@ -93,6 +106,37 @@ const insertRow = (
      FROM judgments`,
   )
 }
+
+const insertRow = (db: DatabaseSync, row: RawReview) => {
+  insertReviewRow(db, row)
+  db.exec(
+    `INSERT INTO review_fields (review_id, field, decision, value)
+     SELECT id, 'category', decision, category FROM reviews WHERE id = last_insert_rowid()`,
+  )
+}
+
+/** What one review stored about each field, oldest review first. */
+const fieldRows = (db: DatabaseSync) =>
+  z
+    .array(
+      z.object({
+        review_id: z.int(),
+        field: z.string(),
+        decision: z.string(),
+        value: z.string().nullable(),
+      }),
+    )
+    .parse(db.prepare('SELECT * FROM review_fields ORDER BY review_id, field').all())
+
+/** The one review row the table holds, as it was written. */
+const reviewRow = (db: DatabaseSync) =>
+  z
+    .object({
+      decision: z.string(),
+      category: z.string().nullable(),
+      priority: z.string().nullable(),
+    })
+    .parse(db.prepare('SELECT decision, category, priority FROM reviews').get())
 
 /** The times the table holds, as written, oldest row first. */
 const storedTimes = (db: DatabaseSync) =>
@@ -236,10 +280,10 @@ describe('the stored reviews', () => {
     const reviewedAt = '2026-09-21T10:00:00.000Z'
 
     expect(() => {
-      insertRow(db, { decision: 'corrected', category: 'NULL', priority: 'NULL', reviewedAt })
+      insertReviewRow(db, { decision: 'corrected', category: 'NULL', priority: 'NULL', reviewedAt })
     }).toThrow(/CHECK constraint/)
     expect(() => {
-      insertRow(db, {
+      insertReviewRow(db, {
         decision: 'confirmed',
         category: "'suspicious'",
         priority: "'urgent'",
@@ -298,5 +342,208 @@ describe('readReviews', () => {
     const db = judged()
 
     expect(readReviews(db, [copy(one, '11')]).size).toBe(0)
+  })
+})
+
+describe('the stored field decisions', () => {
+  it('records one decision for the field a review named, and none for the other', () => {
+    const db = judged()
+
+    recordReview(db, review(), judge)
+
+    expect(fieldRows(db)).toEqual([
+      { review_id: 1, field: 'category', decision: 'confirmed', value: null },
+    ])
+  })
+
+  it('records a priority correction that decides nothing about the category', () => {
+    const db = judged()
+
+    expect(recordReview(db, review({ verdict: priorityOnly }), judge)).toEqual({
+      status: 'recorded',
+    })
+
+    expect(fieldRows(db)).toEqual([
+      { review_id: 1, field: 'priority', decision: 'corrected', value: 'urgent' },
+    ])
+    expect(reviewsOf(db, copy(one, '11'))).toEqual([review({ verdict: priorityOnly })])
+  })
+
+  // The review row says what the review came to as a whole: the labels that
+  // hold after it. Its category is the judged one, which nobody assessed, and
+  // only the field decisions above say who decided what.
+  it('leaves the review row saying which labels hold after it', () => {
+    const db = judged()
+
+    recordReview(db, review({ verdict: priorityOnly }), judge)
+
+    expect(reviewRow(db)).toEqual({
+      decision: 'corrected',
+      category: 'personal',
+      priority: 'urgent',
+    })
+  })
+
+  it('writes no labels at all for a review that corrected nothing', () => {
+    const db = judged()
+
+    recordReview(db, review(), judge)
+
+    expect(reviewRow(db)).toEqual({ decision: 'confirmed', category: null, priority: null })
+  })
+
+  // A person confirmed the category last week and corrects the priority now.
+  // Neither decision covered the other field, and both still hold.
+  it('reads a category confirmation and a later priority correction as both holding', () => {
+    const db = judged()
+    recordReview(db, review(), judge)
+    recordReview(
+      db,
+      review({ verdict: priorityOnly, reviewedAt: '2026-09-22T11:00:00.000Z' }),
+      judge,
+    )
+
+    const classification = projectClassification(judgmentsOf(db, copy(one, '11')), judge)
+
+    expect(effectiveOutcome(classification, reviewsOf(db, copy(one, '11')))).toEqual({
+      decidedBy: 'reviewer',
+      decision: 'corrected',
+      labels: { category: 'personal', priority: 'urgent' },
+      fields: {
+        category: {
+          decision: 'confirmed',
+          reviewer: 'wesley',
+          reviewedAt: '2026-09-21T10:00:00.000Z',
+        },
+        priority: {
+          decision: 'corrected',
+          reviewer: 'wesley',
+          reviewedAt: '2026-09-22T11:00:00.000Z',
+        },
+      },
+      reviewer: 'wesley',
+      reviewedAt: '2026-09-22T11:00:00.000Z',
+    })
+  })
+
+  it('cannot be changed or removed once written', () => {
+    const db = judged()
+    recordReview(db, review({ verdict: correction }), judge)
+
+    expect(() => {
+      db.exec("UPDATE review_fields SET value = 'newsletter'")
+    }).toThrow(/cannot be changed/)
+    expect(() => {
+      db.exec('DELETE FROM review_fields')
+    }).toThrow(/cannot be removed/)
+    expect(reviewsOf(db, copy(one, '11'))).toEqual([review({ verdict: correction })])
+  })
+
+  it('never let a confirmed field carry a value, or a corrected one go without', () => {
+    const db = judged()
+    recordReview(db, review(), judge)
+
+    expect(() => {
+      db.exec(
+        "INSERT INTO review_fields (review_id, field, decision, value) VALUES (1, 'priority', 'confirmed', 'urgent')",
+      )
+    }).toThrow(/CHECK constraint/)
+    expect(() => {
+      db.exec(
+        "INSERT INTO review_fields (review_id, field, decision, value) VALUES (1, 'priority', 'corrected', NULL)",
+      )
+    }).toThrow(/CHECK constraint/)
+  })
+
+  // Another writer's row that records no decision is a review of nothing this
+  // build can read. Reading its labels as a decision would invent one.
+  it('skip a review that records no decision rather than guessing one from its labels', () => {
+    const db = judged()
+    insertReviewRow(db, {
+      decision: 'corrected',
+      category: "'suspicious'",
+      priority: "'urgent'",
+      reviewedAt: '2026-09-21T10:00:00.000Z',
+    })
+
+    expect(countOf(db, 'reviews')).toBe(1)
+    expect(reviewsOf(db, copy(one, '11'))).toEqual([])
+  })
+})
+
+// A database written before a review could decide a field on its own. Its
+// reviews asked about the category alone and carried the judged priority along
+// to fill out the stored shape, so that is exactly what they must still read
+// as: a category decision, and no claim about any priority.
+describe('reviews stored before field decisions existed', () => {
+  const schemaFour = () => {
+    const db = judged()
+    insertReviewRow(db, {
+      decision: 'confirmed',
+      category: 'NULL',
+      priority: 'NULL',
+      reviewedAt: '2026-09-21T10:00:00.000Z',
+    })
+    insertReviewRow(db, {
+      decision: 'corrected',
+      category: "'newsletter'",
+      priority: "'low'",
+      reviewedAt: '2026-09-22T11:00:00.000Z',
+    })
+    db.exec('DROP TABLE review_fields; PRAGMA user_version = 4')
+    return db
+  }
+
+  it('are migrated into one category decision each, and no priority decision', () => {
+    const db = schemaFour()
+
+    migrate(db)
+
+    expect(userVersion(db)).toBe(schemaVersion)
+    expect(fieldRows(db)).toEqual([
+      { review_id: 1, field: 'category', decision: 'confirmed', value: null },
+      { review_id: 2, field: 'category', decision: 'corrected', value: 'newsletter' },
+    ])
+  })
+
+  it("still decide the category they decided, and leave the priority the model's", () => {
+    const db = schemaFour()
+    migrate(db)
+
+    const classification = projectClassification(judgmentsOf(db, copy(one, '11')), judge)
+
+    expect(effectiveOutcome(classification, reviewsOf(db, copy(one, '11')))).toEqual({
+      decidedBy: 'reviewer',
+      decision: 'corrected',
+      labels: { category: 'newsletter' },
+      fields: {
+        category: {
+          decision: 'corrected',
+          reviewer: 'wesley',
+          reviewedAt: '2026-09-22T11:00:00.000Z',
+        },
+      },
+      reviewer: 'wesley',
+      reviewedAt: '2026-09-22T11:00:00.000Z',
+    })
+  })
+
+  it('keep every row they held, and take a new review beside them', () => {
+    const db = schemaFour()
+    migrate(db)
+
+    expect(
+      recordReview(
+        db,
+        review({ verdict: priorityOnly, reviewedAt: '2026-09-23T09:00:00.000Z' }),
+        judge,
+      ),
+    ).toEqual({ status: 'recorded' })
+    expect(countOf(db, 'reviews')).toBe(3)
+    expect(timesOf(db, copy(one, '11'))).toEqual([
+      '2026-09-23T09:00:00.000Z',
+      '2026-09-22T11:00:00.000Z',
+      '2026-09-21T10:00:00.000Z',
+    ])
   })
 })

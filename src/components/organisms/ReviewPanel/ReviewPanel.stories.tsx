@@ -1,41 +1,54 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState, type ComponentProps } from 'react'
-import { useArgs } from 'storybook/preview-api'
 import { fn } from 'storybook/test'
-import { ReviewPanel, type ReviewCategory } from './ReviewPanel'
+import { ReviewPanel, type ReviewField, type ReviewFieldOption } from './ReviewPanel'
 
-type Props = ComponentProps<typeof ReviewPanel<string>>
+type Props = ComponentProps<typeof ReviewPanel>
 
-const categories: readonly ReviewCategory<string>[] = [
+const categoryOptions: readonly ReviewFieldOption[] = [
   { value: 'customer-question', label: 'Customer question' },
   { value: 'invoice', label: 'Invoice' },
-  { value: 'newsletter', label: 'Newsletter' },
+  { value: 'newsletter', label: 'Newsletter', note: "The model's advice" },
   { value: 'personal', label: 'Personal' },
 ]
 
-// What the caller would say after each step, per story language.
-const feedback = {
-  en: {
-    unsaved: { title: 'Not saved yet', detail: 'Saving records your category locally.' },
-    saved: (label: string) => `Saved: ${label}`,
-    same: 'Matches the original suggestion.',
-    changed: (original: string) => `The original stays ${original}.`,
-    announce: (label: string) => `Review saved. Category set to ${label}. Not completed yet.`,
-  },
-  nl: {
-    unsaved: {
-      title: 'Nog niet opgeslagen',
-      detail: 'Klantvragen gaan na het opslaan naar Actie nodig.',
-    },
-    saved: (label: string) => `Opgeslagen: ${label}`,
-    same: 'Komt overeen met de oorspronkelijke suggestie.',
-    changed: (original: string) => `Origineel blijft ${original}.`,
-    announce: (label: string) =>
-      `Beoordeling opgeslagen. Categorie ingesteld op ${label}. Nog niet afgehandeld.`,
-  },
+const priorityOptions: readonly ReviewFieldOption[] = [
+  { value: 'urgent', label: 'Urgent' },
+  { value: 'high', label: 'High', note: "The model's advice" },
+  { value: 'normal', label: 'Normal' },
+  { value: 'low', label: 'Low' },
+]
+
+/**
+ * The panel's fields as plain data. The fixture below supplies what a caller
+ * owns: the choice each field holds, what its row then says, and the callbacks.
+ */
+const categoryField: ReviewField = {
+  name: 'category',
+  label: 'Category',
+  advice: 'Newsletter',
+  options: categoryOptions,
+  chosen: null,
+  onChoose: fn(),
+  state: { label: 'Not reviewed', tone: 'none' },
+  decidedBy: 'Nobody. The model decided this.',
+  undoLabel: 'Undo',
 }
 
-type Language = keyof typeof feedback
+const priorityField: ReviewField = {
+  name: 'priority',
+  label: 'Priority',
+  advice: 'High',
+  adviceNote: 'The model was not sure of this.',
+  options: priorityOptions,
+  chosen: null,
+  onChoose: fn(),
+  state: { label: 'Not reviewed', tone: 'none' },
+  decidedBy: 'Nobody. The model decided this.',
+  undoLabel: 'Undo',
+}
+
+const fields: readonly ReviewField[] = [categoryField, priorityField]
 
 const meta = {
   title: 'Organisms/Review panel',
@@ -43,45 +56,38 @@ const meta = {
   args: {
     headingLevel: 2,
     title: 'Needs review',
-    summary: "The content and the suggested category don't clearly match.",
+    summary: 'Compare what the model advised with what you decide, field by field.',
     expanded: true,
     scoreLabel: 'Model score',
     score: 58,
     reasonTitle: 'Why review?',
     reason:
-      'Triage policy asked for a person on the grounds below. Each is a rule over the scores, not the model\u2019s own account of itself.',
+      'Triage policy asked for a person on the grounds below. Each is a rule over the scores, not the model’s own account of itself.',
     reasons: [
       "The model's score for this category stayed under the level triage accepts on its own.",
     ],
-    originalLabel: 'Original AI suggestion',
-    originalSuggestion: 'Newsletter',
-    originalNote: 'This original suggestion is kept, even after later corrections.',
-    categoriesTitle: 'Choose the right category',
-    categoriesHint: "This reviews the message. It doesn't complete it.",
-    categories,
-    selectedCategory: null,
+    keptNote: "The model's own advice is kept whatever you decide.",
+    fieldsTitle: "The model's advice and your decision",
+    fieldsHint:
+      "Choose the value marked as the model's advice to confirm it, or another to change it. A field you leave alone stays unreviewed.",
+    cells: { advice: 'Model advises', decision: 'Your decision', decidedBy: 'Decided by' },
+    fields,
+    outOfScope:
+      'This panel decides the category and the priority only. Whether a reply is expected, and by when, is not confirmed here.',
     saveLabel: 'Save review',
-    saveDisabled: false,
-    result: feedback.en.unsaved,
+    saveDisabled: true,
     onExpandedChange: fn(),
-    onSelectedCategoryChange: fn(),
     onSave: fn(),
   },
   argTypes: {
     headingLevel: { control: 'inline-radio', options: [2, 3, 4] },
     score: { control: { type: 'range', min: 0, max: 100, step: 1 } },
-    selectedCategory: {
-      control: 'select',
-      options: [null, ...categories.map((category) => category.value)],
-    },
-    categories: { control: 'object' },
+    fields: { control: 'object' },
     reasons: { control: 'object' },
     result: { control: 'object' },
   },
-  render: function Render(args, { parameters }) {
-    const [, updateArgs] = useArgs<Props>()
-    const language: Language = parameters['language'] === 'nl' ? 'nl' : 'en'
-    return <ReviewFixture {...args} language={language} updateArgs={updateArgs} />
+  render: function Render(args) {
+    return <ReviewFixture {...args} />
   },
   // The source reader gives the panel at most 820px.
   decorators: [
@@ -91,48 +97,99 @@ const meta = {
       </div>
     ),
   ],
-} satisfies Meta<typeof ReviewPanel<string>>
+} satisfies Meta<typeof ReviewPanel>
 
 export default meta
 
 type Story = StoryObj<typeof meta>
 
-function labelOf(args: Props, value: string | null) {
-  return args.categories.find((category) => category.value === value)?.label ?? ''
+const counted = (fields: number) => `${String(fields)} ${fields === 1 ? 'field' : 'fields'}`
+
+/** What one field's row says once a person has chosen one of its options. */
+const chosenState = (option: ReviewFieldOption): ReviewField['state'] => ({
+  label:
+    option.note === undefined
+      ? `Changing to ${option.label}. Not saved yet.`
+      : `Confirming the model's advice, ${option.label}. Not saved yet.`,
+  tone: 'pending',
+})
+
+type Choices = Readonly<Record<string, string>>
+
+/** The fields as the fixture shows them: its own choice, state and callbacks. */
+function shownFields(
+  fields: readonly ReviewField[],
+  choices: Choices,
+  pick: (field: ReviewField, value: string) => void,
+  forget: (field: ReviewField) => void,
+): readonly ReviewField[] {
+  return fields.map((field): ReviewField => {
+    const chosen = choices[field.name]
+    const option = field.options.find((one) => one.value === chosen)
+    const onChoose = (value: string) => {
+      pick(field, value)
+    }
+    if (chosen === undefined || option === undefined) return { ...field, onChoose }
+    return {
+      ...field,
+      chosen,
+      state: chosenState(option),
+      onChoose,
+      onUndo: () => {
+        forget(field)
+      },
+    }
+  })
 }
+
+/** What Save says it would record, unless the story says so itself. */
+const labelFor = (args: Props, count: number) =>
+  count === 0 ? args.saveLabel : `Save ${counted(count)}`
+
+/** The copy beside Save, unless the story gives its own. */
+const resultFor = (args: Props, count: number) =>
+  args.result ??
+  (count === 0
+    ? { title: 'Nothing decided yet', detail: 'A field you leave alone stays unreviewed.' }
+    : { title: `${counted(count)} ready to save`, detail: 'Your mailbox is unchanged.' })
 
 /**
- * Stands in for the caller: it keeps expanded, selection and result in the
- * story args (so the controls follow along), and announces a save through its
- * own polite live region. The panel itself announces nothing.
+ * Stands in for the caller: it holds the choice each field has, counts what
+ * Save would record, and announces a save through its own polite live region.
+ * The panel itself announces nothing, and no choice is made for a field the
+ * story has not touched.
  */
-type FixtureProps = Props & {
-  language: Language
-  updateArgs: (args: Partial<Props>) => void
-}
-
-function ReviewFixture({ language, updateArgs, ...args }: FixtureProps) {
+function ReviewFixture(args: Props) {
+  const [choices, setChoices] = useState<Choices>({})
   const [announcement, setAnnouncement] = useState('')
-  const copy = feedback[language]
+  const count = args.fields.filter((field) => choices[field.name] !== undefined).length
+  const fields = shownFields(
+    args.fields,
+    choices,
+    (field, value) => {
+      field.onChoose(value)
+      setChoices((current) => ({ ...current, [field.name]: value }))
+      setAnnouncement('')
+    },
+    (field) => {
+      setChoices((current) =>
+        Object.fromEntries(Object.entries(current).filter(([name]) => name !== field.name)),
+      )
+    },
+  )
   return (
     <div style={{ display: 'grid', gap: 'var(--s3)' }}>
       <ReviewPanel
         {...args}
-        onExpandedChange={(expanded) => {
-          args.onExpandedChange(expanded)
-          updateArgs({ expanded })
-        }}
-        onSelectedCategoryChange={(value) => {
-          args.onSelectedCategoryChange(value)
-          updateArgs({ selectedCategory: value, result: copy.unsaved })
-        }}
+        fields={fields}
+        saveDisabled={count === 0 ? args.saveDisabled : false}
+        saveLabel={labelFor(args, count)}
+        result={resultFor(args, count)}
         onSave={() => {
           args.onSave()
-          const label = labelOf(args, args.selectedCategory)
-          const detail =
-            label === args.originalSuggestion ? copy.same : copy.changed(args.originalSuggestion)
-          updateArgs({ result: { title: copy.saved(label), detail } })
-          setAnnouncement(copy.announce(label))
+          setAnnouncement(
+            `Review saved. ${counted(count)} recorded. Your mailbox is unchanged. Not completed yet.`,
+          )
         }}
       />
       <p role="status" aria-live="polite" style={{ margin: 0, font: 'var(--text-meta)' }}>
@@ -143,16 +200,14 @@ function ReviewFixture({ language, updateArgs, ...args }: FixtureProps) {
 }
 
 /**
- * Nothing selected yet, so save is disabled. Pick a category and save: the
- * result copy changes and the story's live region announces it.
+ * Nothing decided yet, so save is disabled and both rows say they are
+ * unreviewed. Choose the value marked as the model's advice to confirm that
+ * field, or another to change it; Save then says how many fields it records.
  *
  * ```tsx
- * const [expanded, setExpanded] = useState(true)
- * const [selected, setSelected] = useState<Category | null>(null)
- *
  * <ReviewPanel
  *   title="Needs review"
- *   summary="The content and the suggested category don't clearly match."
+ *   summary="Compare what the model advised with what you decide, field by field."
  *   expanded={expanded}
  *   onExpandedChange={setExpanded}
  *   scoreLabel="Model score"
@@ -160,15 +215,13 @@ function ReviewFixture({ language, updateArgs, ...args }: FixtureProps) {
  *   reasonTitle="Why review?"
  *   reason="Triage policy asked for a person on the grounds below."
  *   reasons={['The category score stayed under the level triage accepts.']}
- *   originalLabel="Original AI suggestion"
- *   originalSuggestion="Newsletter"
- *   categoriesTitle="Choose the right category"
- *   categories={categories}
- *   selectedCategory={selected}
- *   onSelectedCategoryChange={setSelected}
- *   saveLabel="Save review"
+ *   keptNote="The model's own advice is kept whatever you decide."
+ *   fieldsTitle="The model's advice and your decision"
+ *   cells={{ advice: 'Model advises', decision: 'Your decision', decidedBy: 'Decided by' }}
+ *   fields={[category, priority]}
+ *   saveLabel="Save 1 field"
  *   onSave={save}
- *   result={{ title: 'Not saved yet' }}
+ *   result={{ title: '1 field ready to save' }}
  * />
  * <p role="status" aria-live="polite">{announcement}</p>
  * ```
@@ -177,7 +230,67 @@ export const Expanded: Story = {}
 
 export const Collapsed: Story = { args: { expanded: false } }
 
-export const Selected: Story = { args: { selectedCategory: 'customer-question' } }
+/** One field a person decided earlier, and one nobody has: two different rows. */
+export const OneFieldDecided: Story = {
+  args: {
+    fields: [
+      {
+        ...categoryField,
+        chosen: 'customer-question',
+        state: { label: 'Set to Customer question', tone: 'saved' },
+        decidedBy: 'wesley, 25 Sep, 09:12',
+      },
+      priorityField,
+    ],
+    result: {
+      title: 'Review saved',
+      detail:
+        'Category set to Customer question. The priority stays unreviewed, as the model had it. Your mailbox is unchanged.',
+    },
+  },
+}
+
+/** Both fields decided, one confirmed and one changed, and both stored. */
+export const BothFieldsDecided: Story = {
+  args: {
+    fields: [
+      {
+        ...categoryField,
+        chosen: 'newsletter',
+        state: { label: 'Confirmed as Newsletter', tone: 'saved' },
+        decidedBy: 'wesley, 25 Sep, 09:12',
+      },
+      {
+        ...priorityField,
+        chosen: 'normal',
+        state: { label: 'Set to Normal', tone: 'saved' },
+        decidedBy: 'wesley, 25 Sep, 09:31',
+      },
+    ],
+    result: {
+      title: 'Review saved',
+      detail:
+        "Category confirmed as Newsletter. Priority set to Normal. The model's own advice is kept. Your mailbox is unchanged.",
+    },
+  },
+}
+
+/** While a save is on its way: every option and undo is locked, and it says so. */
+export const Saving: Story = {
+  args: {
+    fields: fields.map((field) => ({
+      ...field,
+      chosen: field.name === 'priority' ? 'normal' : null,
+      disabled: true,
+      ...(field.name === 'priority' && {
+        state: { label: 'Changing to Normal. Not saved yet.', tone: 'pending' as const },
+      }),
+    })),
+    saveDisabled: true,
+    saveLabel: 'Save 1 field',
+    result: { title: 'Saving review…', detail: 'Nothing is being sent to your mail.' },
+  },
+}
 
 /**
  * Several grounds at once: a score, a category nothing fits, a warning with the
@@ -188,7 +301,7 @@ export const SeveralGrounds: Story = {
   args: {
     score: 41,
     reason:
-      'Triage policy asked for a person on the grounds below. Each is a rule over the scores, not the model\u2019s own account of itself, and none of them says whether this triage still describes the mail as it stands now.',
+      'Triage policy asked for a person on the grounds below. Each is a rule over the scores, not the model’s own account of itself, and none of them says whether this triage still describes the mail as it stands now.',
     reasons: [
       "The model's score for this category stayed under the level triage accepts on its own.",
       'The model answered Other, which means either that no category of the rubric clearly fits or that the thread does not hold enough to tell. The record does not say which.',
@@ -196,13 +309,12 @@ export const SeveralGrounds: Story = {
       'Possible signal: It may ask to send money or to change payment details.',
       'Triage raised how urgent a look is, which asks for attention sooner and nothing else.',
     ],
-    originalSuggestion: 'Other',
   },
 }
 
 /**
  * A record that names no grounds. The panel says so instead of explaining the
- * review as model doubt, and still offers the category review.
+ * review as model doubt, and still offers both decisions.
  */
 export const GroundsNotRecorded: Story = {
   args: {
@@ -212,28 +324,19 @@ export const GroundsNotRecorded: Story = {
   },
 }
 
-/** After saving: the result names the new category and the original suggestion stays. */
-export const Saved: Story = {
-  args: {
-    selectedCategory: 'customer-question',
-    result: { title: 'Saved: Customer question', detail: 'The original stays Newsletter.' },
-  },
-}
-
-const dutchCategories: readonly ReviewCategory<string>[] = [
-  {
-    value: 'klantvraag',
-    label: 'Klantvraag',
-    description: 'Iemand vraagt om een antwoord of een besluit.',
-  },
+const dutchCategoryOptions: readonly ReviewFieldOption[] = [
+  { value: 'klantvraag', label: 'Klantvraag' },
   { value: 'factuur', label: 'Factuur' },
-  { value: 'nieuwsbrief', label: 'Nieuwsbrief' },
+  { value: 'nieuwsbrief', label: 'Nieuwsbrief', note: 'Het advies van het model' },
   { value: 'persoonlijk', label: 'Persoonlijk' },
-  {
-    value: 'overig',
-    label: 'Overig: past niet in een van de bovenstaande categorieën',
-    description: 'Bijvoorbeeld een automatische ontvangstbevestiging van een leveranciersportaal.',
-  },
+  { value: 'overig', label: 'Overig: past niet in een van de bovenstaande categorieën' },
+]
+
+const dutchPriorityOptions: readonly ReviewFieldOption[] = [
+  { value: 'urgent', label: 'Urgent' },
+  { value: 'hoog', label: 'Hoog', note: 'Het advies van het model' },
+  { value: 'normaal', label: 'Normaal' },
+  { value: 'laag', label: 'Laag' },
 ]
 
 /** Dutch copy with long words and sentences. Everything wraps; nothing scrolls sideways. */
@@ -241,7 +344,7 @@ export const LongDutchCopy: Story = {
   args: {
     title: 'Controle nodig',
     summary:
-      'De inhoud en de voorgestelde categorie sluiten niet duidelijk op elkaar aan, dus een mens beslist.',
+      'Vergelijk wat het model adviseerde met wat jij beslist, veld voor veld. Dit verandert niets in je mail.',
     scoreLabel: 'Modelscore',
     score: 58,
     reasonTitle: 'Waarom controleren?',
@@ -251,26 +354,49 @@ export const LongDutchCopy: Story = {
       'De modelscore voor deze leveranciersovereenkomstwijzigingscategorie bleef onder de drempel die triage zonder mens accepteert.',
       'Mogelijk signaal: er wordt misschien gevraagd om geld over te maken of betaalgegevens te wijzigen.',
     ],
-    originalLabel: 'Originele AI-suggestie',
-    originalSuggestion: 'Nieuwsbrief',
-    originalNote: 'Deze oorspronkelijke suggestie blijft bewaard, ook na latere correcties.',
-    categoriesTitle: 'Kies de juiste categorie',
-    categoriesHint: 'Dit beoordeelt de mail. Het handelt de mail nog niet af.',
-    categories: dutchCategories,
-    selectedCategory: 'klantvraag',
-    saveLabel: 'Beoordeling opslaan',
-    result: feedback.nl.unsaved,
-  },
-  parameters: { language: 'nl' },
-  argTypes: {
-    selectedCategory: {
-      control: 'select',
-      options: [null, ...dutchCategories.map((category) => category.value)],
+    keptNote: 'Het oorspronkelijke advies van het model blijft bewaard, wat je ook beslist.',
+    fieldsTitle: 'Het advies van het model en jouw beslissing',
+    fieldsHint:
+      'Kies de waarde met het label van het model om die te bevestigen, of een andere om die te wijzigen. Een veld dat je niet aanraakt blijft onbeoordeeld.',
+    cells: { advice: 'Model adviseert', decision: 'Jouw beslissing', decidedBy: 'Beslist door' },
+    outOfScope:
+      'Dit paneel beslist alleen over categorie en prioriteit. Of er een antwoord wordt verwacht, en wanneer, wordt hier niet bevestigd.',
+    fields: [
+      {
+        name: 'category',
+        label: 'Categorie',
+        advice: 'Nieuwsbrief',
+        options: dutchCategoryOptions,
+        chosen: 'klantvraag',
+        onChoose: fn(),
+        state: { label: 'Wijzigen naar Klantvraag. Nog niet opgeslagen.', tone: 'pending' },
+        decidedBy: 'Niemand. Het model besliste dit.',
+        undoLabel: 'Ongedaan maken',
+        onUndo: fn(),
+      },
+      {
+        name: 'priority',
+        label: 'Prioriteit',
+        advice: 'Hoog',
+        adviceNote: 'Het model was hier niet zeker van.',
+        options: dutchPriorityOptions,
+        chosen: null,
+        onChoose: fn(),
+        state: { label: 'Niet beoordeeld', tone: 'none' },
+        decidedBy: 'Niemand. Het model besliste dit.',
+        undoLabel: 'Ongedaan maken',
+      },
+    ],
+    saveLabel: '1 veld opslaan',
+    saveDisabled: false,
+    result: {
+      title: '1 veld klaar om op te slaan',
+      detail: 'Opslaan legt dit vast op deze computer. Je mailbox blijft ongewijzigd.',
     },
   },
 }
 
-/** A 320px phone: the panel stacks, options take one column and save fills the width. */
+/** A 320px phone: every row stacks, options wrap and save fills the width. */
 export const NarrowViewport: Story = {
   ...LongDutchCopy,
   globals: { viewport: { value: 'mobile1', isRotated: false } },

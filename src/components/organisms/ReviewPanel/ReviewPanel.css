@@ -68,9 +68,11 @@
   transform: rotate(-90deg);
 }
 
+/* The advice and the decision sit side by side inside one field row, so the
+ * panel itself is one column at every width. */
 .review-panel__content {
   display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .review-panel__content[hidden] {
@@ -85,7 +87,7 @@
 }
 
 .review-panel__context {
-  border-right: 1px solid var(--attention-line);
+  border-bottom: 1px solid var(--attention-line);
 }
 
 .review-panel__score {
@@ -123,24 +125,6 @@
   color: var(--ink-soft);
 }
 
-.review-panel__original {
-  margin: 0;
-  padding: var(--s3);
-  border: 1px solid var(--attention-line);
-  border-radius: var(--radius-control);
-  background: var(--paper);
-}
-
-.review-panel__original dt {
-  color: var(--muted);
-  font: var(--text-meta);
-}
-
-.review-panel__original dd {
-  margin: 2px 0 0;
-  font-weight: 750;
-}
-
 .review-panel__note,
 .review-panel__hint,
 .review-panel__result {
@@ -156,11 +140,100 @@
   margin: var(--s1) 0 0;
 }
 
-.review-panel__categories {
+/* One row per reviewable field. */
+.review-panel__fields {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--s2);
+  gap: var(--s3);
   margin-top: var(--s3);
+}
+
+.review-panel__field {
+  display: grid;
+  grid-template-columns: minmax(84px, 0.6fr) minmax(104px, 0.8fr) minmax(220px, 1.8fr) minmax(
+      104px,
+      0.8fr
+    );
+  gap: var(--s3);
+  align-items: start;
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.review-panel__field-name {
+  font-weight: 750;
+}
+
+.review-panel__cell {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  align-content: start;
+}
+
+.review-panel__cell-name {
+  color: var(--muted);
+  font: var(--text-overline);
+  letter-spacing: var(--tracking-overline);
+  text-transform: uppercase;
+}
+
+.review-panel__advice {
+  color: var(--ink-soft);
+  font-weight: 750;
+}
+
+.review-panel__cell-note {
+  color: var(--muted);
+  font: var(--text-meta);
+}
+
+/* The field's options, as compact chips that wrap. */
+.review-panel__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  margin-bottom: var(--s1);
+}
+
+.review-panel__option {
+  min-height: 32px;
+  gap: var(--s1);
+  padding: var(--s1) var(--s2);
+  border-radius: var(--radius-pill);
+  font: var(--text-meta);
+}
+
+/* A chip's note, e.g. that this option is the model's advice, reads inline. */
+.review-panel__option .category-option__text {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  align-items: baseline;
+}
+
+.review-panel__state {
+  margin: 0;
+  font: var(--text-meta);
+  font-weight: 750;
+}
+
+.review-panel__state--none {
+  color: var(--muted);
+}
+
+.review-panel__state--pending {
+  color: var(--accent-ink);
+}
+
+.review-panel__state--saved {
+  color: var(--success);
+}
+
+.review-panel__undo {
+  justify-self: start;
+  margin-top: var(--s1);
 }
 
 .review-panel__actions {
@@ -184,25 +257,24 @@
   color: var(--ink-soft);
 }
 
-/* The source's mobile layout, keyed to the panel's own width so it also
- * stacks in a narrow reader column. */
+/* Keyed to the panel's own width, so it also stacks in a narrow reader column:
+ * a field row's cells stack once they would be too narrow to read. Each cell
+ * carries its own name, so a stacked row still says what every value is. */
+@container (width < 700px) {
+  .review-panel__field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s2);
+  }
+}
+
 @container (width < 560px) {
   .review-panel__toggle {
     min-height: 58px;
     padding: var(--s2) var(--s3);
   }
 
-  .review-panel__content {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .review-panel__context {
-    border-right: 0;
-    border-bottom: 1px solid var(--attention-line);
-  }
-
-  .review-panel__categories {
-    grid-template-columns: minmax(0, 1fr);
+  .review-panel__option {
+    min-height: 40px;
   }
 
   .review-panel__actions {

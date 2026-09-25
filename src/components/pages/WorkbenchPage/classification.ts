@@ -22,7 +22,7 @@
 import type { RowReview } from '../../../app/desk-review'
 import type { MailboxCopyRef } from '../../../domain/mailbox-copy'
 import { mailboxCopyId } from '../../../domain/mailbox-copy'
-import { sameSubject } from '../../../domain/review'
+import { reviewerOutcome, sameSubject } from '../../../domain/review'
 import type { BodyState } from './body'
 import type {
   ClassificationLabels,
@@ -114,9 +114,43 @@ export type RecordedReviews = Readonly<Record<string, RecordedReview>>
 const namesShown = (recorded: RecordedReview, shown: StoredClassification | undefined) =>
   shown !== undefined && 'subject' in shown && sameSubject(recorded.subject, shown.subject)
 
-/** The later of two answers about one row, by when each was decided. */
-const later = (a: RowReview, b: RowReview) =>
-  Date.parse(a.reviewedAt) >= Date.parse(b.reviewedAt) ? a : b
+/** One field of one answer: its value and who decided it, or nothing. */
+function decidedIn<Field extends 'category' | 'priority'>(review: RowReview, field: Field) {
+  const value = review.labels[field]
+  const decision = review.fields[field]
+  return value === undefined || decision === undefined ? undefined : { value, decision }
+}
+
+/** Which of two answers decided one field last, where either decided it. */
+function decidedLast<Field extends 'category' | 'priority'>(
+  a: RowReview,
+  b: RowReview,
+  field: Field,
+) {
+  const first = decidedIn(a, field)
+  const second = decidedIn(b, field)
+  if (first === undefined) return second
+  if (second === undefined) return first
+  return Date.parse(second.decision.reviewedAt) > Date.parse(first.decision.reviewedAt)
+    ? second
+    : first
+}
+
+/**
+ * Two answers about one row, merged field by field: every field comes from
+ * whichever answer decided it last, and `reviewerOutcome` assembles the two
+ * into one answer exactly as the store's own projection is assembled.
+ *
+ * Taking one answer whole would drop a field only the other one holds. A
+ * reading folds every review of the subject, while a save answers for the one
+ * review it recorded, so a newer save about the category would hide a
+ * priority somebody had decided: the row would show that label as nobody's
+ * while the store holds a decision for it. Two answers that decided no field
+ * between them are not answers this can improve on, so the newer one stands.
+ */
+const merged = (a: RowReview, b: RowReview): RowReview =>
+  reviewerOutcome(decidedLast(a, b, 'category'), decidedLast(a, b, 'priority')) ??
+  (Date.parse(b.reviewedAt) > Date.parse(a.reviewedAt) ? b : a)
 
 /** What applies to each row of one reading. */
 export type Evidence = Readonly<{
@@ -186,7 +220,7 @@ export function evidenceIn(
     const found = id === openId ? (answering?.review ?? reviewed(id)) : reviewed(id)
     const own = recorded[id]
     if (own === undefined || !namesShown(own, shown)) return found
-    return found === undefined ? own.review : later(found, own.review)
+    return found === undefined ? own.review : merged(found, own.review)
   }
   const openReview = openId === undefined ? undefined : withRecorded(openId, open)
   return {
@@ -221,7 +255,8 @@ export const categoryLabels = {
   other: 'Other',
 } as const satisfies Record<ClassificationLabels['category'], string>
 
-const priorities = {
+/** How each rubric priority reads. Shared with the review panel's options. */
+export const priorityLabels = {
   urgent: 'Urgent',
   high: 'High',
   normal: 'Normal',
@@ -293,39 +328,100 @@ const decisions = {
 const reviewPriorityNote = (priority: ClassificationLabels['reviewPriority']) =>
   priority === 'elevated' ? ' Marked as more urgent to look at.' : ''
 
-/** The category panel makes no decision about any other classification field. */
-export const categoryReviewScopeNote =
+/** A category review makes no decision about any other classification field. */
+const categoryReviewScopeNote =
   'This review covers the category only. Priority and reply expectations are not confirmed.'
 
+const priorityReviewScopeNote =
+  'This review covers the priority only. Category and reply expectations are not confirmed.'
+
+const bothReviewScopeNote =
+  'This review covers the category and priority. Reply expectations are not confirmed.'
+
 /**
- * Name the category decision, who made it and when. Other model signals
- * still apply: recording a category review does not assess another field.
+ * What one review covered, so nothing beside it reads as decided by a person
+ * who never saw it. Reply expectations are never part of one: what to do
+ * about a message is a work decision, not a label anyone confirms here.
+ */
+function reviewScopeNote(fields: RowReview['fields']): string {
+  if (fields.category === undefined) return priorityReviewScopeNote
+  return fields.priority === undefined ? categoryReviewScopeNote : bothReviewScopeNote
+}
+
+/** Which fields a review decided, as the strip names the decision. */
+function reviewTerm(fields: RowReview['fields']): string {
+  if (fields.category === undefined) return 'Priority review'
+  return fields.priority === undefined ? 'Category review' : 'Category and priority review'
+}
+
+/**
+ * Name the decision a person made, which fields it covered, who made it and
+ * when. Other model signals still apply: reviewing one field assesses no
+ * other one.
  */
 const personReviewFact = (review: RowReview, labels: ClassificationLabels): ClassificationFact => ({
-  term: 'Category review',
+  term: reviewTerm(review.fields),
   value: decisions[review.decision],
-  note: `By ${review.reviewer} on ${judgedText(review.reviewedAt)}. ${categoryReviewScopeNote} Your mail is unchanged.${reviewPriorityNote(labels.reviewPriority)}`,
+  note: `By ${review.reviewer} on ${judgedText(review.reviewedAt)}. ${reviewScopeNote(review.fields)} Your mail is unchanged.${reviewPriorityNote(labels.reviewPriority)}`,
 })
 
 /**
- * What the row shows for category, and where a person chose it, the model's
+ * What the row shows for category, and where a person decided it, the model's
  * own suggestion beside it. The suggestion is never replaced: a correction is
- * added to what was judged, and both stay readable.
+ * added to what was judged, and both stay readable. A review that decided
+ * another field leaves this the model's own, unannotated.
  */
 function categoryFact(
   labels: ClassificationLabels,
   review: RowReview | undefined,
 ): ClassificationFact {
   const suggested = categoryLabels[labels.category]
-  if (review === undefined) return { term: 'Category', value: suggested }
-  const chosen = categoryLabels[review.labels.category]
+  const decided = review?.fields.category
+  const chosen = review?.labels.category
+  if (decided === undefined || chosen === undefined) return { term: 'Category', value: suggested }
   return {
     term: 'Category',
-    value: chosen,
+    value: categoryLabels[chosen],
     note:
-      review.decision === 'confirmed'
+      decided.decision === 'confirmed'
         ? `A person confirmed the model's suggestion, ${suggested}.`
         : `Chosen by a person. The model suggested ${suggested}.`,
+  }
+}
+
+/** The model's priority, and whether the model was sure of it. */
+const modelPriority = (labels: ClassificationLabels) =>
+  labels.priorityUncertain
+    ? `${priorityLabels[labels.priority]}, which it was not sure of`
+    : priorityLabels[labels.priority]
+
+/**
+ * What the row shows for priority, and who decided it. Where nobody has, it
+ * is the model's, and its uncertainty is said plainly. Where a person did,
+ * what the model proposed stays beside their decision, uncertainty and all:
+ * a person's priority never quietly takes the place of the model's, and
+ * never inherits its uncertainty note as if the model had chosen it.
+ */
+function priorityFact(
+  labels: ClassificationLabels,
+  review: RowReview | undefined,
+): ClassificationFact {
+  const decided = review?.fields.priority
+  const chosen = review?.labels.priority
+  if (decided === undefined || chosen === undefined) {
+    return {
+      term: 'Priority',
+      value: priorityLabels[labels.priority],
+      ...(labels.priorityUncertain && { note: 'The model was not sure of this priority.' }),
+    }
+  }
+  return {
+    term: 'Priority',
+    value: priorityLabels[chosen],
+    note:
+      decided.decision === 'confirmed'
+        ? `A person confirmed the model's priority, ${modelPriority(labels)}.`
+        : `Chosen by a person. The model suggested ${modelPriority(labels)}.`,
   }
 }
 
@@ -351,14 +447,9 @@ function factsOf(
   labels: ClassificationLabels,
   review: RowReview | undefined,
 ): readonly ClassificationFact[] {
-  const priority = review?.labels.priority ?? labels.priority
   return [
     categoryFact(labels, review),
-    {
-      term: 'Priority',
-      value: priorities[priority],
-      ...(labels.priorityUncertain && { note: 'The model was not sure of this priority.' }),
-    },
+    priorityFact(labels, review),
     review === undefined ? modelReviewFact(labels) : personReviewFact(review, labels),
     ...groundFacts(labels),
   ]
@@ -403,13 +494,15 @@ export function classificationView(
 /**
  * What one queue row shows: its state, and the category when labels apply.
  * Where a person decided the category, that is the one the row shows, so a
- * list read after a correction shows what it was corrected to.
+ * list read after a correction shows what it was corrected to. A review that
+ * decided another field leaves the model's own category showing.
  */
 export function rowState(classification: StoredClassification, review?: RowReview) {
-  const labels = review?.labels ?? ('labels' in classification ? classification.labels : undefined)
+  const proposed = 'labels' in classification ? classification.labels : undefined
+  const category = review?.labels.category ?? proposed?.category
   return {
     status: states[classification.state],
-    category: labels && categoryLabels[labels.category],
+    category: category && categoryLabels[category],
   } as const
 }
 

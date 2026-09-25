@@ -68,7 +68,7 @@ No API key or database is needed to read the inbox. An absent default
 To use existing judgments/reviews, set `SHADOW_DATABASE_PATH` in the terminal
 that starts the app to the same local file selected by the shadow CLI's
 `--db`. Relative paths resolve from the repository working directory. The
-file must be a readable schema-4 database, and saving a review also needs
+file must be a readable schema-5 database, and saving a review also needs
 write access to it and its directory. An unreadable/unsupported store is
 shown as unavailable, separately from Spark readiness. Follow the upgrade
 section for an old database; do not run classification merely to start or
@@ -130,15 +130,20 @@ The default dry run reads Spark but calls no model and writes no persistent
 store. `pnpm shadow --preflight` checks a disposable database without Spark
 or Jev; it is not a migration of the user's database.
 
-The app reads those judgments and can append a category review in the same
-SQLite file. `SHADOW_DATABASE_PATH` must match a CLI `--db` override. The
-review server opens an existing schema-4 file for writing, without migration;
+The app reads those judgments and can append a review of one classification
+in the same SQLite file. `SHADOW_DATABASE_PATH` must match a CLI `--db`
+override. The review server opens an existing schema-5 file for writing,
+without migration;
 listing and body evidence open it read-only. Backups can include judgments,
 reviewer account names, review timestamps and save-request records as well
 as mail metadata. Treat the database and backups as private.
 
-A review does not complete or mutate mail. Its category choice preserves the
-model judgment and priority, and leaves the model's other signals showing. The
+A review does not complete or mutate mail. The store records the decision a
+person made about each field separately, so a field nobody reviewed keeps
+showing the model's own label and says so. The app's panel decides the
+category and the priority, each on its own and only where a person chose one;
+whatever it decides preserves the model judgment and leaves the model's other
+signals showing. The
 panel's "Model score" is raw category confidence, not calibrated certainty.
 The panel and the reader name the grounds the run recorded for asking a
 person; a record that stored none says so instead of naming a reason. A
@@ -164,7 +169,7 @@ ID; inspect Spark manually before any further action. Spark may affect
 another visible copy of the message, and a new message may arrive between
 preflight and the command.
 
-## Upgrade an existing shadow database to schema 4
+## Upgrade an existing shadow database to schema 5
 
 Do this on the machine that holds the local SQLite file before using the
 review desk with an older database. Stop the app and any `pnpm shadow --apply`
@@ -186,8 +191,9 @@ sqlite3 "$db" ".backup '$backup'"
 sqlite3 "$backup" 'PRAGMA integrity_check; PRAGMA foreign_key_check; PRAGMA user_version;'
 ```
 
-The backup check must print `ok`, no foreign-key rows, then `1`, `2` or `3`. If it does
-not, stop and investigate the original database before changing anything.
+The backup check must print `ok`, no foreign-key rows, then `1`, `2`, `3` or `4`.
+If it does not, stop and investigate the original database before changing
+anything.
 Keep the backup until the upgraded app and stored classifications have been
 checked. With the app still stopped, run:
 
@@ -196,11 +202,12 @@ pnpm shadow --migrate --db "$db"
 sqlite3 "$db" 'PRAGMA integrity_check; PRAGMA foreign_key_check; PRAGMA user_version;'
 ```
 
-The migration prints `migration ok: schema 4` or, on a repeat, `migration
+The migration prints `migration ok: schema 5` or, on a repeat, `migration
 skipped: schema current`. The final SQLite check must print `ok`, no
-foreign-key rows, then `4`. A missing file, unsupported schema, damaged
+foreign-key rows, then `5`. A missing file, unsupported schema, damaged
 database, or populated schema-1 `corrections` table is refused. Schema 1
-upgrades through every later schema; schemas 2 and 3 upgrade directly to 4. The migration
+upgrades through every later schema; schemas 2, 3 and 4 upgrade through the
+ones after them to 5. The migration
 uses one SQLite transaction, so an error before commit leaves the original schema in
 place. The review desk can then read the existing classifications and store
 reviews. Never use `shadow --apply` merely to upgrade a database: that is a
@@ -213,15 +220,15 @@ reviews written after the backup, so decide on it before resuming work.
 ```sh
 sqlite3 "$db" 'PRAGMA wal_checkpoint(TRUNCATE);'
 test ! -e "$db-wal" && test ! -e "$db-shm" || exit 1
-test ! -e "$db.schema4-retained.sqlite" || exit 1
-mv "$db" "$db.schema4-retained.sqlite"
+test ! -e "$db.schema5-retained.sqlite" || exit 1
+mv "$db" "$db.schema5-retained.sqlite"
 cp -p "$backup" "$db"
 sqlite3 "$db" 'PRAGMA integrity_check; PRAGMA foreign_key_check; PRAGMA user_version;'
 ```
 
 The restored check must print `ok`, no foreign-key rows, then the original
-schema version (`1`, `2` or `3`). Run an app version compatible with that schema,
-or upgrade it again before starting the schema-4 app. Keep the retained file private for investigation;
+schema version (`1`, `2`, `3` or `4`). Run an app version compatible with that
+schema, or upgrade it again before starting the schema-5 app. Keep the retained file private for investigation;
 do not put either SQLite file in a release report.
 
 ## 1. Build: the required check
