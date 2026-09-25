@@ -17,6 +17,7 @@ import type {
 import {
   adviceLabelFor,
   decidedByFor,
+  decidedValue,
   decisionsIn,
   fieldStateFor,
   isPending,
@@ -30,8 +31,10 @@ import {
   reviewResult,
   reviewSignature,
   reviewableIn,
+  saveIsOffered,
   saveLabelFor,
   storedDecisions,
+  undecidedFields,
   verdictFor,
   without,
   type ReviewState,
@@ -91,15 +94,24 @@ const states: readonly ReviewState[] = [
   { status: 'unsaved', fields: 1 },
   { status: 'unsaved', fields: 2 },
   { status: 'saving' },
-  { status: 'saved', decided: [{ field: 'category', value: 'newsletter', decision: 'confirmed' }] },
+  {
+    status: 'saved',
+    decided: [{ field: 'category', value: 'newsletter', decision: 'confirmed' }],
+    undecided: ['priority'],
+  },
   {
     status: 'saved',
     decided: [
       { field: 'category', value: 'personal', decision: 'corrected' },
       { field: 'priority', value: 'low', decision: 'confirmed' },
     ],
+    undecided: [],
   },
-  { status: 'saved', decided: [{ field: 'priority', value: 'urgent', decision: 'corrected' }] },
+  {
+    status: 'saved',
+    decided: [{ field: 'priority', value: 'urgent', decision: 'corrected' }],
+    undecided: ['category'],
+  },
   ...refusals.map((reason) => ({ status: 'refused', reason }) as const),
   { status: 'failed' },
   { status: 'unknown' },
@@ -324,6 +336,78 @@ describe("each field's own row", () => {
   })
 })
 
+// A save the store recorded, whose answer carried no projection of the row and
+// which no reading has carried back yet. The decision holds all the same: the
+// store took it, and saying otherwise would lose what a person just decided.
+describe('a decision recorded here but not read back', () => {
+  const recorded = [{ field: 'priority', value: 'urgent', decision: 'corrected' }] as const
+
+  it('holds for the field, so the row never falls back to nobody', () => {
+    expect(fieldStateFor('priority', labels, {}, undefined, recorded)).toEqual({
+      label: 'Set to Urgent',
+      tone: 'saved',
+    })
+    expect(decidedValue('priority', undefined, recorded)).toBe('urgent')
+  })
+
+  it('says where it came from, and claims no reviewer or time of its own', () => {
+    const by = decidedByFor('priority', undefined, recorded)
+
+    expect(by).toBe('You, on this computer. Not read back from the store yet.')
+    expect(by).not.toMatch(/\d/)
+  })
+
+  it('is not pending, so nothing asks to save it again', () => {
+    expect(isPending('priority', { priority: 'urgent' }, undefined, recorded)).toBe(false)
+    expect(pendingFields({ priority: 'urgent' }, undefined, recorded)).toEqual([])
+    expect(verdictFor(reviewable, { priority: 'urgent' }, undefined, recorded)).toEqual({})
+  })
+
+  it("gives way to the store's own answer once a reading carries one", () => {
+    const stored: RowReview = {
+      decidedBy: 'reviewer',
+      decision: 'corrected',
+      labels: { priority: 'urgent' },
+      fields: { priority: by('corrected') },
+      reviewer: 'wesley',
+      reviewedAt: decidedAt,
+    }
+
+    expect(decidedByFor('priority', stored, recorded)).toMatch(/^wesley, /)
+  })
+
+  it('leaves a field it says nothing about alone', () => {
+    expect(fieldStateFor('category', labels, {}, undefined, recorded)).toEqual({
+      label: 'Not reviewed',
+      tone: 'none',
+    })
+    expect(decidedByFor('category', undefined, recorded)).toBe('Nobody. The model decided this.')
+  })
+})
+
+describe('saveIsOffered', () => {
+  it('offers Save only where a field holds a decision to record', () => {
+    expect(saveIsOffered({ status: 'choosing' }, 0, false)).toBe(false)
+    expect(saveIsOffered({ status: 'unsaved', fields: 1 }, 1, false)).toBe(true)
+  })
+
+  it('offers nothing while a save is on its way', () => {
+    expect(saveIsOffered({ status: 'saving' }, 1, true)).toBe(false)
+  })
+
+  // The button checks the store for a save whose answer was lost. A reading
+  // that happens to hold what was chosen must not take that away, or the
+  // uncertain save could never be settled from the page.
+  it('keeps the check reachable for an unknown outcome, whatever is stored', () => {
+    expect(saveIsOffered({ status: 'unknown' }, 0, true)).toBe(true)
+    expect(saveIsOffered({ status: 'unknown' }, 1, true)).toBe(true)
+  })
+
+  it('offers nothing for an unknown outcome it holds no request for', () => {
+    expect(saveIsOffered({ status: 'unknown' }, 1, false)).toBe(false)
+  })
+})
+
 describe('reviewSignature', () => {
   const signature = reviewSignature(reviewable, undefined)
 
@@ -441,6 +525,7 @@ describe('the copy of every state', () => {
       reviewResult({
         status: 'saved',
         decided: [{ field: 'category', value: 'personal', decision: 'corrected' }],
+        undecided: ['priority'],
       }),
     ).toEqual({
       title: 'Review saved',
@@ -457,10 +542,29 @@ describe('the copy of every state', () => {
           { field: 'category', value: 'newsletter', decision: 'confirmed' },
           { field: 'priority', value: 'urgent', decision: 'corrected' },
         ],
+        undecided: [],
       }).detail,
     ).toBe(
       "Category confirmed as Newsletter. Priority set to Urgent. The model's own advice is kept. Your mailbox is unchanged.",
     )
+  })
+
+  // The category was decided in an earlier save. This save decided the
+  // priority, and saying the category stays unreviewed would be false.
+  it('never reports a field as unreviewed when an earlier save decided it', () => {
+    const detail = reviewResult({
+      status: 'saved',
+      decided: [{ field: 'priority', value: 'urgent', decision: 'corrected' }],
+      undecided: undecidedFields([
+        { field: 'priority', value: 'urgent', decision: 'corrected' },
+        { field: 'category', value: 'personal', decision: 'corrected' },
+      ]),
+    }).detail
+
+    expect(detail).toBe(
+      "Priority set to Urgent. The model's own advice is kept. Your mailbox is unchanged.",
+    )
+    expect(detail).not.toContain('unreviewed')
   })
 
   it('tells a reviewer of a version that moved on what to do next', () => {
@@ -490,6 +594,7 @@ describe('reviewAnnouncement', () => {
       reviewAnnouncement({
         status: 'saved',
         decided: [{ field: 'priority', value: 'urgent', decision: 'corrected' }],
+        undecided: ['category'],
       }),
     ).toBe(
       "Review saved. Priority set to Urgent. The model's own advice is kept. The category stays unreviewed, as the model had it. Your mailbox is unchanged. Not completed yet.",

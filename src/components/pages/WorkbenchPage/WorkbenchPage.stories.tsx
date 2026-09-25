@@ -1669,6 +1669,12 @@ const panel = (root: HTMLElement) => root.querySelector('.workbench__reader .rev
 /** The result copy beside the save button. */
 const result = (root: HTMLElement) => root.querySelector('.review-panel__result')
 
+/** One field's row in the review panel, by the name it carries. */
+const fieldRow = (root: HTMLElement, name: string) =>
+  root
+    .querySelector(`.review-panel [name$="-option"][value="${name}"]`)
+    ?.closest('.review-panel__field')
+
 /** What the page's polite live region is announcing about the review. */
 const announced = (root: HTMLElement) => root.querySelector('.workbench__review-status')
 
@@ -2123,6 +2129,66 @@ export const ReviewStaysOnItsOwnRow: Story = {
   },
 }
 
+/**
+ * The store recorded the review but answered without its own projection of
+ * the row, which the contract allows, and no reading has carried it back yet.
+ * The field a person just decided still reads as decided, and says plainly
+ * that the store has not confirmed it back; nothing asks to save it again.
+ * The queue row keeps the category triage gave it, because nothing has told
+ * the page otherwise.
+ */
+export const SavedWithoutAReadback: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewing({ outcome: recorded }),
+  play: async ({ canvasElement }) => {
+    await saveChosen(canvasElement, 'Suspicious')
+    await resultShows(canvasElement, 'Review saved')
+
+    const row = fieldRow(canvasElement, 'suspicious') as HTMLElement
+    await expect(row).toHaveTextContent('Set to Suspicious')
+    await expect(row).not.toHaveTextContent('Not reviewed')
+    await expect(row).toHaveTextContent('Not read back from the store yet')
+    // It is stored, so there is nothing left to save.
+    await expect(save(canvasElement)).toBeDisabled()
+    // Nothing invented a reviewer or a time for it either.
+    await expect(row).not.toHaveTextContent(reviewer)
+    await expect(reviewedRow(canvasElement)).toHaveTextContent('Personal')
+  },
+}
+
+/**
+ * The category was decided in an earlier save that the reading carries, and
+ * this save decides the priority alone. The result says what it recorded and
+ * does not claim the category is unreviewed, because a person decided it.
+ */
+export const SavingOneFieldLeavesTheOtherDecision: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: {
+    ...reviewing({ outcome: recorded }),
+    classifications: {
+      reading: 'reading-1',
+      states: unsureStates,
+      reviews: { m1: projected('suspicious') },
+    },
+  },
+  play: async ({ args, canvasElement }) => {
+    await reviewReady(canvasElement)
+    await expect(fieldRow(canvasElement, 'suspicious')).toHaveTextContent('Set to Suspicious')
+
+    await saveChosen(canvasElement, 'Urgent')
+
+    await resultShows(canvasElement, 'Review saved')
+    await expect(result(canvasElement)).toHaveTextContent('Priority set to Urgent')
+    await expect(result(canvasElement)).not.toHaveTextContent('unreviewed')
+    // The save named the priority and decided nothing about the category.
+    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        verdict: { priority: { decision: 'corrected', value: 'urgent' } },
+      }),
+    )
+  },
+}
+
 // The same row, judged again by a later run after a reply arrived in its
 // thread. It is another version of the same mailbox copy, so a choice made
 // about the version before it does not carry over.
@@ -2234,6 +2300,31 @@ export const PanelFollowsAReviewStoredSince: Story = {
     await expect(result(canvasElement)).toHaveTextContent('Review saved')
     await expect(evidence(canvasElement)).toHaveTextContent('Corrected by a person')
     await expect(rows.getByRole('button', { name: reviewableRow })).toHaveTextContent('Suspicious')
+  },
+}
+
+/**
+ * A save whose answer was lost, and then a reading that happens to hold
+ * exactly what was chosen. The check stays reachable: the uncertain save is
+ * still unsettled, and a store that already holds the same decision says
+ * nothing about whether this one was recorded.
+ */
+export const UnknownSaveStaysCheckableAfterARefresh: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewing({ outcome: { status: 'unknown' } }),
+  render: (args) => <WithNextReading {...args} next={reviewedReading} />,
+  play: async ({ canvasElement }) => {
+    await saveChosen(canvasElement, 'Suspicious')
+    await waitFor(() => expect(save(canvasElement)).toHaveTextContent('Check or retry save'), {
+      timeout: 3000,
+    })
+    await expect(save(canvasElement)).toBeEnabled()
+
+    await refresh(canvasElement)
+
+    await expect(save(canvasElement)).toHaveTextContent('Check or retry save')
+    await expect(save(canvasElement)).toBeEnabled()
+    await expect(result(canvasElement)).toHaveTextContent('Save outcome unknown')
   },
 }
 

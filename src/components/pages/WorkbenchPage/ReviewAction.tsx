@@ -22,8 +22,10 @@ import {
   reviewRequest,
   reviewResult,
   reviewSignature,
+  saveIsOffered,
   saveLabelFor,
   storedDecisions,
+  undecidedFields,
   without,
   type ReviewedField,
   type Reviewable,
@@ -63,30 +65,68 @@ type ReviewActionProps = Readonly<{
 type Held = Readonly<{
   signature: string
   choices: ReviewChoices
+  /**
+   * What the store recorded for this version from here, which no reading has
+   * carried back yet. A save is answered with the store's own projection, but
+   * it may be answered without one, and a reading may not have happened since.
+   * Keeping it means a field somebody just saved never reads as nobody's
+   * between the save and the reading that confirms it.
+   */
+  recorded: readonly ReviewedField[]
   state: ReviewState
   announcement: string
   pending?: Readonly<{ request: DeskReviewRequest; decided: readonly ReviewedField[] }>
 }>
 
-/** What the panel says when no field holds a choice: what the store holds. */
-const resting = (saved: RowReview | undefined): ReviewState => {
-  const decided = storedDecisions(saved)
-  return decided.length === 0 ? { status: 'choosing' } : { status: 'saved', decided }
+/** Whether the store's answer for this row says nothing about one field. */
+const notIn = (saved: RowReview | undefined, field: ReviewFieldName) =>
+  decidedValue(field, saved) === undefined
+
+/** Every decision that holds for the row: the store's, then this panel's own. */
+const decidedNow = (saved: RowReview | undefined, recorded: readonly ReviewedField[]) => [
+  ...storedDecisions(saved),
+  ...recorded.filter((one) => notIn(saved, one.field)),
+]
+
+/** What the panel says when no field holds a choice: what is decided already. */
+function resting(saved: RowReview | undefined, recorded: readonly ReviewedField[]): ReviewState {
+  const decided = decidedNow(saved, recorded)
+  return decided.length === 0
+    ? { status: 'choosing' }
+    : { status: 'saved', decided, undecided: undecidedFields(decided) }
 }
 
-/** Where the panel starts: on nothing chosen, over what the store holds. */
+/**
+ * Where the panel starts: on nothing chosen, over what the store holds. A
+ * reading that carries the row again supersedes what this panel recorded, so
+ * nothing kept here outlives the answer that took its place.
+ */
 const startFrom = (signature: string, saved: RowReview | undefined, announcement = ''): Held => ({
   signature,
   choices: {},
-  state: resting(saved),
+  recorded: [],
+  state: resting(saved, []),
   announcement,
 })
 
-/** What one outcome leaves behind. A recorded review names what it decided. */
-function stateFor(outcome: DeskReviewOutcome, pending: NonNullable<Held['pending']>): ReviewState {
+/**
+ * What one outcome leaves behind. A recorded review names what it decided,
+ * and what nobody has decided counts every decision that holds for the row,
+ * so a save of one field never reports another as untouched when a person
+ * decided that one earlier.
+ */
+function stateFor(
+  outcome: DeskReviewOutcome,
+  pending: NonNullable<Held['pending']>,
+  held: readonly ReviewedField[],
+): ReviewState {
   switch (outcome.status) {
     case 'recorded':
-      return { status: 'saved', decided: pending.decided }
+      return {
+        status: 'saved',
+        decided: pending.decided,
+        undecided: undecidedFields([...pending.decided, ...held]),
+      }
     case 'refused':
       return { status: 'refused', reason: outcome.reason }
     case 'failed':
@@ -131,20 +171,26 @@ function useReview(
       : startFrom(signature, saved, held.announcement)
   if (shown !== held) setHeld(shown)
   const latest = useRef(0)
-  const settle = (state: ReviewState, choices?: ReviewChoices) => {
+  const settle = (state: ReviewState, saving?: Readonly<{ decided: readonly ReviewedField[] }>) => {
     setHeld((current) => ({
       ...current,
-      ...(choices !== undefined && { choices }),
+      // A recorded save leaves nothing pending, and what it recorded is held
+      // until a reading carries it back, so no field it decided reads as
+      // nobody's in between.
+      ...(saving !== undefined && {
+        choices: {},
+        recorded: [...current.recorded, ...saving.decided],
+      }),
       state,
       // Only what happened here is announced. A review the reading already
       // held is shown, not read out: nothing happened to tell anyone of.
       announcement: reviewAnnouncement(state),
     }))
   }
-  /** What the panel says with these choices: what is pending, or what is stored. */
+  /** What the panel says with these choices: what is pending, or what is decided. */
   const stateOf = (choices: ReviewChoices) => {
-    const fields = pendingFields(choices, saved).length
-    return fields === 0 ? resting(saved) : ({ status: 'unsaved', fields } as const)
+    const fields = pendingFields(choices, saved, shown.recorded).length
+    return fields === 0 ? resting(saved, shown.recorded) : ({ status: 'unsaved', fields } as const)
   }
   const pick = (choices: ReviewChoices) => {
     if (settling(shown.state)) return
@@ -170,11 +216,8 @@ function useReview(
     }
     finishReview(pending.request)
     onResolved()
-    const next = stateFor(outcome, pending)
-    // What was recorded is no longer pending, whatever a later reading says
-    // about it, so nothing here asks to be saved a second time. Every field
-    // then reads from the store again, through `saved`.
-    settle(next, next.status === 'saved' ? {} : undefined)
+    const next = stateFor(outcome, pending, decidedNow(saved, shown.recorded))
+    settle(next, next.status === 'saved' ? pending : undefined)
   }
   const verify = (
     pending: NonNullable<Held['pending']>,
@@ -212,8 +255,8 @@ function useReview(
       verify(pending, latest.current, true)
       return
     }
-    if (pendingFields(shown.choices, saved).length === 0) return
-    const draft = reviewRequest(reviewable, shown.choices, saved)
+    if (pendingFields(shown.choices, saved, shown.recorded).length === 0) return
+    const draft = reviewRequest(reviewable, shown.choices, saved, shown.recorded)
     const request = beginReview(draft)
     if (request === null) {
       settle({ status: 'failed' })
@@ -254,6 +297,7 @@ type FieldsOptions = Readonly<{
   reviewable: Reviewable
   saved: RowReview | undefined
   choices: ReviewChoices
+  recorded: readonly ReviewedField[]
   undoLabel: string
   disabled: boolean
   choose: (field: ReviewFieldName, value: string) => void
@@ -266,9 +310,15 @@ type FieldsOptions = Readonly<{
  * A field with no choice and no stored decision shows neither: its options are
  * all unchecked and its own words say it is unreviewed.
  */
-function fieldsFor({ reviewable, saved, choices, ...rest }: FieldsOptions): readonly ReviewField[] {
+function fieldsFor({
+  reviewable,
+  saved,
+  choices,
+  recorded,
+  ...rest
+}: FieldsOptions): readonly ReviewField[] {
   const { labels } = reviewable
-  const pending = pendingFields(choices, saved)
+  const pending = pendingFields(choices, saved, recorded)
   return reviewFields.map((field): ReviewField => {
     return {
       name: field,
@@ -277,12 +327,12 @@ function fieldsFor({ reviewable, saved, choices, ...rest }: FieldsOptions): read
       ...(field === 'priority' &&
         labels.priorityUncertain && { adviceNote: 'The model was not sure of this.' }),
       options: optionsFor(field, labels),
-      chosen: choices[field] ?? decidedValue(field, saved) ?? null,
+      chosen: choices[field] ?? decidedValue(field, saved, recorded) ?? null,
       onChoose: (value) => {
         rest.choose(field, value)
       },
-      state: fieldStateFor(field, labels, choices, saved),
-      decidedBy: decidedByFor(field, saved),
+      state: fieldStateFor(field, labels, choices, saved, recorded),
+      decidedBy: decidedByFor(field, saved, recorded),
       ...(pending.includes(field) && {
         onUndo: () => {
           rest.undo(field)
@@ -326,15 +376,18 @@ export function ReviewAction({
   const { labels } = reviewable
   // Open where the model asked for a person, and where one has answered.
   const [expanded, setExpanded] = useState(labels.review === 'needs_review' || saved !== undefined)
-  const { choices, state, announcement, choose, undo, save } = useReview(
-    reviewable,
-    saved,
-    onSave,
-    onCheck,
-    onResolved,
-  )
+  const {
+    choices,
+    recorded,
+    pending: unsettled,
+    state,
+    announcement,
+    choose,
+    undo,
+    save,
+  } = useReview(reviewable, saved, onSave, onCheck, onResolved)
   const { undoLabel, ...copy } = reviewPanelCopy(labels)
-  const pending = pendingFields(choices, saved).length
+  const pending = pendingFields(choices, saved, recorded).length
   return (
     <>
       <ReviewPanel
@@ -346,12 +399,13 @@ export function ReviewAction({
           reviewable,
           saved,
           choices,
+          recorded,
           undoLabel,
           disabled: settling(state),
           choose,
           undo,
         })}
-        saveDisabled={pending === 0 || state.status === 'saving'}
+        saveDisabled={!saveIsOffered(state, pending, unsettled !== undefined)}
         saveLabel={state.status === 'unknown' ? 'Check or retry save' : saveLabelFor(pending)}
         onSave={save}
         result={reviewResult(state)}

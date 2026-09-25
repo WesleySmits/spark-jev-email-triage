@@ -81,8 +81,47 @@ const adviceFor = (field: ReviewFieldName, labels: ClassificationLabels) =>
   field === 'category' ? labels.category : labels.priority
 
 /** What a person already decided about one field, where anyone has. */
-export const decidedValue = (field: ReviewFieldName, saved: RowReview | undefined) =>
+const storedValue = (field: ReviewFieldName, saved: RowReview | undefined) =>
   field === 'category' ? saved?.labels.category : saved?.labels.priority
+
+/** Who decided a field this panel recorded but has not seen read back yet. */
+const notReadBack = 'You, on this computer. Not read back from the store yet.'
+
+/**
+ * The decision that holds for one field: the one the store answered with, or
+ * one this panel recorded and no reading has carried back yet.
+ *
+ * The second is what keeps a field somebody has just saved from reading as
+ * nobody's. The store took that decision, so the value is not a guess; who
+ * decided it and when are the store's to say, and until it does this says
+ * only where the decision came from. A field nobody decided has none of this.
+ */
+function decidedIn(
+  field: ReviewFieldName,
+  saved: RowReview | undefined,
+  recorded: readonly ReviewedField[] = [],
+): Readonly<{ value: string; decision: 'confirmed' | 'corrected'; by: string }> | undefined {
+  const value = storedValue(field, saved)
+  const decision = saved?.fields[field]
+  if (value !== undefined && decision !== undefined) {
+    return {
+      value,
+      decision: decision.decision,
+      by: `${decision.reviewer}, ${judgedText(decision.reviewedAt)}`,
+    }
+  }
+  const own = recorded.find((one) => one.field === field)
+  return own === undefined
+    ? undefined
+    : { value: own.value, decision: own.decision, by: notReadBack }
+}
+
+/** The value that holds for one field, whoever decided it. */
+export const decidedValue = (
+  field: ReviewFieldName,
+  saved: RowReview | undefined,
+  recorded: readonly ReviewedField[] = [],
+) => decidedIn(field, saved, recorded)?.value
 
 /** How one field's values read, in rubric order. */
 const valueLabels = (field: ReviewFieldName): Readonly<Record<string, string>> =>
@@ -124,9 +163,10 @@ export const isPending = (
   field: ReviewFieldName,
   choices: ReviewChoices,
   saved: RowReview | undefined,
+  recorded: readonly ReviewedField[] = [],
 ) => {
   const chosen = choices[field]
-  return chosen !== undefined && chosen !== decidedValue(field, saved)
+  return chosen !== undefined && chosen !== decidedValue(field, saved, recorded)
 }
 
 /**
@@ -141,7 +181,9 @@ export const without = (choices: ReviewChoices, field: ReviewFieldName): ReviewC
 export const pendingFields = (
   choices: ReviewChoices,
   saved: RowReview | undefined,
-): readonly ReviewFieldName[] => reviewFields.filter((field) => isPending(field, choices, saved))
+  recorded: readonly ReviewedField[] = [],
+): readonly ReviewFieldName[] =>
+  reviewFields.filter((field) => isPending(field, choices, saved, recorded))
 
 /** What one chosen value amounts to: confirming the advice, or correcting it. */
 const decisionOf = <Value extends string>(chosen: Value, advised: Value) =>
@@ -158,9 +200,10 @@ export function verdictFor(
   reviewable: Reviewable,
   choices: ReviewChoices,
   saved: RowReview | undefined,
+  recorded: readonly ReviewedField[] = [],
 ): ReviewVerdict {
   const { labels } = reviewable
-  const pending = pendingFields(choices, saved)
+  const pending = pendingFields(choices, saved, recorded)
   const chosen = <Field extends ReviewFieldName>(field: Field) =>
     pending.includes(field) ? choices[field] : undefined
   const category = chosen('category')
@@ -216,9 +259,10 @@ export const reviewRequest = (
   reviewable: Reviewable,
   choices: ReviewChoices,
   saved: RowReview | undefined,
+  recorded: readonly ReviewedField[] = [],
 ): Omit<DeskReviewRequest, 'requestId'> => ({
   classification: reviewable.subject,
-  verdict: verdictFor(reviewable, choices, saved),
+  verdict: verdictFor(reviewable, choices, saved, recorded),
 })
 
 /** One field a review decided: which field, the value, and how. */
@@ -275,7 +319,13 @@ export type ReviewState =
   | Readonly<{ status: 'choosing' }>
   | Readonly<{ status: 'unsaved'; fields: number }>
   | Readonly<{ status: 'saving' }>
-  | Readonly<{ status: 'saved'; decided: readonly ReviewedField[] }>
+  | Readonly<{
+      status: 'saved'
+      /** What this save recorded, or what the store holds where none is on its way. */
+      decided: readonly ReviewedField[]
+      /** The fields nobody has decided at all, this save and the store together. */
+      undecided: readonly ReviewFieldName[]
+    }>
   | Readonly<{ status: 'refused'; reason: ReviewRefusal }>
   | Readonly<{ status: 'failed' }>
   | Readonly<{ status: 'unknown' }>
@@ -290,6 +340,19 @@ const counted = (fields: number) => `${String(fields)} ${fields === 1 ? 'field' 
 /** What Save says it will store, so nobody presses it to find out. */
 export const saveLabelFor = (fields: number) =>
   fields === 0 ? 'Save review' : `Save ${counted(fields)}`
+
+/**
+ * Whether Save is offered. It records the fields that hold a decision, so
+ * nothing to record means nothing to press, and it is never offered twice
+ * while one save is on its way.
+ *
+ * An unknown outcome is the exception. That button checks the store for a
+ * save whose answer was lost, so it stays reachable however the decisions
+ * stored for the row change underneath it: a reading that happens to hold
+ * what was chosen must not leave the uncertain save with no way to settle it.
+ */
+export const saveIsOffered = (state: ReviewState, pending: number, unsettled: boolean) =>
+  state.status === 'unknown' ? unsettled : state.status !== 'saving' && pending > 0
 
 const waiting = {
   choosing: {
@@ -348,9 +411,16 @@ const decidedText = ({ field, value, decision }: ReviewedField) => {
   return decision === 'confirmed' ? `${name} confirmed as ${reads}` : `${name} set to ${reads}`
 }
 
+/**
+ * The fields nobody has decided, given every decision that holds for the row.
+ * A field somebody decided in an earlier save is not one of them, so a save
+ * of one field never reports the other as untouched when it is not.
+ */
+export const undecidedFields = (decided: readonly ReviewedField[]): readonly ReviewFieldName[] =>
+  reviewFields.filter((field) => !decided.some((one) => one.field === field))
+
 /** What is still the classifier's after a save, so nothing reads as reviewed. */
-const untouchedText = (decided: readonly ReviewedField[]) => {
-  const left = reviewFields.filter((field) => !decided.some((one) => one.field === field))
+const untouchedText = (left: readonly ReviewFieldName[]) => {
   if (left.length === 0) return ''
   const names = left.map((field) => fieldLabels[field].toLowerCase()).join(' and ')
   return ` The ${names} ${left.length === 1 ? 'stays' : 'stay'} unreviewed, as the model had ${left.length === 1 ? 'it' : 'them'}.`
@@ -361,7 +431,7 @@ function recorded(state: Extract<ReviewState, { status: 'saved' }>): ReviewResul
   const decided = state.decided.map(decidedText).join('. ')
   return {
     title: 'Review saved',
-    detail: `${decided}. The model's own advice is kept.${untouchedText(state.decided)} ${unchanged}`,
+    detail: `${decided}. The model's own advice is kept.${untouchedText(state.undecided)} ${unchanged}`,
   }
 }
 
@@ -430,38 +500,43 @@ export function fieldStateFor(
   labels: ClassificationLabels,
   choices: ReviewChoices,
   saved: RowReview | undefined,
+  recorded: readonly ReviewedField[] = [],
 ): ReviewField['state'] {
   const chosen = choices[field]
-  const stored = decidedValue(field, saved)
-  const reads = valueLabels(field)
-  if (chosen !== undefined && chosen !== stored) {
-    const decision = decisionFor(chosen, adviceFor(field, labels))
-    const value = reads[chosen] ?? chosen
-    return {
-      label:
-        decision === 'confirmed'
-          ? `Confirming the model's advice, ${value}. Not saved yet.`
-          : `Changing to ${value}. Not saved yet.`,
-      tone: 'pending',
-    }
+  const held = decidedIn(field, saved, recorded)
+  if (chosen !== undefined && chosen !== held?.value) {
+    return pendingState(field, labels, chosen)
   }
-  if (stored === undefined) return { label: 'Not reviewed', tone: 'none' }
-  const decision = saved?.fields[field]?.decision
-  const value = reads[stored] ?? stored
+  if (held === undefined) return { label: 'Not reviewed', tone: 'none' }
+  const value = valueLabels(field)[held.value] ?? held.value
   return {
-    label: decision === 'confirmed' ? `Confirmed as ${value}` : `Set to ${value}`,
+    label: held.decision === 'confirmed' ? `Confirmed as ${value}` : `Set to ${value}`,
     tone: 'saved',
   }
 }
 
-/** Who decided one field and when, or that nobody has. */
-export function decidedByFor(field: ReviewFieldName, saved: RowReview | undefined): string {
-  const decision = saved?.fields[field]
-  if (decision === undefined || decidedValue(field, saved) === undefined) {
-    return 'Nobody. The model decided this.'
+/** What a field says while it holds a choice the store does not have yet. */
+function pendingState(
+  field: ReviewFieldName,
+  labels: ClassificationLabels,
+  chosen: string,
+): ReviewField['state'] {
+  const value = valueLabels(field)[chosen] ?? chosen
+  return {
+    label:
+      decisionFor(chosen, adviceFor(field, labels)) === 'confirmed'
+        ? `Confirming the model's advice, ${value}. Not saved yet.`
+        : `Changing to ${value}. Not saved yet.`,
+    tone: 'pending',
   }
-  return `${decision.reviewer}, ${judgedText(decision.reviewedAt)}`
 }
+
+/** Who decided one field and when, or that nobody has. */
+export const decidedByFor = (
+  field: ReviewFieldName,
+  saved: RowReview | undefined,
+  recorded: readonly ReviewedField[] = [],
+) => decidedIn(field, saved, recorded)?.by ?? 'Nobody. The model decided this.'
 
 /** One line under the fields, naming what this panel never decides. */
 export const outOfScopeNote =
