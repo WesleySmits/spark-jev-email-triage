@@ -257,7 +257,7 @@ const shortcutSetting = {
   label: 'Single-key shortcuts',
   /** What the current value means, so the help never only says "on" or "off". */
   note: {
-    on: 'K, J, E and / act on their own.',
+    on: 'K, J, G, E and / act on their own.',
     off: 'Letters and / do nothing here. Tab, Enter and Escape still work.',
   },
 } as const
