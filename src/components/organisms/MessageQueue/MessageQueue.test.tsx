@@ -147,6 +147,68 @@ describe('MessageQueue', () => {
     expect(onChange).toHaveBeenCalledExactlyOnceWith('m1', true)
   })
 
+  it('renders every group as a titled section with its own list, empty ones as a title', () => {
+    const [first, second] = messages
+    const groups = [
+      { id: 'review', title: 'Needs review', note: '1 of 2 loaded', messages: [first] },
+      { id: 'attention', title: 'Attention', note: '0 of 2 loaded', messages: [] },
+      { id: 'info', title: 'Informational', note: '1 of 2 loaded', messages: [second] },
+    ].map((group) => ({ ...group, messages: group.messages.filter((m) => m !== undefined) }))
+    const { all, rows, items } = render({
+      groups,
+      header: { title: 'Unread', count: '2 results', headingLevel: 1 },
+    })
+    const sections = all.filter((element) => element.type === 'section' && element !== all[0])
+    const titles = all.filter((element) => element.type === 'h2')
+    expect(sections).toHaveLength(3)
+    expect(titles.map((title) => title.props['id'])).toEqual([
+      'queue-title',
+      'queue-title',
+      'queue-title',
+    ])
+    expect(sections.map((section) => section.props['aria-labelledby'])).toEqual([
+      'queue-title',
+      'queue-title',
+      'queue-title',
+    ])
+    expect(
+      titles.map((title) =>
+        flatten(title.props['children'] as ReactNode).map((c) => c.props['children']),
+      ),
+    ).toEqual([
+      ['Needs review', '1 of 2 loaded'],
+      ['Attention', '0 of 2 loaded'],
+      ['Informational', '1 of 2 loaded'],
+    ])
+    // The empty group has a title and no list; the rows keep their group order.
+    expect(all.filter((element) => element.type === 'ul')).toHaveLength(3)
+    expect(rows.map((row) => row.props['subject'])).toEqual([
+      'Can delivery move a week earlier?',
+      'Invoice correction',
+    ])
+    expect(items.filter((item) => item.props['className'] === 'message-queue__group')).toHaveLength(
+      3,
+    )
+  })
+
+  it('heads groups one level under the queue title', () => {
+    const groups = [{ id: 'g', title: 'Needs review', messages }]
+    expect(render({ groups }).all.some((element) => element.type === 'h3')).toBe(true)
+    expect(
+      render({ groups, header: { title: 'Unread', count: '2 results', headingLevel: 3 } }).all.some(
+        (element) => element.type === 'h4',
+      ),
+    ).toBe(true)
+  })
+
+  it('shows the empty slot rather than empty groups when there are no messages', () => {
+    const empty = <p className="custom-empty">No results</p>
+    const groups = [{ id: 'g', title: 'Needs review', messages: [] }]
+    const { all } = render({ messages: [], groups, empty })
+    expect(all.some((element) => element.type === 'section' && element !== all[0])).toBe(false)
+    expect(all.find((element) => element.props['className'] === 'custom-empty')).toBe(empty)
+  })
+
   it('renders the bulk action bar only when given', () => {
     expect(render().all.some((element) => element.type === BulkActionBar)).toBe(false)
     const bulkActions = { label: 'Bulk actions', count: '1 result selected' }

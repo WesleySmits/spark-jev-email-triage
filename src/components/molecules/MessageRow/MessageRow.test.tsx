@@ -90,6 +90,16 @@ describe('MessageRow', () => {
     )
   })
 
+  it('adds a reason line under the snippet and describes the button with it', () => {
+    const reason = "Personal, decided by a person; priority Low, the model's."
+    const { button, all } = render({ reason })
+    expect(byClass(all, 'message-row__reason').map(text)).toEqual([reason])
+    expect(textOf(all, button.props['aria-describedby'])).toBe(
+      `Needs review Customer question | Studio Noord | 09:42 | After our meeting I looked at the planning… | ${reason}`,
+    )
+    expect(byClass(render().all, 'message-row__reason')).toHaveLength(0)
+  })
+
   it('puts the checkbox beside the button, never inside it', () => {
     const { check, button, all } = render({
       selection: { label: 'Select Invoice March', checked: false, onChange: vi.fn() },
