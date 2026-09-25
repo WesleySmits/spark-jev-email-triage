@@ -133,10 +133,20 @@ export function readReviewRequest(db: DatabaseSync, request: ReviewRequest): Rev
   if (row.status === 'refused') {
     return { status: 'refused', reason: reviewRefusalSchema.parse(row.refusal_reason) }
   }
-  const reviewId = z.int().parse(row.review_id)
-  const verdict = verdictOf(fieldsOf(db, reviewId))
-  if (verdict === undefined) throw new Error('A recorded review holds no readable decision')
-  const review = reviewOutcome(
+  const review = recordedReview(db, row)
+  if (review === undefined) throw new Error('A recorded review holds no readable decision')
+  return { status: 'recorded', review }
+}
+
+/**
+ * What one recorded Save stored, projected as the row's outcome: the fields
+ * that review decided, against the labels the judgment it named proposed.
+ * Nothing where its decisions cannot be read.
+ */
+function recordedReview(db: DatabaseSync, row: z.infer<typeof requestRowSchema>) {
+  const verdict = verdictOf(fieldsOf(db, z.int().parse(row.review_id)))
+  if (verdict === undefined) return undefined
+  return reviewOutcome(
     {
       verdict,
       reviewer: z.string().min(1).parse(row.reviewer),
@@ -147,8 +157,6 @@ export function readReviewRequest(db: DatabaseSync, request: ReviewRequest): Rev
       priority: prioritySchema.parse(row.model_priority),
     },
   )
-  if (review === undefined) throw new Error('A recorded review holds no readable decision')
-  return { status: 'recorded', review }
 }
 
 const reviewRefusalSchema = z.enum([
@@ -209,16 +217,20 @@ const insertField = `
   INSERT INTO review_fields (review_id, field, decision, value)
   VALUES (:reviewId, :field, :decision, :value)`
 
-/** One row per field this review decided, with the value a correction chose. */
-const decidedFields = (verdict: ReviewVerdict) =>
-  [
-    ...(verdict.category === undefined ? [] : [{ field: 'category', ...verdict.category }]),
-    ...(verdict.priority === undefined ? [] : [{ field: 'priority', ...verdict.priority }]),
-  ].map(({ field, ...decided }) => ({
-    field,
-    decision: decided.decision,
-    value: decided.decision === 'corrected' ? decided.value : null,
-  }))
+type Decided = NonNullable<ReviewVerdict['category'] | ReviewVerdict['priority']>
+
+/** One field's row: a correction stores the value it chose, a confirmation none. */
+const fieldRow = (field: 'category' | 'priority', decided: Decided) => ({
+  field,
+  decision: decided.decision,
+  value: decided.decision === 'corrected' ? decided.value : null,
+})
+
+/** One row per field this review decided, and none for a field it did not. */
+const decidedFields = (verdict: ReviewVerdict) => [
+  ...(verdict.category === undefined ? [] : [fieldRow('category', verdict.category)]),
+  ...(verdict.priority === undefined ? [] : [fieldRow('priority', verdict.priority)]),
+]
 
 /** What a correction chose for each field, or nothing where it corrected none. */
 const chosen = (verdict: ReviewVerdict) => ({
@@ -274,6 +286,7 @@ function writeReview(
   const subject = review.classification
   const { copy } = subject
   const corrections = chosen(review.verdict)
+  const changed = corrections.category !== null || corrections.priority !== null
   const written = db.prepare(insert).run({
     mailboxId: copy.mailboxId,
     messageId: copy.messageId,
@@ -281,8 +294,7 @@ function writeReview(
     latestMessageId: subject.latestMessageId,
     rubric: subject.rubric,
     classifierVersion: subject.classifierVersion,
-    decision:
-      corrections.category === null && corrections.priority === null ? 'confirmed' : 'corrected',
+    decision: changed ? 'corrected' : 'confirmed',
     ...corrections,
     reviewer: review.reviewer,
     // Stored in UTC, so the column orders by when a review happened.
