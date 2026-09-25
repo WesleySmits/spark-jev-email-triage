@@ -77,6 +77,7 @@ import {
   openedMessage,
   railGroups,
   visibleMessages,
+  narrows,
   type WorkbenchFilter,
   type WorkbenchMessage,
 } from './workbench'
@@ -849,7 +850,7 @@ type Worklist = Readonly<{
 }>
 
 type QueueProps = PaneProps &
-  Pick<PageInput, 'mailboxes'> &
+  Pick<PageInput, 'workflows' | 'mailboxes'> &
   Readonly<{
     evidence: Evidence
     scope: QueueScope | undefined
@@ -867,12 +868,12 @@ function queueGroups(
   state: PageState,
   worklist: Worklist,
   scope: QueueScope | undefined,
+  workflows: readonly SidebarItem[],
   rows: readonly ReturnType<typeof queueRows>[number][],
 ) {
-  const filtered = state.filter.mailbox !== allMailboxes || state.filter.query.trim() !== ''
   const groups = groupByAttention(state.shown, worklist.attentionOf, {
     coverage: worklist.coverage,
-    filtered,
+    filtered: narrows(state.filter, workflows),
     view: searchScopeFor(scope) ?? 'loaded messages',
   })
   const byId = new Map(rows.map((row) => [row.id, row]))
@@ -896,15 +897,17 @@ function queueContent(
   evidence: Evidence,
   scope: QueueScope | undefined,
   worklist: Worklist | undefined,
+  workflows: readonly SidebarItem[],
 ) {
   const rows = queueRows(state.shown, evidence, worklist?.attentionOf)
   if (worklist === undefined || !state.grouped) return { rows, groups: undefined }
-  return { rows, groups: queueGroups(state, worklist, scope, rows) }
+  return { rows, groups: queueGroups(state, worklist, scope, workflows, rows) }
 }
 
 function Queue({
   state,
   title,
+  workflows,
   mailboxes,
   evidence,
   scope,
@@ -913,7 +916,7 @@ function Queue({
   controls,
 }: QueueProps) {
   const count = state.shown.length
-  const { rows, groups } = queueContent(state, evidence, scope, worklist)
+  const { rows, groups } = queueContent(state, evidence, scope, worklist, workflows)
   const setting = worklist && (
     <div className="workbench__worklist-setting">
       <Checkbox
@@ -1433,6 +1436,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
           <Queue
             state={state}
             title={title}
+            workflows={workflows}
             mailboxes={mailboxes}
             evidence={evidence}
             scope={props.discovery?.scope ? undefined : props.scope}
