@@ -2157,6 +2157,48 @@ export const SavedWithoutAReadback: Story = {
 }
 
 /**
+ * A field decided again, and then again, with no reading carrying any of it
+ * back. Each save is recorded, and the row shows the decision the store took
+ * last: neither the one the reading still holds nor the first of the two
+ * saves. Nothing claims the reviewer or the time of a decision that was
+ * replaced.
+ */
+export const DecidingAFieldAgainBeforeAnyReadback: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: {
+    ...reviewing({ outcome: recorded }),
+    classifications: {
+      reading: 'reading-1',
+      states: unsureStates,
+      reviews: { m1: projected('suspicious') },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    await reviewReady(canvasElement)
+    const row = () => fieldRow(canvasElement, 'suspicious') as HTMLElement
+    await expect(row()).toHaveTextContent('Set to Suspicious')
+    await expect(row()).toHaveTextContent(reviewer)
+
+    // Decided again over what the reading holds.
+    await saveChosen(canvasElement, 'Notification')
+    await resultShows(canvasElement, 'Category set to Notification')
+    await expect(row()).toHaveTextContent('Set to Notification')
+    await expect(row()).not.toHaveTextContent('Set to Suspicious')
+    // The reviewer and time on the reading belong to the decision it replaced.
+    await expect(row()).not.toHaveTextContent(reviewer)
+    await expect(row()).toHaveTextContent('Not read back from the store yet')
+
+    // And once more, with no reading in between either.
+    await pick(canvasElement, 'Purchase')
+    await userEvent.click(save(canvasElement))
+    await resultShows(canvasElement, 'Category set to Purchase')
+    await expect(row()).toHaveTextContent('Set to Purchase')
+    await expect(row()).not.toHaveTextContent('Set to Notification')
+    await expect(save(canvasElement)).toBeDisabled()
+  },
+}
+
+/**
  * The category was decided in an earlier save that the reading carries, and
  * this save decides the priority alone. The result says what it recorded and
  * does not claim the category is unreviewed, because a person decided it.

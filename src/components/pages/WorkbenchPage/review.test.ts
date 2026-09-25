@@ -17,6 +17,7 @@ import type {
 import {
   adviceLabelFor,
   decidedByFor,
+  decidedFields,
   decidedValue,
   decisionsIn,
   fieldStateFor,
@@ -31,9 +32,9 @@ import {
   reviewResult,
   reviewSignature,
   reviewableIn,
+  recordedWith,
   saveIsOffered,
   saveLabelFor,
-  storedDecisions,
   undecidedFields,
   verdictFor,
   without,
@@ -277,12 +278,20 @@ describe('decisionsIn', () => {
   })
 })
 
-describe('storedDecisions', () => {
-  it('reads what the store holds for each field, and claims no other', () => {
-    expect(storedDecisions(savedCategory)).toEqual([
+describe('decidedFields', () => {
+  it('reads what holds for each field, and claims no other', () => {
+    expect(decidedFields(savedCategory)).toEqual([
       { field: 'category', value: 'personal', decision: 'corrected' },
     ])
-    expect(storedDecisions(undefined)).toEqual([])
+    expect(decidedFields(undefined)).toEqual([])
+  })
+
+  it('lets a decision recorded here stand over the reading it was made against', () => {
+    const recorded = [{ field: 'category', value: 'purchase', decision: 'corrected' }] as const
+
+    expect(decidedFields(savedCategory, recorded)).toEqual([
+      { field: 'category', value: 'purchase', decision: 'corrected' },
+    ])
   })
 })
 
@@ -363,7 +372,9 @@ describe('a decision recorded here but not read back', () => {
     expect(verdictFor(reviewable, { priority: 'urgent' }, undefined, recorded)).toEqual({})
   })
 
-  it("gives way to the store's own answer once a reading carries one", () => {
+  // The panel drops what it recorded as soon as a reading brings another
+  // answer, so the store's own reviewer and time are what a row shows again.
+  it("gives way to the store's own answer once the panel drops it", () => {
     const stored: RowReview = {
       decidedBy: 'reviewer',
       decision: 'corrected',
@@ -373,7 +384,11 @@ describe('a decision recorded here but not read back', () => {
       reviewedAt: decidedAt,
     }
 
-    expect(decidedByFor('priority', stored, recorded)).toMatch(/^wesley, /)
+    expect(decidedByFor('priority', stored, [])).toMatch(/^wesley, /)
+    expect(fieldStateFor('priority', labels, {}, stored, [])).toEqual({
+      label: 'Set to Urgent',
+      tone: 'saved',
+    })
   })
 
   it('leaves a field it says nothing about alone', () => {
@@ -382,6 +397,52 @@ describe('a decision recorded here but not read back', () => {
       tone: 'none',
     })
     expect(decidedByFor('category', undefined, recorded)).toBe('Nobody. The model decided this.')
+  })
+})
+
+// The panel drops everything it recorded the moment a reading brings another
+// answer for the row, so a decision still held here was made against this very
+// reading and is later than it.
+describe('a field decided again before any readback', () => {
+  const again = [{ field: 'category', value: 'purchase', decision: 'corrected' }] as const
+
+  it('shows the decision just made, not the one it replaced', () => {
+    expect(decidedValue('category', savedCategory, again)).toBe('purchase')
+    expect(fieldStateFor('category', labels, {}, savedCategory, again)).toEqual({
+      label: 'Set to Purchase',
+      tone: 'saved',
+    })
+  })
+
+  // The reviewer and time on the reading belong to the decision that was
+  // replaced, so repeating them here would date the new one wrongly.
+  it('stops naming the reviewer and time of the decision it replaced', () => {
+    expect(decidedByFor('category', savedCategory, again)).toBe(
+      'You, on this computer. Not read back from the store yet.',
+    )
+  })
+
+  it('asks to save nothing for it, because the store already took it', () => {
+    expect(pendingFields({ category: 'purchase' }, savedCategory, again)).toEqual([])
+    expect(pendingFields({ category: 'newsletter' }, savedCategory, again)).toEqual(['category'])
+  })
+})
+
+describe('recordedWith', () => {
+  const first = { field: 'category', value: 'purchase', decision: 'corrected' } as const
+  const second = { field: 'category', value: 'newsletter', decision: 'confirmed' } as const
+
+  // Two saves of one field with no reading in between: the store holds both,
+  // and the one that holds for the row is the last it took.
+  it('keeps the later decision for a field decided twice', () => {
+    expect(recordedWith([first], [second])).toEqual([second])
+    expect(decidedValue('category', undefined, recordedWith([first], [second]))).toBe('newsletter')
+  })
+
+  it('leaves a decision about another field where it was', () => {
+    const priority = { field: 'priority', value: 'urgent', decision: 'corrected' } as const
+
+    expect(recordedWith([first], [priority])).toEqual([first, priority])
   })
 })
 

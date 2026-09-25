@@ -88,12 +88,17 @@ const storedValue = (field: ReviewFieldName, saved: RowReview | undefined) =>
 const notReadBack = 'You, on this computer. Not read back from the store yet.'
 
 /**
- * The decision that holds for one field: the one the store answered with, or
- * one this panel recorded and no reading has carried back yet.
+ * The decision that holds for one field: one this panel recorded that no
+ * reading has carried back yet, or else the one the reading gave.
  *
- * The second is what keeps a field somebody has just saved from reading as
- * nobody's. The store took that decision, so the value is not a guess; who
- * decided it and when are the store's to say, and until it does this says
+ * A recorded decision comes first, and it has to: the caller drops everything
+ * it recorded the moment a reading brings another answer for the row, so
+ * anything still held here was recorded against this very reading and is
+ * therefore later than it. Reading the other way round would leave a field
+ * somebody has just decided again showing the decision they replaced.
+ *
+ * The store took the decision, so the value is not a guess; who decided it
+ * and when are the store's to say, and until a reading says so this names
  * only where the decision came from. A field nobody decided has none of this.
  */
 function decidedIn(
@@ -101,20 +106,33 @@ function decidedIn(
   saved: RowReview | undefined,
   recorded: readonly ReviewedField[] = [],
 ): Readonly<{ value: string; decision: 'confirmed' | 'corrected'; by: string }> | undefined {
+  const own = recorded.find((one) => one.field === field)
+  if (own !== undefined) return { value: own.value, decision: own.decision, by: notReadBack }
   const value = storedValue(field, saved)
   const decision = saved?.fields[field]
-  if (value !== undefined && decision !== undefined) {
-    return {
-      value,
-      decision: decision.decision,
-      by: `${decision.reviewer}, ${judgedText(decision.reviewedAt)}`,
-    }
-  }
-  const own = recorded.find((one) => one.field === field)
-  return own === undefined
+  return value === undefined || decision === undefined
     ? undefined
-    : { value: own.value, decision: own.decision, by: notReadBack }
+    : {
+        value,
+        decision: decision.decision,
+        by: `${decision.reviewer}, ${judgedText(decision.reviewedAt)}`,
+      }
 }
+
+/**
+ * What this panel has recorded, with one save's decisions taken up.
+ *
+ * A field decided twice without a reading in between keeps the later
+ * decision only: the store holds both, and the one that holds for the row is
+ * the last one it took, not the first this panel happened to send.
+ */
+export const recordedWith = (
+  current: readonly ReviewedField[],
+  decided: readonly ReviewedField[],
+): readonly ReviewedField[] => [
+  ...current.filter((one) => !decided.some((next) => next.field === one.field)),
+  ...decided,
+]
 
 /** The value that holds for one field, whoever decided it. */
 export const decidedValue = (
@@ -291,19 +309,19 @@ export function decisionsIn(
 }
 
 /**
- * What the store holds for this version, field by field. A field it holds
- * nothing for is absent, so nothing here reads as decided that nobody decided.
+ * Every decision that holds for this version, field by field and in the
+ * panel's order: what a reading carried, and what this panel recorded over
+ * it. A field nothing decided is absent, so nothing here reads as decided
+ * that nobody decided.
  */
-export function storedDecisions(saved: RowReview | undefined): readonly ReviewedField[] {
-  if (saved === undefined) return []
-  return reviewFields.flatMap((field): ReviewedField[] => {
-    const decision = saved.fields[field]
-    const value = decidedValue(field, saved)
-    return decision === undefined || value === undefined
-      ? []
-      : [{ field, value, decision: decision.decision }]
+export const decidedFields = (
+  saved: RowReview | undefined,
+  recorded: readonly ReviewedField[] = [],
+): readonly ReviewedField[] =>
+  reviewFields.flatMap((field): ReviewedField[] => {
+    const held = decidedIn(field, saved, recorded)
+    return held === undefined ? [] : [{ field, value: held.value, decision: held.decision }]
   })
-}
 
 /**
  * Where one save has got to:

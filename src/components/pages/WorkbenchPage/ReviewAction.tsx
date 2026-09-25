@@ -10,6 +10,7 @@ import { beginReview, finishReview } from './review-attempt'
 import {
   adviceLabelFor,
   decidedByFor,
+  decidedFields,
   decidedValue,
   fieldLabelFor,
   decisionsIn,
@@ -21,10 +22,10 @@ import {
   reviewPanelCopy,
   reviewRequest,
   reviewResult,
+  recordedWith,
   reviewSignature,
   saveIsOffered,
   saveLabelFor,
-  storedDecisions,
   undecidedFields,
   without,
   type ReviewedField,
@@ -78,19 +79,9 @@ type Held = Readonly<{
   pending?: Readonly<{ request: DeskReviewRequest; decided: readonly ReviewedField[] }>
 }>
 
-/** Whether the store's answer for this row says nothing about one field. */
-const notIn = (saved: RowReview | undefined, field: ReviewFieldName) =>
-  decidedValue(field, saved) === undefined
-
-/** Every decision that holds for the row: the store's, then this panel's own. */
-const decidedNow = (saved: RowReview | undefined, recorded: readonly ReviewedField[]) => [
-  ...storedDecisions(saved),
-  ...recorded.filter((one) => notIn(saved, one.field)),
-]
-
 /** What the panel says when no field holds a choice: what is decided already. */
 function resting(saved: RowReview | undefined, recorded: readonly ReviewedField[]): ReviewState {
-  const decided = decidedNow(saved, recorded)
+  const decided = decidedFields(saved, recorded)
   return decided.length === 0
     ? { status: 'choosing' }
     : { status: 'saved', decided, undecided: undecidedFields(decided) }
@@ -179,7 +170,7 @@ function useReview(
       // nobody's in between.
       ...(saving !== undefined && {
         choices: {},
-        recorded: [...current.recorded, ...saving.decided],
+        recorded: recordedWith(current.recorded, saving.decided),
       }),
       state,
       // Only what happened here is announced. A review the reading already
@@ -216,7 +207,7 @@ function useReview(
     }
     finishReview(pending.request)
     onResolved()
-    const next = stateFor(outcome, pending, decidedNow(saved, shown.recorded))
+    const next = stateFor(outcome, pending, decidedFields(saved, shown.recorded))
     settle(next, next.status === 'saved' ? pending : undefined)
   }
   const verify = (
