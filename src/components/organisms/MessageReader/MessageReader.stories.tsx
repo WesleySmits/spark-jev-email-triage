@@ -94,7 +94,7 @@ export const Default: Story = {}
 // The caller owns the panel's state. This fixture keeps it local and logs save.
 function ReviewSlot() {
   const [expanded, setExpanded] = useState(true)
-  const [selected, setSelected] = useState<string | null>(null)
+  const [chosen, setChosen] = useState<string | null>(null)
   return (
     <ReviewPanel
       headingLevel={3}
@@ -106,19 +106,38 @@ function ReviewSlot() {
       score={58}
       reasonTitle="Why review?"
       reason="The message uses scheduling language, but the sender explicitly asks for an answer and a decision."
-      originalLabel="Original AI suggestion"
-      originalSuggestion="Newsletter"
-      categoriesTitle="Choose the right category"
-      categories={[
-        { value: 'customer-question', label: 'Customer question' },
-        { value: 'invoice', label: 'Invoice' },
-        { value: 'newsletter', label: 'Newsletter' },
-        { value: 'personal', label: 'Personal' },
+      keptNote="The model's own advice is kept whatever you decide."
+      fieldsTitle="The model's advice and your decision"
+      cells={{ advice: 'Model advises', decision: 'Your decision', decidedBy: 'Decided by' }}
+      fields={[
+        {
+          name: 'category',
+          label: 'Category',
+          advice: 'Newsletter',
+          options: [
+            { value: 'customer-question', label: 'Customer question' },
+            { value: 'invoice', label: 'Invoice' },
+            { value: 'newsletter', label: 'Newsletter', note: "The model's advice" },
+            { value: 'personal', label: 'Personal' },
+          ],
+          chosen,
+          onChoose: setChosen,
+          state:
+            chosen === null
+              ? { label: 'Not reviewed', tone: 'none' }
+              : { label: 'Not saved yet.', tone: 'pending' },
+          decidedBy: 'Nobody. The model decided this.',
+          undoLabel: 'Undo',
+          ...(chosen !== null && {
+            onUndo: () => {
+              setChosen(null)
+            },
+          }),
+        },
       ]}
-      selectedCategory={selected}
-      onSelectedCategoryChange={setSelected}
       saveLabel="Save review"
       onSave={fn()}
+      saveDisabled={chosen === null}
       result={{ title: 'Not saved yet' }}
     />
   )

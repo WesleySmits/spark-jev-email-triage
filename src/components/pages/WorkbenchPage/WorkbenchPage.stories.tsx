@@ -1669,13 +1669,31 @@ const panel = (root: HTMLElement) => root.querySelector('.workbench__reader .rev
 /** The result copy beside the save button. */
 const result = (root: HTMLElement) => root.querySelector('.review-panel__result')
 
+/** One field's row in the review panel, by the name it carries. */
+const fieldRow = (root: HTMLElement, name: string) =>
+  root
+    .querySelector(`.review-panel [name$="-option"][value="${name}"]`)
+    ?.closest('.review-panel__field')
+
 /** What the page's polite live region is announcing about the review. */
 const announced = (root: HTMLElement) => root.querySelector('.workbench__review-status')
 
+/**
+ * The panel's save button. Its name says how many fields it would record, so
+ * it is matched on what every one of those names starts with.
+ */
 const save = (root: HTMLElement) =>
-  within(root).getByRole('button', { name: 'Save review', hidden: false })
+  within(root).getByRole('button', { name: /^(Save |Check or retry save)/, hidden: false })
 
-/** Picks the category option named `name` in the review radiogroup. */
+/** Tabs until the save button has focus, so the path to it stays keyboard-only. */
+async function tabToSave(root: HTMLElement) {
+  for (let step = 0; step < 8 && document.activeElement !== save(root); step += 1) {
+    await userEvent.tab()
+  }
+  await expect(save(root)).toHaveFocus()
+}
+
+/** Picks the option named `name` in the field's radiogroup. */
 const pick = (root: HTMLElement, name: string | RegExp) =>
   userEvent.click(within(root).getByRole('radio', { name }))
 
@@ -1734,19 +1752,27 @@ export const ReviewConfirm: Story = {
   args: reviewing({ outcome: recorded }),
   play: async ({ args, canvasElement }) => {
     await reviewReady(canvasElement)
-    await expect(panel(canvasElement)).toHaveTextContent('Original AI suggestion')
+    // The model's advice is stated per field, beside what a person decides.
+    await expect(panel(canvasElement)).toHaveTextContent('Model advises')
+    await expect(panel(canvasElement)).toHaveTextContent('Your decision')
 
-    // Nothing chosen yet: saving is not offered and the copy says so.
-    await expect(result(canvasElement)).toHaveTextContent('Choose a category first')
+    // Nothing decided yet: both rows say so, and saving is not offered.
+    await expect(result(canvasElement)).toHaveTextContent('Nothing decided yet')
+    await expect(panel(canvasElement)).toHaveTextContent('Not reviewed')
     await expect(save(canvasElement)).toBeDisabled()
 
+    // Choosing the value marked as the advice is how it is confirmed, and
+    // Save says how many fields it would record before anyone presses it.
     await pick(canvasElement, 'Personal')
-    await expect(result(canvasElement)).toHaveTextContent('Not saved yet')
+    await expect(result(canvasElement)).toHaveTextContent('1 field ready to save')
     await expect(save(canvasElement)).toBeEnabled()
+    await expect(save(canvasElement)).toHaveTextContent('Save 1 field')
 
     await userEvent.click(save(canvasElement))
     await resultShows(canvasElement, 'Review saved')
-    await expect(result(canvasElement)).toHaveTextContent('You confirmed Personal')
+    await expect(result(canvasElement)).toHaveTextContent('Category confirmed as Personal')
+    // The field nobody touched says so, rather than reading as confirmed.
+    await expect(result(canvasElement)).toHaveTextContent('The priority stays unreviewed')
     await expect(result(canvasElement)).toHaveTextContent('Your mailbox is unchanged')
     await expect(announced(canvasElement)).toHaveTextContent('Not completed yet')
     await expect(announced(canvasElement)).not.toHaveTextContent(/^Completed/)
@@ -1781,8 +1807,8 @@ export const ReviewCorrect: Story = {
 
     await resultShows(canvasElement, 'Review saved')
     await expect(result(canvasElement)).toHaveTextContent('Category set to Suspicious')
-    await expect(result(canvasElement)).toHaveTextContent('The original stays Personal')
-    await expect(panel(canvasElement)).toHaveTextContent('Original AI suggestion')
+    await expect(result(canvasElement)).toHaveTextContent("The model's own advice is kept")
+    await expect(panel(canvasElement)).toHaveTextContent('Model advises')
     await expectSavedCorrection(args, subjectOf('m1'), 'suspicious')
   },
 }
@@ -1803,7 +1829,8 @@ export const ReviewPending: Story = {
     await expect(announced(canvasElement)).toHaveTextContent('')
 
     await resultShows(canvasElement, 'Review saved')
-    await expect(save(canvasElement)).toBeEnabled()
+    // What was recorded is no longer pending, so there is nothing to save again.
+    await expect(save(canvasElement)).toBeDisabled()
     await expect(reviewOf(args).onSaveReview).toHaveBeenCalledTimes(1)
   },
 }
@@ -1906,9 +1933,9 @@ export const ReviewKeyboard: Story = {
     await userEvent.keyboard('kj')
     await expect(subject(canvasElement)).toHaveTextContent('Can delivery move a week earlier?')
 
-    // Tab to Save review and press it without a pointer.
-    await userEvent.tab()
-    await expect(save(canvasElement)).toHaveFocus()
+    // Tab on to Save, through the row's own undo and the priority group, and
+    // press it without a pointer.
+    await tabToSave(canvasElement)
     await userEvent.keyboard('{Enter}')
     await resultShows(canvasElement, 'Review saved')
     await expectSavedCorrection(args, subjectOf('m1'), 'notification')
@@ -2062,7 +2089,7 @@ export const LaterConfirmationWins: Story = {
     // Confirming the model's own category, after having corrected it.
     await pick(canvasElement, 'Personal')
     await userEvent.click(save(canvasElement))
-    await resultShows(canvasElement, 'You confirmed Personal')
+    await resultShows(canvasElement, 'Category confirmed as Personal')
     await refresh(canvasElement)
 
     await expect(reviewed()).toHaveTextContent('Personal')
@@ -2098,7 +2125,109 @@ export const ReviewStaysOnItsOwnRow: Story = {
     await expect(rows.getByRole('button', { name: reviewableRow })).toHaveTextContent('Personal')
     await expect(evidence(canvasElement)).toHaveTextContent('Needs a person')
     await expect(evidence(canvasElement)).not.toHaveTextContent('by a person')
-    await expect(result(canvasElement)).toHaveTextContent('Choose a category first')
+    await expect(result(canvasElement)).toHaveTextContent('Nothing decided yet')
+  },
+}
+
+/**
+ * The store recorded the review but answered without its own projection of
+ * the row, which the contract allows, and no reading has carried it back yet.
+ * The field a person just decided still reads as decided, and says plainly
+ * that the store has not confirmed it back; nothing asks to save it again.
+ * The queue row keeps the category triage gave it, because nothing has told
+ * the page otherwise.
+ */
+export const SavedWithoutAReadback: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewing({ outcome: recorded }),
+  play: async ({ canvasElement }) => {
+    await saveChosen(canvasElement, 'Suspicious')
+    await resultShows(canvasElement, 'Review saved')
+
+    const row = fieldRow(canvasElement, 'suspicious') as HTMLElement
+    await expect(row).toHaveTextContent('Set to Suspicious')
+    await expect(row).not.toHaveTextContent('Not reviewed')
+    await expect(row).toHaveTextContent('Not read back from the store yet')
+    // It is stored, so there is nothing left to save.
+    await expect(save(canvasElement)).toBeDisabled()
+    // Nothing invented a reviewer or a time for it either.
+    await expect(row).not.toHaveTextContent(reviewer)
+    await expect(reviewedRow(canvasElement)).toHaveTextContent('Personal')
+  },
+}
+
+/**
+ * A field decided again, and then again, with no reading carrying any of it
+ * back. Each save is recorded, and the row shows the decision the store took
+ * last: neither the one the reading still holds nor the first of the two
+ * saves. Nothing claims the reviewer or the time of a decision that was
+ * replaced.
+ */
+export const DecidingAFieldAgainBeforeAnyReadback: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: {
+    ...reviewing({ outcome: recorded }),
+    classifications: {
+      reading: 'reading-1',
+      states: unsureStates,
+      reviews: { m1: projected('suspicious') },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    await reviewReady(canvasElement)
+    const row = () => fieldRow(canvasElement, 'suspicious') as HTMLElement
+    await expect(row()).toHaveTextContent('Set to Suspicious')
+    await expect(row()).toHaveTextContent(reviewer)
+
+    // Decided again over what the reading holds.
+    await saveChosen(canvasElement, 'Notification')
+    await resultShows(canvasElement, 'Category set to Notification')
+    await expect(row()).toHaveTextContent('Set to Notification')
+    await expect(row()).not.toHaveTextContent('Set to Suspicious')
+    // The reviewer and time on the reading belong to the decision it replaced.
+    await expect(row()).not.toHaveTextContent(reviewer)
+    await expect(row()).toHaveTextContent('Not read back from the store yet')
+
+    // And once more, with no reading in between either.
+    await pick(canvasElement, 'Purchase')
+    await userEvent.click(save(canvasElement))
+    await resultShows(canvasElement, 'Category set to Purchase')
+    await expect(row()).toHaveTextContent('Set to Purchase')
+    await expect(row()).not.toHaveTextContent('Set to Notification')
+    await expect(save(canvasElement)).toBeDisabled()
+  },
+}
+
+/**
+ * The category was decided in an earlier save that the reading carries, and
+ * this save decides the priority alone. The result says what it recorded and
+ * does not claim the category is unreviewed, because a person decided it.
+ */
+export const SavingOneFieldLeavesTheOtherDecision: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: {
+    ...reviewing({ outcome: recorded }),
+    classifications: {
+      reading: 'reading-1',
+      states: unsureStates,
+      reviews: { m1: projected('suspicious') },
+    },
+  },
+  play: async ({ args, canvasElement }) => {
+    await reviewReady(canvasElement)
+    await expect(fieldRow(canvasElement, 'suspicious')).toHaveTextContent('Set to Suspicious')
+
+    await saveChosen(canvasElement, 'Urgent')
+
+    await resultShows(canvasElement, 'Review saved')
+    await expect(result(canvasElement)).toHaveTextContent('Priority set to Urgent')
+    await expect(result(canvasElement)).not.toHaveTextContent('unreviewed')
+    // The save named the priority and decided nothing about the category.
+    await expect(reviewOf(args).onSaveReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        verdict: { priority: { decision: 'corrected', value: 'urgent' } },
+      }),
+    )
   },
 }
 
@@ -2175,14 +2304,14 @@ export const PanelFollowsANewerVersion: Story = {
     const rows = within(canvasElement)
     await reviewReady(canvasElement)
     await pick(canvasElement, 'Suspicious')
-    await expect(result(canvasElement)).toHaveTextContent('Not saved yet')
+    await expect(result(canvasElement)).toHaveTextContent('1 field ready to save')
 
     await refresh(canvasElement)
 
     // The same row is still open, and the panel is asking again.
     await expect(subject(canvasElement)).toHaveTextContent('Can delivery move a week earlier?')
     await expect(rows.getByRole('radio', { name: 'Suspicious' })).not.toBeChecked()
-    await expect(result(canvasElement)).toHaveTextContent('Choose a category first')
+    await expect(result(canvasElement)).toHaveTextContent('Nothing decided yet')
     await expect(save(canvasElement)).toBeDisabled()
 
     await pick(canvasElement, 'Notification')
@@ -2205,7 +2334,7 @@ export const PanelFollowsAReviewStoredSince: Story = {
   play: async ({ canvasElement }) => {
     const rows = within(canvasElement)
     await reviewReady(canvasElement)
-    await expect(result(canvasElement)).toHaveTextContent('Choose a category first')
+    await expect(result(canvasElement)).toHaveTextContent('Nothing decided yet')
 
     await refresh(canvasElement)
 
@@ -2213,6 +2342,31 @@ export const PanelFollowsAReviewStoredSince: Story = {
     await expect(result(canvasElement)).toHaveTextContent('Review saved')
     await expect(evidence(canvasElement)).toHaveTextContent('Corrected by a person')
     await expect(rows.getByRole('button', { name: reviewableRow })).toHaveTextContent('Suspicious')
+  },
+}
+
+/**
+ * A save whose answer was lost, and then a reading that happens to hold
+ * exactly what was chosen. The check stays reachable: the uncertain save is
+ * still unsettled, and a store that already holds the same decision says
+ * nothing about whether this one was recorded.
+ */
+export const UnknownSaveStaysCheckableAfterARefresh: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: reviewing({ outcome: { status: 'unknown' } }),
+  render: (args) => <WithNextReading {...args} next={reviewedReading} />,
+  play: async ({ canvasElement }) => {
+    await saveChosen(canvasElement, 'Suspicious')
+    await waitFor(() => expect(save(canvasElement)).toHaveTextContent('Check or retry save'), {
+      timeout: 3000,
+    })
+    await expect(save(canvasElement)).toBeEnabled()
+
+    await refresh(canvasElement)
+
+    await expect(save(canvasElement)).toHaveTextContent('Check or retry save')
+    await expect(save(canvasElement)).toBeEnabled()
+    await expect(result(canvasElement)).toHaveTextContent('Save outcome unknown')
   },
 }
 
@@ -2242,7 +2396,7 @@ export const RefreshDuringSaveIsLeftAlone: Story = {
     })
     await expect(announced(canvasElement)).toHaveTextContent('no longer the current one')
     // The answer is in, so the panel takes up the version the refresh brought.
-    await expect(result(canvasElement)).toHaveTextContent('Choose a category first')
+    await expect(result(canvasElement)).toHaveTextContent('Nothing decided yet')
     await expect(rows.getByRole('radio', { name: 'Suspicious' })).not.toBeChecked()
     await expectSavedCorrection(args, subjectOf('m1'), 'suspicious')
   },
@@ -2318,8 +2472,7 @@ async function correctWithKeyboard(root: HTMLElement) {
   canvas.getByRole('radio', { name: 'Personal' }).focus()
   await userEvent.keyboard(' {ArrowDown}')
   await expect(canvas.getByRole('radio', { name: 'Notification' })).toBeChecked()
-  await userEvent.tab()
-  await expect(save(root)).toHaveFocus()
+  await tabToSave(root)
   await userEvent.keyboard('{Enter}')
   await resultShows(root, 'Review saved')
 }
@@ -2338,9 +2491,9 @@ export const CategoryCorrectionKeepsPriorityUncertain: Story = {
       'The model was not sure of this priority.',
     )
     await expect(evidence(canvasElement)).toHaveTextContent('Marked as more urgent to look at.')
-    await expect(announced(canvasElement)).toHaveTextContent(
-      'Priority and reply expectations are not confirmed.',
-    )
+    // The save decided the category alone, and the announcement says the
+    // priority is still nobody's.
+    await expect(announced(canvasElement)).toHaveTextContent('The priority stays unreviewed')
     await expect(reviewedRow(canvasElement)).toHaveTextContent('Notification')
     await expectSavedCorrection(args, subjectOf('m1'), 'notification')
     await expect(args.loadBody).toHaveBeenCalledTimes(1)
@@ -2359,10 +2512,13 @@ export const CategoryConfirmationKeepsPriorityUncertain: Story = {
     await expect(evidence(canvasElement)).toHaveTextContent(
       'The model was not sure of this priority.',
     )
-    await expect(result(canvasElement)).toHaveTextContent(
-      'Priority and reply expectations are not confirmed.',
+    await expect(result(canvasElement)).toHaveTextContent('The priority stays unreviewed')
+    await expect(panel(canvasElement)).toHaveTextContent(
+      'This panel decides the category and the priority only.',
     )
-    await expect(panel(canvasElement)).toHaveTextContent('This review covers the category only.')
+    await expect(panel(canvasElement)).toHaveTextContent(
+      'Whether a reply is expected, and by when, is not confirmed here.',
+    )
     await expect(canvasElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth)
   },
 }

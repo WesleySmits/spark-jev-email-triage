@@ -141,8 +141,9 @@ as mail metadata. Treat the database and backups as private.
 A review does not complete or mutate mail. The store records the decision a
 person made about each field separately, so a field nobody reviewed keeps
 showing the model's own label and says so. The app's panel decides the
-category alone; whatever it decides preserves the model judgment and leaves
-the model's other signals showing. The
+category and the priority, each on its own and only where a person chose one;
+whatever it decides preserves the model judgment and leaves the model's other
+signals showing. The
 panel's "Model score" is raw category confidence, not calibrated certainty.
 The panel and the reader name the grounds the run recorded for asking a
 person; a record that stored none says so instead of naming a reason. A
