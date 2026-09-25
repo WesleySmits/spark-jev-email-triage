@@ -14,7 +14,14 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { ReadOptions } from '../domain/mail-reader'
-import type { ClassifiedInbox, InboxListRequest } from './live-inbox'
+import type {
+  ClassifiedDiscovery,
+  ClassifiedInbox,
+  ClassifiedRefresh,
+  InboxDiscoveryRequest,
+  InboxListRequest,
+  InboxRefreshRequest,
+} from './live-inbox'
 import { sparkInbox } from './spark-inbox.server'
 import { storedRowsFor } from './stored-classifications.server'
 import type { ManualRunSelection } from '../shadow/manual-runs'
@@ -23,16 +30,9 @@ import type { ManualRunSelection } from '../shadow/manual-runs'
 const worklists = new Map<string, readonly ManualRunSelection[]>()
 const retainedWorklists = 20
 
-export async function deskReading(
-  options?: ReadOptions,
-  request?: InboxListRequest,
-): Promise<ClassifiedInbox> {
-  const inbox = await sparkInbox().list(options, request)
-  if (inbox.status !== 'ready') return inbox
-  // One id per reading, minted here because this is where a listing and the
-  // judgments stored for it become one reading. It lets a browser tell a
-  // proof that belongs to this reading from one an earlier reading made.
-  const reading = randomUUID()
+type WorklistSource = Pick<Extract<ClassifiedInbox, { status: 'ready' }>, 'scope' | 'messages'>
+
+function registerWorklist(reading: string, inbox: WorklistSource) {
   const addresses = new Map(inbox.scope.mailboxes.map((mailbox) => [mailbox.id, mailbox.label]))
   worklists.set(
     reading,
@@ -48,10 +48,45 @@ export async function deskReading(
     if (oldest === undefined) break
     worklists.delete(oldest)
   }
+}
+
+export async function deskReading(
+  options?: ReadOptions,
+  request?: InboxListRequest,
+): Promise<ClassifiedInbox> {
+  const inbox = await sparkInbox().list(options, request)
+  if (inbox.status !== 'ready') return inbox
+  // One id per reading, minted here because this is where a listing and the
+  // judgments stored for it become one reading. It lets a browser tell a
+  // proof that belongs to this reading from one an earlier reading made.
+  const reading = randomUUID()
+  registerWorklist(reading, inbox)
   return { ...inbox, reading, ...storedRowsFor(inbox.messages) }
 }
 
 /** Exact mailbox copies from one recent reading; never re-lists or calls Jev. */
 export function worklistFor(reading: string): readonly ManualRunSelection[] | null {
   return worklists.get(reading) ?? null
+}
+
+/** One controlled metadata search with the stored state of its matching copies. */
+export async function deskDiscovery(
+  request: InboxDiscoveryRequest,
+  options?: ReadOptions,
+): Promise<ClassifiedDiscovery> {
+  const inbox = await sparkInbox().search(request, options)
+  if (inbox.status !== 'ready') return inbox
+  return { ...inbox, reading: randomUUID(), ...storedRowsFor(inbox.messages) }
+}
+
+/** Re-reads the loaded view and joins its rows to locally stored state. */
+export async function deskRefresh(
+  request: InboxRefreshRequest,
+  options?: ReadOptions,
+): Promise<ClassifiedRefresh> {
+  const inbox = await sparkInbox().refresh(request, options)
+  if (inbox.status !== 'ready') return inbox
+  const reading = randomUUID()
+  registerWorklist(reading, inbox)
+  return { ...inbox, reading, ...storedRowsFor(inbox.messages) }
 }

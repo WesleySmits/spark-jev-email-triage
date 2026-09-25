@@ -39,6 +39,7 @@ import { SparkError } from '../spark/errors'
 import { emailsTable, emptyEmailsOutput, threadText } from '../spark/fixtures'
 import type { DeskReviewRequest } from './desk-review'
 import { ReviewDesk, type DeskView } from './review-desk'
+import { worklistFor } from './review-desk.server'
 
 const spark = vi.hoisted(() => ({
   /** Answers one Spark command, or throws as its runner does. */
@@ -69,11 +70,18 @@ vi.mock('../jev/classifier', () => ({ createJevClassifier: jev.createJevClassifi
 const lost = () => Promise.reject(new Error('The app server did not answer'))
 
 vi.mock('./live-inbox.functions', async () => {
-  const { bodyRequestSchema } = await import('./live-inbox')
-  const { deskReading } = await import('./review-desk.server')
+  const { bodyRequestSchema, inboxDiscoveryRequestSchema, inboxRefreshRequestSchema } =
+    await import('./live-inbox')
+  const { deskDiscovery, deskReading, deskRefresh } = await import('./review-desk.server')
   const { sparkInbox } = await import('./spark-inbox.server')
   return {
     getLiveInbox: () => (spark.unreachable ? lost() : deskReading()),
+    searchLiveInbox: ({ data }: { data: unknown }) =>
+      spark.unreachable
+        ? lost()
+        : deskDiscovery(inboxDiscoveryRequestSchema.parse(data), undefined),
+    refreshLiveInbox: ({ data }: { data: unknown }) =>
+      spark.unreachable ? lost() : deskRefresh(inboxRefreshRequestSchema.parse(data), undefined),
     getLiveBody: ({ data, signal }: { data: unknown; signal: AbortSignal }) =>
       spark.unreachable ? lost() : sparkInbox().body(bodyRequestSchema.parse(data), { signal }),
   }
@@ -245,6 +253,81 @@ describe('ReviewDesk.open', () => {
     spark.unreachable = true
 
     await expect(ReviewDesk.open()).resolves.toEqual({
+      status: 'unavailable',
+      reason: 'unreachable',
+    })
+    expect(spark.run).not.toHaveBeenCalled()
+  })
+})
+
+describe('ReviewDesk.search', () => {
+  it('finds matching mailbox copies from listed metadata without a thread or Jev call', async () => {
+    await ReviewDesk.open()
+    spark.run.mockClear()
+    const result = await ReviewDesk.search({ view: 'unread', query: 'shared' })
+    if (result.status !== 'ready') throw new Error('Expected discovery')
+
+    expect(result.messages.map(({ id, mailbox }) => ({ id, mailbox }))).toEqual([
+      { id: copy(one, '11'), mailbox: one },
+      { id: copy(two, '11'), mailbox: two },
+    ])
+    expect(result.scope).toMatchObject({
+      query: 'shared',
+      fields: ['sender', 'subject'],
+      valuesMayBeTruncated: true,
+      scanned: 3,
+      matched: 2,
+    })
+    expect(threadIds()).toEqual([])
+    expect(jev.createSdkTransport).not.toHaveBeenCalled()
+    expect(jev.createJevClassifier).not.toHaveBeenCalled()
+  })
+
+  it('reports an unreachable app server without starting Spark', async () => {
+    spark.unreachable = true
+
+    await expect(ReviewDesk.search({ view: 'unread', query: 'shared' })).resolves.toEqual({
+      status: 'unavailable',
+      reason: 'unreachable',
+    })
+    expect(spark.run).not.toHaveBeenCalled()
+  })
+})
+
+describe('ReviewDesk.refresh', () => {
+  it('re-reads the loaded window without a thread or Jev call', async () => {
+    const opened = await ReviewDesk.open()
+    if (opened.status !== 'ready') throw new Error('Expected reading')
+    spark.run.mockClear()
+    spark.run.mockImplementation(
+      answerSpark({
+        ...aliased,
+        emails: {
+          [one]: [['12', sender, '2026-09-22 08:00', 'Only in one']],
+          [two]: [['11', sender, '2026-09-22 09:15', 'Shared subject']],
+        },
+      }),
+    )
+
+    const result = await ReviewDesk.refresh({ view: 'unread' })
+    if (result.status !== 'ready') throw new Error('Expected refresh')
+
+    expect(result.refresh).toMatchObject({ added: 0, removed: 1, updated: 0 })
+    expect(result.messages.map((message) => message.id)).toEqual([copy(two, '11'), copy(one, '12')])
+    expect(worklistFor(result.reading)).toEqual([
+      { mailboxId: two, mailboxAddress: two, messageId: '11' },
+      { mailboxId: one, mailboxAddress: one, messageId: '12' },
+    ])
+    expect(commands().filter((command) => command === 'emails')).toHaveLength(2)
+    expect(threadIds()).toEqual([])
+    expect(jev.createSdkTransport).not.toHaveBeenCalled()
+    expect(jev.createJevClassifier).not.toHaveBeenCalled()
+  })
+
+  it('reports an unreachable app server without starting Spark', async () => {
+    spark.unreachable = true
+
+    await expect(ReviewDesk.refresh({ view: 'unread' })).resolves.toEqual({
       status: 'unavailable',
       reason: 'unreachable',
     })

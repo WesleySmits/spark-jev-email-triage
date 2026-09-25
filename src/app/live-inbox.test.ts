@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { InboxSummary } from './inbox'
-import { bodyRequestSchema, liveBodyLoader } from './live-inbox'
+import {
+  bodyRequestSchema,
+  inboxDiscoveryRequestSchema,
+  inboxRefreshRequestSchema,
+  liveBodyLoader,
+} from './live-inbox'
 
 const summary = (messageId: string, mailbox: string): InboxSummary => ({
   id: `${mailbox} copy of ${messageId}`,
@@ -33,6 +38,33 @@ describe('bodyRequestSchema', () => {
     { mailbox: 'ops@mail.example' },
   ])('rejects %j', (input) => {
     expect(bodyRequestSchema.safeParse(input).success).toBe(false)
+  })
+})
+
+describe('inboxDiscoveryRequestSchema', () => {
+  it('trims a bounded query and accepts an opaque continuation', () => {
+    const cursor = '11111111-1111-4111-8111-111111111111'
+    expect(
+      inboxDiscoveryRequestSchema.parse({ view: 'unread', query: '  invoice  ', cursor }),
+    ).toEqual({ view: 'unread', query: 'invoice', cursor })
+  })
+
+  it.each([
+    { view: 'unread', query: '' },
+    { view: 'unread', query: ' '.repeat(4) },
+    { view: 'unread', query: 'x'.repeat(201) },
+    { view: 'all', query: 'invoice' },
+    { view: 'unread', query: 'invoice', extra: 'private' },
+  ])('rejects %j', (request) => {
+    expect(inboxDiscoveryRequestSchema.safeParse(request).success).toBe(false)
+  })
+})
+
+describe('inboxRefreshRequestSchema', () => {
+  it('accepts one known view and nothing else', () => {
+    expect(inboxRefreshRequestSchema.parse({ view: 'unread' })).toEqual({ view: 'unread' })
+    expect(inboxRefreshRequestSchema.safeParse({ view: 'all' }).success).toBe(false)
+    expect(inboxRefreshRequestSchema.safeParse({ view: 'unread', pages: 99 }).success).toBe(false)
   })
 })
 

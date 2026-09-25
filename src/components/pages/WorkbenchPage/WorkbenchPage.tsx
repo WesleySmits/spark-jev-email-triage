@@ -16,6 +16,7 @@ import type {
 } from '../../../app/done-action'
 import type { MailboxActionProposal } from '../../../domain/mailbox-action'
 import type { BodyLoader } from '../../../app/inbox'
+import type { InboxDiscoveryScope } from '../../../app/live-inbox'
 import { sameSubject } from '../../../domain/review'
 import type { DeskReviewRequest } from '../../../app/desk-review'
 import type { StoredClassification } from '../../../domain/stored-classification'
@@ -24,9 +25,11 @@ import { ClassificationEvidence } from '../../molecules/ClassificationEvidence/C
 import { DisconnectedState } from '../../molecules/DisconnectedState/DisconnectedState'
 import { EmptyState } from '../../molecules/EmptyState/EmptyState'
 import { LocalStatusToast } from '../../molecules/LocalStatusToast/LocalStatusToast'
+import { DiscoveryStatus } from '../../molecules/DiscoveryStatus/DiscoveryStatus'
 import { TriageRunControl } from '../../molecules/TriageRunControl/TriageRunControl'
 import { FilterSheet } from '../../organisms/FilterSheet/FilterSheet'
 import { MessageQueue } from '../../organisms/MessageQueue/MessageQueue'
+import { MailboxReach, type MailboxReachProps } from '../../organisms/MailboxReach/MailboxReach'
 import { MessageReader } from '../../organisms/MessageReader/MessageReader'
 import { formatMessageBody } from '../../organisms/MessageReader/formatMessageBody'
 import { Sidebar, type SidebarItem } from '../../organisms/Sidebar/Sidebar'
@@ -56,6 +59,7 @@ import { useShortcutPreference } from './useShortcutPreference'
 import { legendFor, useWorkbenchShortcuts } from './useWorkbenchShortcuts'
 import {
   afterRemoval,
+  allMailboxes,
   appliedFilter,
   defaultFilter,
   mailboxLabel,
@@ -152,6 +156,8 @@ type WorkbenchPageProps = Readonly<{
    * mailbox that exists.
    */
   mailboxes: readonly SidebarItem[]
+  /** Variant C's mailbox reach replaces the duplicate mailbox navigation group. */
+  mailboxReach?: Omit<MailboxReachProps, 'allLabel' | 'selectedId' | 'onSelect'> | undefined
   /**
    * What the page actually holds: the loaded mailboxes and counts, the
    * bounds that may have cut them, and when they were last read. It is
@@ -164,6 +170,19 @@ type WorkbenchPageProps = Readonly<{
   queueControls?: ReactNode
   /** Explicit bounded Jev run control, inside the existing queue header. */
   triage?: ComponentProps<typeof TriageRunControl> | undefined
+  /** Controlled sender/subject discovery beyond the rows initially loaded. */
+  discovery?:
+    | Readonly<{
+        scope?: InboxDiscoveryScope | undefined
+        error?: string | undefined
+        loading: boolean
+        /** Changes when a new base reading should clear the submitted query. */
+        resetKey: string
+        onSearch: (query: string) => void
+        onContinue: () => void
+        onClear: () => void
+      }>
+    | undefined
   /**
    * What triage stored about the rows of one reading, and which reading that
    * was. A row with an entry shows that state instead of its own status and,
@@ -230,7 +249,10 @@ const queueControl = '.workbench__queue button'
 // The rows are where the list is read, so the keys still act from them.
 const queueRow = '.workbench__queue .message-row__button'
 
-type PageInput = Pick<WorkbenchPageProps, 'messages' | 'workflows' | 'mailboxes' | 'completion'>
+type PageInput = Pick<
+  WorkbenchPageProps,
+  'messages' | 'workflows' | 'mailboxes' | 'completion' | 'discovery'
+>
 
 const none: ReadonlySet<WorkbenchMessage> = new Set()
 
@@ -266,8 +288,11 @@ function usePendingCompletion(messages: readonly WorkbenchMessage[]) {
  * `generation` counts the user's navigation: K, J, opening a row and
  * changing a filter each move it on.
  */
-function usePageState({ messages, workflows, mailboxes, completion }: PageInput) {
-  const [chosen, setChosen] = useState(defaultFilter)
+function usePageState({ messages, workflows, mailboxes, completion, discovery }: PageInput) {
+  const [chosen, setChosen] = useState(() => ({
+    ...defaultFilter,
+    queryResetKey: discovery?.resetKey,
+  }))
   const [openId, setOpenId] = useState<string>()
   const [pane, setPane] = useState<Pane>('queue')
   const [generation, setGeneration] = useState(0)
@@ -275,13 +300,20 @@ function usePageState({ messages, workflows, mailboxes, completion }: PageInput)
     setGeneration((current) => current + 1)
   }
   const { live, markPending, release } = usePendingCompletion(messages)
-  const filter = appliedFilter(chosen, workflows, mailboxes)
+  const filter = appliedFilter(
+    {
+      ...chosen,
+      query: chosen.queryResetKey === discovery?.resetKey ? chosen.query : '',
+    },
+    workflows,
+    mailboxes,
+  )
   const shown = visibleMessages(live, filter)
   const open = openedMessage(shown, openId)
   // With nothing to read, the reader can't be the mobile pane, now or later.
   if (!open && pane === 'reader') setPane('queue')
   const filterBy = (change: Partial<WorkbenchFilter>) => {
-    setChosen({ ...filter, ...change })
+    setChosen({ ...filter, ...change, queryResetKey: discovery?.resetKey })
     setPane('queue')
     moveOn()
   }
@@ -596,6 +628,7 @@ function CompletedNotice({ notice, state, note, onUndoComplete }: CompletedNotic
 
 type PageTopBarProps = Readonly<{
   topBar: WorkbenchPageProps['topBar']
+  discovery: WorkbenchPageProps['discovery']
   searchScope?: string | undefined
   state: PageState
   searchId: string
@@ -609,6 +642,7 @@ type PageTopBarProps = Readonly<{
 /** The top bar with the page's search. Enter moves focus to the results. */
 function PageTopBar({
   topBar,
+  discovery,
   searchScope,
   state,
   searchId,
@@ -622,13 +656,22 @@ function PageTopBar({
       filters={filters}
       searchId={searchId}
       searchShortcut={singleKeys}
-      searchLabel={`Search loaded ${searchScope ?? 'mail'}`}
-      searchPlaceholder={`Search loaded ${searchScope ?? 'mail'}`}
+      searchLabel={
+        discovery ? 'Search sender and subject' : `Search loaded ${searchScope ?? 'mail'}`
+      }
+      searchPlaceholder={
+        discovery ? 'Search sender + subject' : `Search loaded ${searchScope ?? 'mail'}`
+      }
       searchValue={state.filter.query}
       onSearchChange={(query) => {
         state.filterBy({ query })
+        if (query.trim() === '') discovery?.onClear()
       }}
-      onSearchSubmit={() => {
+      onSearchSubmit={(query) => {
+        if (discovery && query.trim() !== '') {
+          discovery.onSearch(query.trim())
+          return
+        }
         if (root.current) focusInto(root.current, 'queue', false)
       }}
     />
@@ -643,7 +686,8 @@ type PageRailProps = Readonly<
     shortcuts: Preference
     /** Called after a choice, e.g. to close the compact filter sheet. */
     onChoose: () => void
-  } & Pick<PageInput, 'workflows' | 'mailboxes'>
+  } & Pick<PageInput, 'workflows' | 'mailboxes'> &
+    Pick<WorkbenchPageProps, 'mailboxReach'>
 >
 
 /**
@@ -656,16 +700,36 @@ function PageRail({
   shortcuts,
   workflows,
   mailboxes,
+  mailboxReach,
   onChoose,
 }: PageRailProps) {
+  const groups = railGroups({
+    messages: state.messages,
+    filter: state.filter,
+    workflows,
+    mailboxes,
+  })
   return (
     <Sidebar
       label="Filters"
-      groups={railGroups({ messages: state.messages, filter: state.filter, workflows, mailboxes })}
+      groups={mailboxReach ? groups.filter((group) => group.id !== 'mailbox') : groups}
       onSelect={(groupId, itemId) => {
         state.filterBy({ [groupId]: itemId })
         onChoose()
       }}
+      afterGroups={
+        mailboxReach && (
+          <MailboxReach
+            {...mailboxReach}
+            allLabel="All readable mailboxes"
+            selectedId={state.filter.mailbox === allMailboxes ? null : state.filter.mailbox}
+            onSelect={(id) => {
+              state.filterBy({ mailbox: id ?? allMailboxes })
+              onChoose()
+            }}
+          />
+        )
+      }
       shortcuts={legendFor({ singleKeys: shortcuts.on, canComplete })}
       shortcutSetting={{
         label: shortcutSetting.label,
@@ -732,7 +796,12 @@ type PaneProps = Readonly<{ state: PageState; title: string }>
 
 type QueueProps = PaneProps &
   Pick<PageInput, 'mailboxes'> &
-  Readonly<{ evidence: Evidence; scope: QueueScope | undefined; controls?: ReactNode }>
+  Readonly<{
+    evidence: Evidence
+    scope: QueueScope | undefined
+    discovery: boolean
+    controls?: ReactNode
+  }>
 
 /**
  * The queue, headed by the workflow, the applied mailbox filter and what the
@@ -740,7 +809,7 @@ type QueueProps = PaneProps &
  * mailbox, and the scope line under it says so. The queue header shows in
  * the mobile queue pane too, so that line is not desktop-only.
  */
-function Queue({ state, title, mailboxes, evidence, scope, controls }: QueueProps) {
+function Queue({ state, title, mailboxes, evidence, scope, discovery, controls }: QueueProps) {
   const count = state.shown.length
   // Nothing loaded is not a filter that matched nothing, so Reset is offered
   // only where resetting could bring a row back.
@@ -752,7 +821,7 @@ function Queue({ state, title, mailboxes, evidence, scope, controls }: QueueProp
         headingLevel: 1,
         count: `${String(count)} ${count === 1 ? 'result' : 'results'}`,
         context: mailboxLabel(state.filter.mailbox, mailboxes),
-        ...(scope && { scope: scopeText(scope) }),
+        ...(scope && { scope: scopeText(scope, discovery) }),
         controls,
       }}
       messages={queueRows(state.shown, evidence)}
@@ -761,7 +830,13 @@ function Queue({ state, title, mailboxes, evidence, scope, controls }: QueueProp
       empty={
         <EmptyState
           icon="inbox"
-          {...emptyScopeText(scope)}
+          {...(discovery && !scope
+            ? {
+                title: 'No search matches',
+                description:
+                  'No listed sender or subject matched in the scanned mailbox copies. Search further when more pages are available.',
+              }
+            : emptyScopeText(scope))}
           action={nothingLoaded ? undefined : { label: 'Reset filters', onClick: state.reset }}
         />
       }
@@ -1127,7 +1202,9 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   const { state, searchId, root, notice, complete, body, retry, evidence, reviews, shortcuts } =
     useWorkbench(props)
   const sheet = useFilterSheet()
-  const title = queueTitle(props.scope, workflows, state.filter.workflow)
+  const title = props.discovery?.scope
+    ? `“${props.discovery.scope.query}”`
+    : queueTitle(props.scope, workflows, state.filter.workflow)
   const canComplete = completion.mode === 'enabled'
   const closeSheet = () => {
     sheet.close()
@@ -1146,6 +1223,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
       shortcuts={shortcuts}
       workflows={workflows}
       mailboxes={mailboxes}
+      mailboxReach={props.mailboxReach}
       onChoose={sheet.close}
     />
   )
@@ -1156,6 +1234,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
         topBar={
           <PageTopBar
             topBar={props.topBar}
+            discovery={props.discovery}
             searchScope={searchScopeFor(props.scope)}
             state={state}
             searchId={searchId}
@@ -1176,9 +1255,18 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             title={title}
             mailboxes={mailboxes}
             evidence={evidence}
-            scope={props.scope}
+            scope={props.discovery?.scope ? undefined : props.scope}
+            discovery={props.discovery !== undefined}
             controls={
               <>
+                {props.discovery && (
+                  <DiscoveryStatus
+                    scope={props.discovery.scope}
+                    error={props.discovery.error}
+                    loading={props.discovery.loading}
+                    onContinue={props.discovery.onContinue}
+                  />
+                )}
                 {props.queueControls}
                 {props.triage && <TriageRunControl {...props.triage} />}
               </>

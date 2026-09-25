@@ -1,4 +1,4 @@
-import { useId, type ComponentProps } from 'react'
+import { useId, type ComponentProps, type ReactNode } from 'react'
 import type { AccountMarker } from '../../atoms/AccountMarker/AccountMarker'
 import type { Icon } from '../../atoms/Icon/Icon'
 import { NavigationItem } from '../../molecules/NavigationItem/NavigationItem'
@@ -39,6 +39,8 @@ type SidebarProps = Readonly<{
   groups: readonly SidebarGroup[]
   /** Called with the group and item ids when a row is pressed. */
   onSelect: (groupId: string, itemId: string) => void
+  /** Optional content after the navigation groups, inside the scrolling rail. */
+  afterGroups?: ReactNode | undefined
   /** Shown in the fixed help area at the bottom. Empty or left out: no help area. */
   shortcuts?: ComponentProps<typeof ShortcutLegend>['shortcuts'] | undefined
   /**
@@ -110,6 +112,7 @@ export function Sidebar({
   label,
   groups,
   onSelect,
+  afterGroups,
   shortcuts = [],
   shortcutSetting,
   className,
@@ -122,6 +125,7 @@ export function Sidebar({
         {visible.map((group) => (
           <Group key={group.id} group={group} onSelect={onSelect} />
         ))}
+        {afterGroups}
       </div>
       {(shortcuts.length > 0 || shortcutSetting !== undefined) && (
         <div className="sidebar__help">

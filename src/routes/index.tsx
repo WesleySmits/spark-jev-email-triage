@@ -18,8 +18,11 @@ import {
 } from '../app/inbox-coverage-adapter'
 import { failedCoverage, inboxCoverage, type InboxCoverage } from '../app/inbox-coverage'
 import { ReviewDesk, type DeskReason, type DeskView } from '../app/review-desk'
-import type { InboxListRequest } from '../app/live-inbox'
+import type { DeskDiscovery, DeskRefresh } from '../app/review-desk'
+import type { InboxDiscoveryRequest, InboxListRequest } from '../app/live-inbox'
 import { useTriageRunController } from '../app/triage-run-client'
+import { mailboxReachItems } from '../app/mailbox-reach'
+import { refreshNotice } from '../app/refresh-notice'
 
 export const Route = createFileRoute('/')({
   loader: () => readWithStart(() => ReviewDesk.open()),
@@ -122,18 +125,50 @@ function useConnectedNotice(root: RefObject<HTMLDivElement | null>, arrived: boo
 }
 
 type PageProps = Readonly<{
-  inbox: DeskView
+  inbox: DeskView | DeskRefresh
   root: RefObject<HTMLDivElement | null>
   onReady: () => Promise<void>
   onRefresh: () => Promise<void>
   onChange: (request: InboxListRequest) => Promise<void>
+  discovery: DeskDiscovery | undefined
+  onSearch: (request: InboxDiscoveryRequest) => Promise<void>
+  onClearSearch: () => void
   coverage: InboxCoverage | undefined
   loading: boolean
   triage: ReturnType<typeof useTriageRunController>
 }>
 
-/** The page for what the loader found: waiting, no mailboxes or the inbox. */
-function Page({ inbox, root, onReady, onRefresh, onChange, coverage, loading, triage }: PageProps) {
+type ReadyDesk = Extract<DeskView, { status: 'ready' }> | Extract<DeskRefresh, { status: 'ready' }>
+type LoadedPageProps = Omit<PageProps, 'inbox' | 'onReady'> & Readonly<{ inbox: ReadyDesk }>
+
+function EmptyInbox({ onRefresh, loading }: Pick<PageProps, 'onRefresh' | 'loading'>) {
+  const reread = () => {
+    if (!loading) void onRefresh()
+  }
+  return (
+    <main className="app-notice">
+      <EmptyState
+        icon="inbox"
+        title="No readable mailboxes"
+        description="Spark reports no mailbox this app may read."
+        action={{ label: 'Check again', onClick: reread }}
+      />
+    </main>
+  )
+}
+
+function LoadedPage({
+  inbox,
+  root,
+  onRefresh,
+  onChange,
+  discovery,
+  onSearch,
+  onClearSearch,
+  coverage,
+  loading,
+  triage,
+}: LoadedPageProps) {
   const rememberReadFocus = useInboxReadFocus(root, loading)
   const reread = () => {
     if (!loading) void onRefresh()
@@ -146,40 +181,48 @@ function Page({ inbox, root, onReady, onRefresh, onChange, coverage, loading, tr
     rememberReadFocus(focus)
     return onChange(request)
   }
-  if (inbox.status === 'unavailable') return <Connection reason={inbox.reason} onReady={onReady} />
-  if (inbox.mailboxes.length === 0) {
-    return (
-      <main className="app-notice">
-        <EmptyState
-          icon="inbox"
-          title="No readable mailboxes"
-          description="Spark reports no mailbox this app may read."
-          action={{ label: 'Check again', onClick: reread }}
-        />
-      </main>
-    )
-  }
   // It names what was refreshed: the loaded selection, not a whole mailbox,
   // and whether a mailbox could not be read, because Refresh is what reads
   // them all again. A reading that lost a mailbox keeps the rest, so the
   // retry is global but costs no mail that did arrive.
   const syncLabel = syncScopeLabel(inbox.scope)
   const { view } = inbox.scope
+  const found = discovery?.status === 'ready' ? discovery : undefined
+  const shown = found ?? inbox
+  const refreshSummary = 'refresh' in inbox ? inbox.refresh : undefined
+  const reach = mailboxReachItems(shown.scope, shown.mailboxes, refreshSummary)
   return (
     <div ref={root} className="app-root app-root--inbox">
       <div className="inbox-view__workbench">
         <WorkbenchPage
           key={view}
-          messages={inbox.messages}
+          messages={shown.messages}
           classifications={{
-            reading: inbox.reading,
-            states: inbox.classifications,
-            reviews: inbox.reviews,
+            reading: shown.reading,
+            states: shown.classifications,
+            reviews: shown.reviews,
           }}
-          loadBody={ReviewDesk.focus(inbox)}
+          loadBody={ReviewDesk.focus(shown)}
           workflows={ReviewDesk.workflows}
-          mailboxes={inbox.mailboxes}
+          mailboxes={shown.mailboxes}
+          mailboxReach={{ items: reach, onRetry: reread }}
           scope={inbox.scope}
+          discovery={{
+            scope: found?.scope,
+            ...(discovery?.status === 'unavailable' && {
+              error: 'Search unavailable. The loaded selection is still shown.',
+            }),
+            loading,
+            resetKey: inbox.reading,
+            onSearch: (query) => {
+              void onSearch({ view, query })
+            },
+            onContinue: () => {
+              if (found)
+                void onSearch({ view, query: found.scope.query, cursor: found.scope.cursor })
+            },
+            onClear: onClearSearch,
+          }}
           queueControls={
             <>
               <InboxViewBar scope={inbox.scope} loading={loading} onChange={change} />
@@ -237,6 +280,15 @@ function Page({ inbox, root, onReady, onRefresh, onChange, coverage, loading, tr
   )
 }
 
+/** The page for what the loader found: waiting, no mailboxes or the inbox. */
+function Page(props: PageProps) {
+  if (props.inbox.status === 'unavailable') {
+    return <Connection reason={props.inbox.reason} onReady={props.onReady} />
+  }
+  if (props.inbox.mailboxes.length === 0) return <EmptyInbox {...props} />
+  return <LoadedPage {...props} inbox={props.inbox} />
+}
+
 // Recent Spark mail and stored triage. Reviews change only the local review
 // store. The separate Done panel may approve and execute one guarded Spark
 // message-ID action when the server kill switch is enabled. Inbox refresh and
@@ -247,7 +299,7 @@ const initialCoverage = (initial: DeskView, startedAt: string) =>
     : undefined
 
 function coverageUpdate(
-  result: DeskView,
+  result: DeskView | DeskRefresh,
   view: InboxListRequest['view'],
   startedAt: string,
   finishedAt: string,
@@ -258,7 +310,8 @@ function coverageUpdate(
 }
 
 function useDeskReading(initial: DeskView, initialStartedAt: string) {
-  const [inbox, setInbox] = useState<DeskView>(initial)
+  const [inbox, setInbox] = useState<DeskView | DeskRefresh>(initial)
+  const [discovery, setDiscovery] = useState<DeskDiscovery>()
   const [coverage, setCoverage] = useState<InboxCoverage | undefined>(() =>
     initialCoverage(initial, initialStartedAt),
   )
@@ -269,6 +322,7 @@ function useDeskReading(initial: DeskView, initialStartedAt: string) {
     const current = ++sequence.current
     const startedAt = startedAtForRequest(coverage, next, new Date().toISOString())
     request.current = next
+    setDiscovery(undefined)
     setLoading(true)
     const result = await readWithCoverage(
       next.view,
@@ -282,10 +336,47 @@ function useDeskReading(initial: DeskView, initialStartedAt: string) {
       setLoading(false)
     }
   }
-  return { inbox, coverage, loading, read, request } as const
+  const refresh = async () => {
+    const current = ++sequence.current
+    const view = inbox.status === 'ready' ? inbox.scope.view : request.current.view
+    const startedAt = new Date().toISOString()
+    setDiscovery(undefined)
+    setLoading(true)
+    const value = await ReviewDesk.refresh({ view })
+    const finishedAt = new Date().toISOString()
+    if (current === sequence.current) {
+      if (value.status === 'ready') setInbox(value)
+      setCoverage((previous) =>
+        inboxCoverage(previous, coverageUpdate(value, view, startedAt, finishedAt)),
+      )
+      setLoading(false)
+    }
+  }
+  const search = async (next: InboxDiscoveryRequest) => {
+    const current = ++sequence.current
+    setLoading(true)
+    const value = await ReviewDesk.search(next)
+    if (current === sequence.current) {
+      setDiscovery(value)
+      setLoading(false)
+    }
+  }
+  return {
+    inbox,
+    discovery,
+    coverage,
+    loading,
+    read,
+    refresh,
+    search,
+    clearSearch: () => {
+      setDiscovery(undefined)
+    },
+    request,
+  } as const
 }
 
-function loadedMessageSummary(inbox: DeskView) {
+function loadedMessageSummary(inbox: DeskView | DeskRefresh) {
   const count = inbox.status === 'ready' ? inbox.messages.length : 0
   const kind = inbox.status === 'ready' && inbox.scope.view === 'other' ? 'read' : 'unread'
   return {
@@ -297,12 +388,16 @@ function loadedMessageSummary(inbox: DeskView) {
 function Home() {
   const initialRead = Route.useLoaderData()
   const initial = initialRead.value
-  const { inbox, coverage, loading, read, request } = useDeskReading(initial, initialRead.startedAt)
+  const { inbox, discovery, coverage, loading, read, refresh, search, clearSearch, request } =
+    useDeskReading(initial, initialRead.startedAt)
   const root = useRef<HTMLDivElement>(null)
   // Set once Spark answered after the page waited, so the inbox says so.
   const [waited, setWaited] = useState(false)
   const { count, label: messages } = loadedMessageSummary(inbox)
   const notice = useConnectedNotice(root, waited && count > 0)
+  const refreshed = inbox.status === 'ready' && 'refresh' in inbox ? inbox.refresh : undefined
+  const [dismissedRefresh, setDismissedRefresh] = useState<string>()
+  const refreshedNotice = refreshed && refreshNotice(refreshed)
   const triage = useTriageRunController({
     reading: inbox.status === 'ready' ? inbox.reading : undefined,
     gateway: triageGateway,
@@ -317,10 +412,14 @@ function Home() {
           notice.reset()
           return read({ view: request.current.view })
         }}
-        onRefresh={() =>
-          read({ view: inbox.status === 'ready' ? inbox.scope.view : request.current.view })
-        }
+        onRefresh={() => {
+          notice.hide()
+          return refresh()
+        }}
         onChange={read}
+        discovery={discovery}
+        onSearch={search}
+        onClearSearch={clearSearch}
         coverage={coverage}
         loading={loading}
         triage={triage}
@@ -331,6 +430,15 @@ function Home() {
         detail={`${messages} loaded`}
         dismissLabel="Dismiss"
         onDismiss={notice.hide}
+      />
+      <LocalStatusToast
+        visible={Boolean(refreshed && dismissedRefresh !== refreshed.refreshedAt)}
+        title={refreshedNotice?.title}
+        detail={refreshedNotice?.detail}
+        dismissLabel="Dismiss"
+        onDismiss={() => {
+          if (refreshed) setDismissedRefresh(refreshed.refreshedAt)
+        }}
       />
     </>
   )

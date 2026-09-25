@@ -1,0 +1,131 @@
+.mailbox-reach {
+  min-width: 0;
+  color: var(--ink);
+  font: var(--text-ui);
+}
+
+.mailbox-reach__title {
+  margin: 0 0 var(--s2) var(--s2);
+  color: var(--muted);
+  font: var(--text-overline);
+  letter-spacing: var(--tracking-overline);
+  text-transform: uppercase;
+}
+
+.mailbox-reach__list {
+  display: grid;
+  gap: var(--s1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mailbox-reach__all {
+  width: 100%;
+  margin: 0 0 var(--s1);
+  padding: var(--s2);
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--muted);
+  background: transparent;
+  font: var(--text-meta);
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mailbox-reach__all:hover,
+.mailbox-reach__all[aria-pressed='true'] {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+
+.mailbox-reach__item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s1);
+  border-bottom: 1px solid var(--line);
+}
+
+.mailbox-reach__select,
+.mailbox-reach__retry {
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.mailbox-reach__select {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--s2);
+  padding: var(--s2);
+  border-radius: var(--radius-control);
+  text-align: left;
+}
+
+.mailbox-reach__select:hover,
+.mailbox-reach__select[aria-pressed='true'] {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+
+.mailbox-reach__select:focus-visible,
+.mailbox-reach__all:focus-visible,
+.mailbox-reach__retry:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.mailbox-reach__select .account-marker {
+  margin-top: 6px;
+}
+
+.mailbox-reach__copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.mailbox-reach__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mailbox-reach__detail,
+.mailbox-reach__time {
+  color: var(--muted);
+  font: var(--text-meta);
+}
+
+.mailbox-reach__state--complete {
+  color: var(--success);
+}
+
+.mailbox-reach__state--more {
+  color: var(--accent-ink);
+}
+
+.mailbox-reach__retry {
+  margin-right: var(--s1);
+  padding: var(--s1) var(--s2);
+  border-radius: var(--radius-control);
+  color: var(--danger);
+  font: var(--text-meta);
+  font-weight: 700;
+}
+
+.mailbox-reach__retry:hover:enabled {
+  background: var(--danger-soft);
+}
+
+.mailbox-reach__retry:disabled {
+  color: var(--muted);
+  cursor: wait;
+}

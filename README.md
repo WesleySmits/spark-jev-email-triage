@@ -15,9 +15,15 @@ The inbox starts with the ten newest unread messages from every readable
 mailbox, sorted newest first. "Load older" adds another ten-message page per
 mailbox that still has more, with no application page ceiling. Completed pages
 are retained rather than requested again. "Other Inbox" reads the same bounded set for
-messages Spark reports as read. Search and mailbox filtering operate on the
-selected view's loaded rows. A failure is isolated to the mailbox and page it
-happened in: mailboxes that answered are still delivered, and completed pages
+messages Spark reports as read. Mailbox filtering operates on the selected
+view's loaded rows. Search uses the separate `ReviewDesk.search` contract to
+scan listed sender and subject metadata in those rows and, on
+each opaque continuation, add at most one page per still-bounded mailbox. Its
+selected static direction is Variant C: reach and mailbox failures belong in
+the mailbox rail while the queue stays compact. The route uses that rail in
+both the desktop workbench and compact filters sheet.
+A failure is isolated to the mailbox and page it happened in: mailboxes that
+answered are still delivered, and completed pages
 remain visible if a later page fails. Only discovering the mailboxes at all
 makes the whole inbox unavailable. Copies in different mailboxes remain
 distinct even when message ids, subjects or contents match.
@@ -30,9 +36,10 @@ title in both the desktop and the mobile queue pane, marked when another page
 may exist. The figures are counted from the rows that were kept, never
 estimated: a mailbox whose last listing page came back full is reported as
 possibly cut, because a full page only proves more was never asked for. The
-mailbox filter is named "All mailboxes", the search says it searches loaded mail,
-and a reading that loaded nothing reads differently from a filter that matched
-nothing. Neither an empty unread view nor an empty read view claims Inbox Zero.
+mailbox filter is named "All readable mailboxes"; search states that it matches
+listed sender and subject values and reports the copies it scanned. A reading
+that loaded nothing reads differently from a filter that matched nothing.
+Neither an empty unread view nor an empty read view claims Inbox Zero.
 
 The scope also names the mailboxes the reading could not read, so a partial
 failure is visible rather than silent. A first-page failure contributes no
@@ -255,6 +262,31 @@ pnpm readback:spark                      # whether Spark answers on this host
   message's plain-text body, or `null` when it has none, and reads only
   messages the last list offered. Both answer only requests from this
   computer (loopback) and send `Cache-Control: no-store`.
+- `ReviewDesk.search` calls a separate POST server function, so a private
+  query is not placed in a URL or access log. It matches only the sender and
+  subject cells already returned by Spark's read-only `emails` command; those
+  cells may be truncated, and the returned scope says so. It never reads a
+  thread or body. A new query searches the selected view's loaded pages. One
+  matching opaque continuation asks each still-bounded mailbox for at most its
+  next page, keeps failures per mailbox, counts a mailbox copy once across
+  shifting pages, and cannot advance twice when replayed. The scope reports
+  per-mailbox page depth, unique copies scanned and matched, bounds, coarse
+  failures, and search completion time. Spark call logs receive only command,
+  outcome, duration and item count, never the query or mail data.
+- `ReviewDesk.refresh` uses a separate POST server function to rediscover the
+  mailboxes and re-read exactly the page depth already loaded for the selected
+  view. It never extends that window. Shifting page boundaries are deduplicated
+  by mailbox-copy id; complete reads report added, removed and updated copies,
+  including rows that left unread/Inbox after being read or marked Done. A
+  mailbox or later-page failure stays local and does not invent removals from
+  unknown data. Each mailbox reports its completed depth, coarse status and
+  last successful read time. Refresh reads no thread, calls no classifier and
+  performs no mailbox mutation.
+- The root route uses that refresh contract for its Refresh control and keeps
+  the workbench mounted for the same view, so a selected mailbox copy remains
+  selected while it still exists. It shows proved new, read/Done-removed and
+  updated row counts, and keeps Feature 2's bounded Jev run control in the
+  existing queue header.
 - `ReviewDesk.open` also carries the judgment shadow triage last stored
   about each listed row, read through `src/app/stored-classifications.server.ts`
   from the local shadow database, opened read-only. Loading or refreshing
@@ -316,7 +348,8 @@ pnpm readback:spark                      # whether Spark answers on this host
   of the client build; ESLint also keeps components and stories from
   importing `*.server`, `*.functions`, `src/spark` and Node built-ins, and
   keeps routes from importing that server-only code at all.
-- Classification cannot be started in the app, so every message is in one "Recent
+- Classification starts only from the shadow CLI or the explicit, default-off,
+  loopback-only **Start Jev triage** control, so every message is in one "Recent
   mail" workflow. Each row shows what shadow triage last stored about it
   instead: "Triage current", "Triage from earlier", "Triage outdated",
   "Triage failed", "Not triaged" or "Triage unreadable", always as words
@@ -413,7 +446,8 @@ pnpm readback:spark                      # whether Spark answers on this host
   from model uncertainty. Policy in ordinary code sends an ambiguous or
   low-confidence category to review and reports an uncertain priority
   without forcing review. Suspicion only raises review priority. Nothing
-  authorizes a mailbox action, and only the shadow command calls it.
+  authorizes a mailbox action. Only the shadow command and the explicit manual
+  run server call it.
 - `src/eval/reviewed-set.ts` is the reviewed evaluation set: the invented,
   sanitized threads triage is measured against, each with the category,
   priority, handling and the argument for them that a named reviewer settled on

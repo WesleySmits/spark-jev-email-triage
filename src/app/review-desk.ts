@@ -20,10 +20,19 @@ import type { BodyLoader } from './inbox'
 import {
   liveBodyLoader,
   liveWorkflows,
+  type ClassifiedDiscovery,
   type ClassifiedInbox,
+  type ClassifiedRefresh,
+  type InboxDiscoveryRequest,
   type InboxListRequest,
+  type InboxRefreshRequest,
 } from './live-inbox'
-import { getLiveBody, getLiveInbox } from './live-inbox.functions'
+import {
+  getLiveBody,
+  getLiveInbox,
+  refreshLiveInbox,
+  searchLiveInbox,
+} from './live-inbox.functions'
 import type { ConnectionReason } from './reconnect'
 import { checkReview, saveReview } from './review.functions'
 import type { SparkReadiness } from './spark-readiness'
@@ -55,9 +64,14 @@ export type DeskReason = ConnectionReason
  * comes with messages.
  */
 export type DeskView = ClassifiedInbox | Readonly<{ status: 'unavailable'; reason: 'unreachable' }>
+export type DeskDiscovery =
+  ClassifiedDiscovery | Readonly<{ status: 'unavailable'; reason: 'unreachable' }>
+export type DeskRefresh =
+  ClassifiedRefresh | Readonly<{ status: 'unavailable'; reason: 'unreachable' }>
 
 /** No rows to focus in: an unavailable desk lists nothing, sample or otherwise. */
-const rowsOf = (view: DeskView) => (view.status === 'ready' ? view.messages : [])
+const rowsOf = (view: DeskView | DeskDiscovery | DeskRefresh) =>
+  view.status === 'ready' ? view.messages : []
 
 export const ReviewDesk = {
   /** The rail's workflows. Live mail isn't triaged yet, so there is one. */
@@ -81,6 +95,21 @@ export const ReviewDesk = {
     ),
 
   /**
+   * Searches sender and subject metadata through the controlled page range.
+   * A continuation advances at most one page per still-bounded mailbox.
+   */
+  search: (request: InboxDiscoveryRequest): Promise<DeskDiscovery> =>
+    searchLiveInbox({ data: request }).catch(
+      () => ({ status: 'unavailable', reason: 'unreachable' }) as const,
+    ),
+
+  /** Re-reads the loaded window without extending its page depth. */
+  refresh: (request: InboxRefreshRequest): Promise<DeskRefresh> =>
+    refreshLiveInbox({ data: request }).catch(
+      () => ({ status: 'unavailable', reason: 'unreachable' }) as const,
+    ),
+
+  /**
    * Reads the body of one row of `view`, lazily: only when that row opens,
    * and only ever one. Each row is read through the mailbox its own summary
    * names, so one message id listed in two mailboxes stays two rows. A row
@@ -93,7 +122,7 @@ export const ReviewDesk = {
    * That costs no extra provider call, and a judgment that cannot be read
    * never holds up the body.
    */
-  focus: (view: DeskView): BodyLoader =>
+  focus: (view: DeskView | DeskDiscovery | DeskRefresh): BodyLoader =>
     liveBodyLoader(rowsOf(view), (data, signal) => getLiveBody({ data, signal })),
 
   /**
