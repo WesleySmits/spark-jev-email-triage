@@ -135,8 +135,9 @@ function placeBy(
   category: ReviewedLabels['category'],
   priority: ReviewedLabels['priority'],
   lowTrusted: boolean,
+  warning: boolean,
 ): PlacedAttention['state'] {
-  if (informational.has(category)) return 'informational'
+  if (informational.has(category)) return warning ? 'attention' : 'informational'
   if (category === 'suspicious' || pressing.has(priority)) return 'high_priority'
   return priority === 'low' && lowTrusted ? 'informational' : 'attention'
 }
@@ -181,7 +182,7 @@ function stateOf(labels: ClassificationLabels, decided: DecidedLabels, warning: 
   if (decided.category === undefined && labels.review === 'needs_review') return 'needs_review'
   const category = decided.category ?? labels.category
   const lowTrusted = !warning && (decided.priority !== undefined || category === labels.category)
-  return placeBy(category, decided.priority ?? labels.priority, lowTrusted)
+  return placeBy(category, decided.priority ?? labels.priority, lowTrusted, warning)
 }
 
 function placed(

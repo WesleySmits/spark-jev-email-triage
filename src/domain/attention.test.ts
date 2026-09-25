@@ -219,6 +219,8 @@ describe('attentionOf', () => {
   })
 
   it('keeps a possible scam out of information whatever a person decides', () => {
+    const promoted = attentionOf(unverified(possibleScam), { labels: { category: 'promotion' } })
+    expect(promoted).toMatchObject({ state: 'attention', warning: true })
     const confirmed = attentionOf(unverified(possibleScam), { labels: { category: 'other' } })
     expect(confirmed).toMatchObject({ state: 'attention', warning: true, elevated: true })
     const lowered = attentionOf(unverified(possibleScam), {
