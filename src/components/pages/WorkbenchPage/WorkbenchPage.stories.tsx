@@ -1362,6 +1362,18 @@ const m1Current: StoredClassification = { ...m1Unverified, state: 'current' }
 /** The same judgment, once that read found the thread had moved on. */
 const m1Stale: StoredClassification = { ...m1Unverified, state: 'stale', reason: 'newer_message' }
 
+/** Labels policy questioned: a low score, and a possible payment scam. */
+const questionedLabels: ClassificationLabels = {
+  ...judgedLabels,
+  category: 'purchase',
+  priority: 'normal',
+  confidence: 0.61,
+  priorityUncertain: true,
+  review: 'needs_review',
+  reviewPriority: 'elevated',
+  grounds: grounds(['low_category_confidence', 'suspicious'], ['payment_redirect']),
+}
+
 const storedStates: Readonly<Record<string, StoredClassification>> = {
   m1: m1Unverified,
   m2: {
@@ -1369,16 +1381,7 @@ const storedStates: Readonly<Record<string, StoredClassification>> = {
     reason: 'newer_message',
     subject: subjectOf('m2'),
     judgedAt,
-    labels: {
-      ...judgedLabels,
-      category: 'purchase',
-      priority: 'normal',
-      confidence: 0.61,
-      priorityUncertain: true,
-      review: 'needs_review',
-      reviewPriority: 'elevated',
-      grounds: grounds(['low_category_confidence', 'suspicious'], ['payment_redirect']),
-    },
+    labels: questionedLabels,
   },
   m3: { state: 'provider_failure', subject: subjectOf('m3'), judgedAt, errorCode: 'timeout' },
   m4: { state: 'none' },
@@ -1537,6 +1540,162 @@ export const StoredClassificationsMobile: Story = {
     await expect(content(canvasElement)).toHaveFocus()
     await waitFor(() => expect(evidence(canvasElement)).toHaveTextContent('Triage current'))
     await expect(content(canvasElement).firstElementChild).toHaveClass('message-reader__evidence')
+  },
+}
+
+/**
+ * Stored triage that spreads the sample rows over the attention groups: m1 is
+ * pressing, m2 was questioned by policy, m3 failed and m4 was accepted as a
+ * newsletter. A review of m2 by a person is what settles it.
+ */
+const worklistStates: Readonly<Record<string, StoredClassification>> = {
+  m1: m1Unverified,
+  m2: { state: 'unverified', subject: subjectOf('m2'), judgedAt, labels: questionedLabels },
+  m3: { state: 'provider_failure', subject: subjectOf('m3'), judgedAt, errorCode: 'timeout' },
+  m4: {
+    state: 'unverified',
+    subject: subjectOf('m4'),
+    judgedAt,
+    labels: { ...judgedLabels, category: 'newsletter', priority: 'low', confidence: 0.97 },
+  },
+}
+
+/** A person decided m2's category, as a reading projects that decision. */
+const m2Reviewed: RowReview = {
+  decidedBy: 'reviewer',
+  decision: 'corrected',
+  labels: { category: 'personal' },
+  fields: {
+    category: { decision: 'corrected', reviewer: 'wesley', reviewedAt: '2026-09-23T08:30:00.000Z' },
+  },
+  reviewer: 'wesley',
+  reviewedAt: '2026-09-23T08:30:00.000Z',
+}
+
+const worklist = {
+  ...classified,
+  classifications: { reading: 'reading-1', states: worklistStates },
+  worklist: {},
+} satisfies Partial<Props>
+
+/** The group titles in the queue, in document order, with their counts. */
+const groupTitles = (root: HTMLElement) =>
+  Array.from(root.querySelectorAll('.message-queue__group-title')).map((title) => title.textContent)
+
+/** The rows in the queue, in document order, by subject. */
+const rowOrder = (root: HTMLElement) =>
+  Array.from(root.querySelectorAll('.message-row__subject')).map((row) => row.textContent)
+
+/**
+ * The queue as a worklist: one group per attention state in worklist order,
+ * every group counting its rows and saying the count is of loaded rows, and
+ * every row saying who placed it there and on what. G opens the first row of
+ * the next group; the reader's evidence strip leads with the same answer.
+ * Nothing here classifies, and grouping moves no mail.
+ */
+export const AttentionWorklist: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: { ...worklist, loadBody: fn(provingBodies({})) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const row = (name: RegExp) => canvas.getByRole('button', { name })
+    await expect(groupTitles(canvasElement)).toEqual([
+      'Needs review1 of 4 loaded',
+      'High priority1 of 4 loaded',
+      'Attention0 of 4 loaded',
+      'Not triaged1 of 4 loaded',
+      'Informational1 of 4 loaded',
+    ])
+    await expect(rowOrder(canvasElement)).toEqual([
+      'Correction on invoice AL-2048',
+      'Can delivery move a week earlier?',
+      'Move Friday dinner?',
+      'Newsletter: work that makes room',
+    ])
+    // The first row of the worklist opens first, and says why it is there.
+    await expect(subject(canvasElement)).toHaveTextContent('Correction on invoice AL-2048')
+    await expect(row(/Correction on invoice/)).toHaveTextContent(
+      'Policy asked for a person, sooner. No person has reviewed it. Possible scam or phishing, whatever it is filed as. Model advice: Purchase, Normal. The model was not sure of its priority.',
+    )
+    await expect(evidence(canvasElement)).toHaveTextContent('AttentionNeeds review')
+    await expect(row(/Can delivery move/)).toHaveTextContent(
+      "Personal, the model's; priority High, the model's.",
+    )
+    await expect(row(/Move Friday dinner/)).toHaveTextContent('Triage failed.')
+    await expect(row(/Newsletter: work/)).toHaveTextContent(
+      "Newsletter, the model's; priority Low, the model's.",
+    )
+
+    // G steps to the first row of each next group with rows, then stays put.
+    await userEvent.click(row(/Correction on invoice/))
+    await userEvent.keyboard('g')
+    await expect(subject(canvasElement)).toHaveTextContent('Can delivery move a week earlier?')
+    await userEvent.keyboard('G')
+    await expect(subject(canvasElement)).toHaveTextContent('Move Friday dinner?')
+    await userEvent.keyboard('g')
+    await expect(subject(canvasElement)).toHaveTextContent('Newsletter: work that makes room')
+    await keysChangeNothing(canvasElement, 'g', row(/Newsletter: work/))
+    await expect(shortcutHelp(canvasElement)).toContain('Next group')
+
+    // A mailbox filter narrows the rows, and the counts say so.
+    await rail(canvasElement, 'Atelier Linden')
+    await expect(groupTitles(canvasElement)).toEqual([
+      'Needs review1 of 1 in this filter',
+      'High priority0 of 1 in this filter',
+      'Attention0 of 1 in this filter',
+      'Not triaged0 of 1 in this filter',
+      'Informational0 of 1 in this filter',
+    ])
+    await expect(canvas.queryByRole('button', { name: 'Complete' })).not.toBeInTheDocument()
+  },
+}
+
+/**
+ * A person's decision re-places a row. The reading carries a category
+ * correction for m2, so it leaves Needs review for Attention, its line names
+ * the person's category beside the model's advice, and the model's priority
+ * stays the model's. The warning policy recorded stays with it.
+ */
+export const AttentionWorklistReviewed: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: {
+    ...worklist,
+    classifications: { reading: 'reading-1', states: worklistStates, reviews: { m2: m2Reviewed } },
+    loadBody: fn(provingBodies({})),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(groupTitles(canvasElement)).toEqual([
+      'Needs review0 of 4 loaded',
+      'High priority1 of 4 loaded',
+      'Attention1 of 4 loaded',
+      'Not triaged1 of 4 loaded',
+      'Informational1 of 4 loaded',
+    ])
+    await expect(canvas.getByRole('button', { name: /Correction on invoice/ })).toHaveTextContent(
+      "Personal, decided by a person; priority Normal, the model's. Model advice: Purchase, Normal. Possible scam or phishing, whatever it is filed as. The model was not sure of its priority.",
+    )
+    await userEvent.click(canvas.getByRole('button', { name: /Correction on invoice/ }))
+    await expect(evidence(canvasElement)).toHaveTextContent('AttentionAttention')
+    await expect(evidence(canvasElement)).toHaveTextContent('Possible scam or phishing')
+  },
+}
+
+/**
+ * The worklist at phone width: the groups and their counts stay in the queue
+ * pane, and the reader's mobile bar names the group the open row sits in.
+ */
+export const AttentionWorklistMobile: Story = {
+  globals: { viewport: { value: 'mobile1', isRotated: false } },
+  args: { ...worklist, loadBody: fn(provingBodies({})) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(groupTitles(canvasElement)).toHaveLength(5)
+    await userEvent.click(canvas.getByRole('button', { name: /Move Friday dinner\?/ }))
+    await expect(content(canvasElement)).toHaveFocus()
+    await expect(canvas.getByText('3 of 4 in Recent mail · Not triaged')).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: 'Back to messages' }))
+    await expect(canvas.getByRole('button', { name: /Move Friday dinner\?/ })).toBeVisible()
   },
 }
 

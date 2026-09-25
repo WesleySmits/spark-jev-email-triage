@@ -20,6 +20,7 @@ import type { InboxDiscoveryScope } from '../../../app/live-inbox'
 import { sameSubject } from '../../../domain/review'
 import type { DeskReviewRequest } from '../../../app/desk-review'
 import type { StoredClassification } from '../../../domain/stored-classification'
+import type { Attention, TallyCoverage } from '../../../domain/attention'
 import { IconButton } from '../../atoms/IconButton/IconButton'
 import { ClassificationEvidence } from '../../molecules/ClassificationEvidence/ClassificationEvidence'
 import { DisconnectedState } from '../../molecules/DisconnectedState/DisconnectedState'
@@ -41,7 +42,7 @@ import {
 } from '../../templates/WorkbenchTemplate/WorkbenchTemplate'
 import { ActionProposalAction } from './ActionProposalAction'
 import { observationIn, proposableIn, threadReadIn, type LabelOf } from './action'
-import type { BodyState } from './body'
+import { idleBody, type BodyState } from './body'
 import {
   classificationView,
   evidenceIn,
@@ -52,6 +53,14 @@ import {
   type RecordedReviews,
 } from './classification'
 import { ReviewAction, type CheckReview, type SaveReview } from './ReviewAction'
+import {
+  attentionReason,
+  attentionTitle,
+  groupByAttention,
+  nextGroupStart,
+  orderByAttention,
+  rowAttention,
+} from './attention'
 import { reviewableIn } from './review'
 import { emptyScopeText, scopeText, type QueueScope } from './scope'
 import { useMessageBody } from './useMessageBody'
@@ -197,6 +206,16 @@ type WorkbenchPageProps = Readonly<{
    * currency this page cannot stand behind.
    */
   classifications?: ListedEvidence | undefined
+  /**
+   * Shows the queue as a worklist: rows in attention order under one group
+   * per attention state, each row with a line saying who placed it there and
+   * on what, and each group counting its rows. The attention comes from
+   * `classifications` and the reviews it carries; a row it says nothing
+   * about is grouped as not triaged. `coverage` is what the app proved about
+   * the reading, so a count says whether it is of loaded rows or of every
+   * message the view holds. Left out: the queue is the flat list it was.
+   */
+  worklist?: Readonly<{ coverage?: TallyCoverage | undefined }> | undefined
   /** Whether Complete is offered, and what it does. */
   completion: WorkbenchCompletion
   /**
@@ -249,6 +268,9 @@ const queueControl = '.workbench__queue button'
 // The rows are where the list is read, so the keys still act from them.
 const queueRow = '.workbench__queue .message-row__button'
 
+/** The attention of one row, by its id, as the worklist places it. */
+type AttentionOf = (id: string) => Attention
+
 type PageInput = Pick<
   WorkbenchPageProps,
   'messages' | 'workflows' | 'mailboxes' | 'completion' | 'discovery'
@@ -288,7 +310,10 @@ function usePendingCompletion(messages: readonly WorkbenchMessage[]) {
  * `generation` counts the user's navigation: K, J, opening a row and
  * changing a filter each move it on.
  */
-function usePageState({ messages, workflows, mailboxes, completion, discovery }: PageInput) {
+function usePageState(
+  { messages, workflows, mailboxes, completion, discovery }: PageInput,
+  attentionOf: AttentionOf | undefined,
+) {
   const [chosen, setChosen] = useState(() => ({
     ...defaultFilter,
     queryResetKey: discovery?.resetKey,
@@ -308,7 +333,10 @@ function usePageState({ messages, workflows, mailboxes, completion, discovery }:
     workflows,
     mailboxes,
   )
-  const shown = visibleMessages(live, filter)
+  const kept = visibleMessages(live, filter)
+  // A worklist orders by attention first; the rows keep the caller's order
+  // within a group, and every step, neighbour and position follows it.
+  const shown = attentionOf === undefined ? kept : orderByAttention(kept, attentionOf)
   const open = openedMessage(shown, openId)
   // With nothing to read, the reader can't be the mobile pane, now or later.
   if (!open && pane === 'reader') setPane('queue')
@@ -337,6 +365,14 @@ function usePageState({ messages, workflows, mailboxes, completion, discovery }:
     step: (by: 1 | -1) => {
       if (shown.length === 0) return
       setOpenId(neighbour(shown, open?.id, by))
+      moveOn()
+    },
+    /** Opens the first row of the next group. Without a worklist, or at the last group, nothing. */
+    stepGroup: () => {
+      if (attentionOf === undefined) return
+      const next = nextGroupStart(shown, open?.id, attentionOf)
+      if (next === undefined) return
+      setOpenId(next)
       moveOn()
     },
     select: setOpenId,
@@ -556,6 +592,9 @@ function useShortcuts({ root, state, complete, searchId, singleKeys }: Shortcuts
       previous: () => {
         state.step(-1)
       },
+      group: () => {
+        state.stepGroup()
+      },
       // Only what the user can see: on mobile the queue hides the reader.
       complete: () => {
         if (root.current?.querySelector('.workbench__reader')?.checkVisibility()) complete()
@@ -687,7 +726,7 @@ type PageRailProps = Readonly<
     /** Called after a choice, e.g. to close the compact filter sheet. */
     onChoose: () => void
   } & Pick<PageInput, 'workflows' | 'mailboxes'> &
-    Pick<WorkbenchPageProps, 'mailboxReach'>
+    Pick<WorkbenchPageProps, 'mailboxReach'> & { canGroup: boolean }
 >
 
 /**
@@ -697,6 +736,7 @@ type PageRailProps = Readonly<
 function PageRail({
   state,
   canComplete,
+  canGroup,
   shortcuts,
   workflows,
   mailboxes,
@@ -730,7 +770,7 @@ function PageRail({
           />
         )
       }
-      shortcuts={legendFor({ singleKeys: shortcuts.on, canComplete })}
+      shortcuts={legendFor({ singleKeys: shortcuts.on, canComplete, canGroup })}
       shortcutSetting={{
         label: shortcutSetting.label,
         on: shortcuts.on,
@@ -794,14 +834,47 @@ function FiltersButton({ sheet }: Readonly<{ sheet: Sheet }>) {
 
 type PaneProps = Readonly<{ state: PageState; title: string }>
 
+/** What the worklist groups count, and how it names rows: left out for a flat queue. */
+type Worklist = Readonly<{
+  attentionOf: AttentionOf
+  coverage: TallyCoverage | undefined
+}>
+
 type QueueProps = PaneProps &
   Pick<PageInput, 'mailboxes'> &
   Readonly<{
     evidence: Evidence
     scope: QueueScope | undefined
     discovery: boolean
+    worklist: Worklist | undefined
     controls?: ReactNode
   }>
+
+/**
+ * The worklist's groups, counting the rows the queue shows. A mailbox filter
+ * or a search narrows the rows, so its counts say they are of the filter
+ * and never claim the reading's reach.
+ */
+function queueGroups(
+  state: PageState,
+  worklist: Worklist,
+  scope: QueueScope | undefined,
+  rows: readonly ReturnType<typeof queueRows>[number][],
+) {
+  const filtered = state.filter.mailbox !== allMailboxes || state.filter.query.trim() !== ''
+  const groups = groupByAttention(state.shown, worklist.attentionOf, {
+    coverage: worklist.coverage,
+    filtered,
+    view: searchScopeFor(scope) ?? 'loaded messages',
+  })
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  return groups.map(({ state: id, title, note, messages }) => ({
+    id,
+    title,
+    note,
+    messages: messages.flatMap((message) => byId.get(message.id) ?? []),
+  }))
+}
 
 /**
  * The queue, headed by the workflow, the applied mailbox filter and what the
@@ -809,8 +882,30 @@ type QueueProps = PaneProps &
  * mailbox, and the scope line under it says so. The queue header shows in
  * the mobile queue pane too, so that line is not desktop-only.
  */
-function Queue({ state, title, mailboxes, evidence, scope, discovery, controls }: QueueProps) {
+/** The rows the queue shows, and in a worklist the groups they sit in. */
+function queueContent(
+  state: PageState,
+  evidence: Evidence,
+  scope: QueueScope | undefined,
+  worklist: Worklist | undefined,
+) {
+  const rows = queueRows(state.shown, evidence, worklist?.attentionOf)
+  if (worklist === undefined) return { rows, groups: undefined }
+  return { rows, groups: queueGroups(state, worklist, scope, rows) }
+}
+
+function Queue({
+  state,
+  title,
+  mailboxes,
+  evidence,
+  scope,
+  discovery,
+  worklist,
+  controls,
+}: QueueProps) {
   const count = state.shown.length
+  const { rows, groups } = queueContent(state, evidence, scope, worklist)
   // Nothing loaded is not a filter that matched nothing, so Reset is offered
   // only where resetting could bring a row back.
   const nothingLoaded = scope?.loaded === 0
@@ -824,7 +919,8 @@ function Queue({ state, title, mailboxes, evidence, scope, discovery, controls }
         ...(scope && { scope: scopeText(scope, discovery) }),
         controls,
       }}
-      messages={queueRows(state.shown, evidence)}
+      messages={rows}
+      groups={groups}
       currentId={state.open?.id}
       onOpen={state.openMessage}
       empty={
@@ -882,14 +978,23 @@ function ReaderBody({ body, retry }: ReaderBodyProps) {
 
 /**
  * The rows as the queue shows them: a stored state replaces the row's own
- * status, and where a person decided the category, theirs is the one shown.
+ * status, where a person decided the category, theirs is the one shown, and
+ * in a worklist every row says why it sits where it does.
  */
-function queueRows(messages: readonly WorkbenchMessage[], evidence: Evidence) {
+function queueRows(
+  messages: readonly WorkbenchMessage[],
+  evidence: Evidence,
+  attentionOf: AttentionOf | undefined,
+) {
   return messages.map((message) => {
     const found = evidence.of(message.id)
-    return found === undefined
-      ? message
-      : { ...message, ...rowState(found, evidence.reviewOf(message.id)) }
+    const shown =
+      found === undefined
+        ? message
+        : { ...message, ...rowState(found, evidence.reviewOf(message.id)) }
+    return attentionOf === undefined
+      ? shown
+      : { ...shown, reason: attentionReason(attentionOf(message.id)) }
   })
 }
 
@@ -897,15 +1002,22 @@ function queueRows(messages: readonly WorkbenchMessage[], evidence: Evidence) {
 function readerEvidence(
   classification: StoredClassification | undefined,
   review: RowReview | undefined,
+  attention: Attention | undefined,
 ) {
   if (classification === undefined) return undefined
   const { state, detail, facts, note, judgedAt } = classificationView(classification, review)
+  // The worklist's own answer first: where the row sits and why, in the
+  // same words the queue uses, so the reader never says something else.
+  const placed =
+    attention === undefined
+      ? []
+      : [{ term: 'Attention', value: attentionTitle(attention), note: attentionReason(attention) }]
   return (
     <ClassificationEvidence
       title="Jev triage"
       state={state}
       detail={detail}
-      facts={facts}
+      facts={[...placed, ...facts]}
       note={note}
       judged={
         judgedAt === undefined
@@ -1034,6 +1146,8 @@ type ReaderProps = PaneProps &
     evidence: StoredClassification | undefined
     /** What a person decided about it, where anyone has. */
     reviewed: RowReview | undefined
+    /** Where the worklist places the open row, or none for a flat queue. */
+    attention: Attention | undefined
     /** The review panel for the open row, or none when it offers no review. */
     review: ReactNode
     /** The mailbox action panel for the open row, or none when none is offered. */
@@ -1051,6 +1165,7 @@ function Reader({
   retry,
   evidence,
   reviewed,
+  attention,
   review,
   proposal,
   guardedDone = false,
@@ -1066,7 +1181,8 @@ function Reader({
       />
     )
   }
-  const position = `${String(shown.indexOf(open) + 1)} of ${String(shown.length)} in ${title}`
+  const place = `${String(shown.indexOf(open) + 1)} of ${String(shown.length)} in ${title}`
+  const position = attention === undefined ? place : `${place} · ${attentionTitle(attention)}`
   return (
     <MessageReader
       key={open.id}
@@ -1085,7 +1201,7 @@ function Reader({
           dateTime: open.dateTime,
         },
       }}
-      evidence={readerEvidence(evidence, reviewed)}
+      evidence={readerEvidence(evidence, reviewed, attention)}
       review={review}
       proposal={proposal}
       actions={readerActions(complete, singleKeys, guardedDone)}
@@ -1096,8 +1212,34 @@ function Reader({
 }
 
 /** Everything the page ties together: state, focus, the notice and the keys. */
+/**
+ * The worklist the page shows, or none. What the reading listed about every
+ * row, and what was decided since, places the rows before any is open: the
+ * worklist's order must not wait for a body, and a body read never moves a
+ * row between groups.
+ */
+function worklistFor(
+  props: Pick<WorkbenchPageProps, 'classifications' | 'worklist'>,
+  recorded: RecordedReviews,
+): Worklist | undefined {
+  if (props.worklist === undefined) return undefined
+  const listed = evidenceIn(props.classifications, undefined, idleBody, recorded)
+  return {
+    attentionOf: (id) => rowAttention(listed.of(id), listed.reviewOf(id)),
+    coverage: props.worklist.coverage,
+  }
+}
+
+/** Where the worklist places the open row, or nothing without either. */
+function openAttentionIn(worklist: Worklist | undefined, open: WorkbenchMessage | undefined) {
+  if (worklist === undefined || open === undefined) return undefined
+  return worklist.attentionOf(open.id)
+}
+
 function useWorkbench(props: WorkbenchPageProps) {
-  const state = usePageState(props)
+  const reviews = useRecordedReviews(props.review)
+  const worklist = worklistFor(props, reviews.recorded)
+  const state = usePageState(props, worklist?.attentionOf)
   const searchId = useId()
   const root = useRef<HTMLDivElement>(null)
   const restoreRef = useRef<Place | null>(null)
@@ -1112,7 +1254,6 @@ function useWorkbench(props: WorkbenchPageProps) {
     state.open?.id,
     props.classifications?.reading,
   )
-  const reviews = useRecordedReviews(props.review)
   const evidence = evidenceIn(props.classifications, state.open?.id, body, reviews.recorded)
   return {
     state,
@@ -1125,6 +1266,8 @@ function useWorkbench(props: WorkbenchPageProps) {
     evidence,
     reviews,
     shortcuts,
+    worklist,
+    openAttention: openAttentionIn(worklist, state.open),
   } as const
 }
 
@@ -1199,8 +1342,20 @@ function searchScopeFor(scope: QueueScope | undefined) {
  */
 export function WorkbenchPage(props: WorkbenchPageProps) {
   const { workflows, mailboxes, completion } = props
-  const { state, searchId, root, notice, complete, body, retry, evidence, reviews, shortcuts } =
-    useWorkbench(props)
+  const {
+    state,
+    searchId,
+    root,
+    notice,
+    complete,
+    body,
+    retry,
+    evidence,
+    reviews,
+    shortcuts,
+    worklist,
+    openAttention,
+  } = useWorkbench(props)
   const sheet = useFilterSheet()
   const title = props.discovery?.scope
     ? `“${props.discovery.scope.query}”`
@@ -1220,6 +1375,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
     <PageRail
       state={state}
       canComplete={canComplete}
+      canGroup={worklist !== undefined}
       shortcuts={shortcuts}
       workflows={workflows}
       mailboxes={mailboxes}
@@ -1257,6 +1413,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             evidence={evidence}
             scope={props.discovery?.scope ? undefined : props.scope}
             discovery={props.discovery !== undefined}
+            worklist={worklist}
             controls={
               <>
                 {props.discovery && (
@@ -1282,6 +1439,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             retry={retry}
             evidence={evidence.open}
             reviewed={evidence.openReview}
+            attention={openAttention}
             singleKeys={shortcuts.on}
             review={readerReview(
               reviews.save,

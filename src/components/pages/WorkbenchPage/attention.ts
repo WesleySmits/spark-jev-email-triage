@@ -39,6 +39,9 @@ const attentionTitles = {
   informational: 'Informational',
 } as const satisfies Record<AttentionState, string>
 
+/** The group title one row's attention gives it, e.g. "Needs review". */
+export const attentionTitle = (attention: Attention) => attentionTitles[attention.state]
+
 /**
  * The attention of one row, from what the reading listed about it and what
  * a person decided. A row the reading listed nothing about is unjudged as

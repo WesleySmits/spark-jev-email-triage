@@ -157,6 +157,15 @@ function EmptyInbox({ onRefresh, loading }: Pick<PageProps, 'onRefresh' | 'loadi
   )
 }
 
+/**
+ * What the Inbox Zero scan proved about the selected view, for the worklist's
+ * counts. Without a scan nothing is proved, so counts are of loaded rows.
+ */
+function worklistCoverage(coverage: InboxCoverage | undefined, view: InboxListRequest['view']) {
+  if (coverage === undefined) return undefined
+  return { result: coverage[view === 'unread' ? 'unread' : 'read'].result }
+}
+
 function LoadedPage({
   inbox,
   root,
@@ -207,6 +216,7 @@ function LoadedPage({
           mailboxes={shown.mailboxes}
           mailboxReach={{ items: reach, onRetry: reread }}
           scope={inbox.scope}
+          worklist={{ coverage: worklistCoverage(coverage, view) }}
           discovery={{
             scope: found?.scope,
             ...(discovery?.status === 'unavailable' && {
