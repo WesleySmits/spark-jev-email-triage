@@ -363,9 +363,9 @@ pnpm readback:spark                      # whether Spark answers on this host
   was judged. `auto_accepted` reads as the model accepting its labels, never
   as a review by a person. The review panel shows category confidence as a
   percentage labelled "Model score"; this is the model's raw score, not a
-  calibrated probability of correctness. The page can save a category
-  review but cannot change a mailbox. The separate guarded Done panel can
-  execute only after explicit approval and confirmation. Spark's list
+  calibrated probability of correctness. The page can save a review of the
+  category, the priority or both, but cannot change a mailbox. The separate
+  guarded Done panel can execute only after explicit approval and confirmation. Spark's list
   shows at most 30 characters of a sender
   and 50 of a subject and has no uncut or structured form. A cut sender keeps its whole name when the address
   was cut, otherwise the visible start; a cut subject keeps its visible
@@ -398,8 +398,9 @@ pnpm readback:spark                      # whether Spark answers on this host
   rechecks the exact subject against the store in a transaction, without
   reading Spark; `unverified` is not proof of live currency. Reviews are
   append-only, retain the original judgment, and record the server's local
-  OS account name and timestamp. The latest applicable review determines
-  the displayed labels after reload; it never makes a classification current.
+  OS account name and timestamp. For each field, the latest applicable review
+  that decided it determines the displayed label after reload; a review never
+  makes a classification current.
   Review POSTs and save readback are loopback-only with `no-store` responses.
   A lost response is an unknown outcome, with readback and a retry using the
   same request id to avoid duplicate reviews. The pending subject, chosen
