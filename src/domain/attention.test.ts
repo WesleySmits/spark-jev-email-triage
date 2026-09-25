@@ -135,7 +135,7 @@ describe('attentionOf', () => {
     })
   })
 
-  it('lets a decision about either field settle a judgment that asked for a person', () => {
+  it('lets a decision about the category settle a judgment that asked for a person', () => {
     expect(
       attentionOf(unverified(askedForAPerson), { labels: { category: 'other' } }),
     ).toMatchObject({
@@ -146,8 +146,24 @@ describe('attentionOf', () => {
       advice: { category: 'other', priority: 'normal' },
     })
     expect(
-      attentionOf(unverified(askedForAPerson), { labels: { priority: 'high' } }),
-    ).toMatchObject({ state: 'high_priority', categoryBy: 'classifier', priorityBy: 'reviewer' })
+      attentionOf(unverified(askedForAPerson), {
+        labels: { category: 'personal', priority: 'high' },
+      }),
+    ).toMatchObject({ state: 'high_priority', categoryBy: 'reviewer', priorityBy: 'reviewer' })
+  })
+
+  it('keeps asking for a person about the category when only the priority was decided', () => {
+    // Every ground policy records is about the category, so a priority
+    // decision leaves the question open. The decided priority is still the
+    // person's, and places nothing until the category is decided.
+    for (const questioned of [askedForAPerson, possibleScam]) {
+      expect(attentionOf(unverified(questioned), { labels: { priority: 'high' } })).toMatchObject({
+        state: 'needs_review',
+        categoryBy: 'classifier',
+        priority: 'high',
+        priorityBy: 'reviewer',
+      })
+    }
   })
 
   it('places a row by the category a person chose and keeps the advice beside it', () => {
@@ -205,7 +221,9 @@ describe('attentionOf', () => {
   it('keeps a possible scam out of information whatever a person decides', () => {
     const confirmed = attentionOf(unverified(possibleScam), { labels: { category: 'other' } })
     expect(confirmed).toMatchObject({ state: 'attention', warning: true, elevated: true })
-    const lowered = attentionOf(unverified(possibleScam), { labels: { priority: 'low' } })
+    const lowered = attentionOf(unverified(possibleScam), {
+      labels: { category: 'other', priority: 'low' },
+    })
     expect(lowered).toMatchObject({ state: 'attention', warning: true })
     const refiled = attentionOf(unverified(possibleScam), { labels: { category: 'suspicious' } })
     expect(refiled).toMatchObject({ state: 'high_priority', warning: true })
