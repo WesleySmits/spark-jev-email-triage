@@ -21,13 +21,16 @@ const target = (mailboxId: string) => ({
   latestMessageId: '11',
 })
 
-const judged = {
-  copy: { mailboxId: studio, messageId: '11' },
+/** The judgment of one copy's shown version: the one that explains a decision about it. */
+const judgedIn = (mailboxId: string) => ({
+  copy: { mailboxId, messageId: '11' },
   threadId: 't-11',
   latestMessageId: '11',
   rubric: 'email-triage.v2',
   classifierVersion: 'jev-1.13.0',
-}
+})
+
+const judged = judgedIn(studio)
 
 const decidedAt = '2026-09-26T09:15:00.000Z'
 
@@ -35,7 +38,7 @@ const decide = (outcome: HandlingOutcome, mailboxId = studio) =>
   decideHandling({
     outcome,
     target: target(mailboxId),
-    basis: { classification: judged },
+    basis: { classification: judgedIn(mailboxId) },
     decidedAt,
   })
 
@@ -136,6 +139,26 @@ describe('parseHandlingDecision', () => {
 
   it('accepts a decision about one named version', () => {
     expect(parseHandlingDecision(valid)).toEqual(valid)
+  })
+
+  it('accepts a judgment of the exact version the decision names', () => {
+    const explained = { ...valid, basis: { classification: judged } }
+    expect(parseHandlingDecision(explained)).toEqual(explained)
+  })
+
+  it('refuses a judgment of another copy or another version as the explanation', () => {
+    const basisFor = (classification: ReturnType<typeof judgedIn>) => ({
+      ...valid,
+      basis: { classification },
+    })
+    // The same provider id, read in another mailbox: another row's judgment.
+    expect(parseHandlingDecision(basisFor(judgedIn(alias)))).toBeNull()
+    expect(
+      parseHandlingDecision(basisFor({ ...judged, copy: { mailboxId: studio, messageId: '12' } })),
+    ).toBeNull()
+    expect(parseHandlingDecision(basisFor({ ...judged, threadId: 't-12' }))).toBeNull()
+    expect(parseHandlingDecision(basisFor({ ...judged, latestMessageId: '12' }))).toBeNull()
+    expect(() => decideHandling(basisFor(judgedIn(alias)))).toThrow()
   })
 
   it('refuses anything it cannot read as one exact decision', () => {

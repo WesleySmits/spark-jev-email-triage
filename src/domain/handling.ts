@@ -41,7 +41,11 @@
  *   decided. A later message breaks the proposal it produced, exactly as
  *   `actionStanding` already refuses an approval of a version that moved on.
  * - A judgment may explain a decision and authorizes none. `basis` is
- *   recorded so a person can see what the decision was made from.
+ *   recorded so a person can see what the decision was made from, and it
+ *   must name the exact version the decision names: the same mailbox copy,
+ *   the same thread and the same latest message. A judgment about another
+ *   copy, or about a version that has moved on, is refused rather than
+ *   recorded as the reason one row's mail would be archived.
  * - Nothing here holds a subject, an address or a body: ids, versions,
  *   instants and content-free codes only.
  *
@@ -53,12 +57,13 @@ import { z } from 'zod'
 import {
   actionTargetSchema,
   proposeMailboxAction,
+  type ActionTarget,
   type MailboxActionProposal,
 } from './mailbox-action'
-import type { MailboxCopyRef } from './mailbox-copy'
+import { mailboxCopyId, type MailboxCopyRef } from './mailbox-copy'
 // One instant, written the same way every time, as reviews and proposals are kept.
 import { utcInstant } from './review'
-import { judgedSubjectSchema } from './stored-classification'
+import { judgedSubjectSchema, type JudgedSubject } from './stored-classification'
 
 /**
  * The four outcomes a person may decide for one message:
@@ -116,22 +121,38 @@ export const effectOf = (outcome: HandlingOutcome): HandlingEffect => handlingEf
 export const proposesDone = (outcome: HandlingOutcome): boolean =>
   effectOf(outcome) === 'work_status_and_done_proposal'
 
-const handlingDecisionSchema = z.strictObject({
-  outcome: handlingOutcomeSchema,
-  /**
-   * The selected row and the thread version it was decided against. The same
-   * target the guarded Done path already takes, so a decision that proposes
-   * an action needs nothing added to it afterwards.
-   */
-  target: actionTargetSchema,
-  /**
-   * The judgment shown when the person decided, where one explains it. It
-   * records what the decision was made from and permits nothing.
-   */
-  basis: z.strictObject({ classification: judgedSubjectSchema }).nullable(),
-  /** Accepted in any offset, kept in UTC, so decisions compare as written. */
-  decidedAt: z.iso.datetime({ offset: true }).transform(utcInstant),
-})
+/**
+ * Whether a judgment describes the exact version a decision names. A
+ * classification of another mailbox copy, or of a thread version that has
+ * been replaced, explains nothing about this row and is never carried as if
+ * it did.
+ */
+const describes = (classification: JudgedSubject, target: ActionTarget) =>
+  mailboxCopyId(classification.copy) === mailboxCopyId(target.copy) &&
+  classification.threadId === target.threadId &&
+  classification.latestMessageId === target.latestMessageId
+
+const handlingDecisionSchema = z
+  .strictObject({
+    outcome: handlingOutcomeSchema,
+    /**
+     * The selected row and the thread version it was decided against. The same
+     * target the guarded Done path already takes, so a decision that proposes
+     * an action needs nothing added to it afterwards.
+     */
+    target: actionTargetSchema,
+    /**
+     * The judgment shown when the person decided, where one explains it. It
+     * records what the decision was made from and permits nothing.
+     */
+    basis: z.strictObject({ classification: judgedSubjectSchema }).nullable(),
+    /** Accepted in any offset, kept in UTC, so decisions compare as written. */
+    decidedAt: z.iso.datetime({ offset: true }).transform(utcInstant),
+  })
+  .refine(({ basis, target }) => basis === null || describes(basis.classification, target), {
+    message: 'A basis names the exact version the decision names',
+    path: ['basis'],
+  })
 
 export type HandlingDecision = Readonly<z.infer<typeof handlingDecisionSchema>>
 
