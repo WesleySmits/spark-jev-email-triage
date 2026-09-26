@@ -241,7 +241,7 @@ function executionStageFor(
     id: 'execution',
     name: 'Execution',
     state: { label: 'Blocked', tone: 'neutral' },
-    detail: 'No Spark action was sent. Withdraw this proposal to start again.',
+    detail: 'No Spark action was sent. Use Change decision above to make a new choice.',
   }
 }
 
