@@ -2933,8 +2933,57 @@ const expectedEffect = (root: HTMLElement) =>
 const press = (root: HTMLElement, name: string) =>
   userEvent.click(within(root).getByRole('button', { name, hidden: false }))
 
-/** A story whose open row may be proposed against, listing `states`. */
-const proposing = (states: Readonly<Record<string, StoredClassification>> = storedStates) =>
+/** The handling step in the reader: the four outcomes and what they change. */
+const handlingPanel = (root: HTMLElement) =>
+  root.querySelector<HTMLElement>('.workbench__reader .handling-panel')
+
+/** What the page's polite live region is announcing about the decision. */
+const handlingAnnounced = (root: HTMLElement) => root.querySelector('.workbench__handling-status')
+
+/** The outcome as a person picks it: one radio in the handling group. */
+const chooseOutcome = (root: HTMLElement, name: string) =>
+  userEvent.click(within(root).getByRole('radio', { name, hidden: false }))
+
+/** Choosing Handle now and recording it, which is the only way to propose. */
+async function decideHandleNow(root: HTMLElement) {
+  await chooseOutcome(root, 'Handle now')
+  await press(root, 'Record decision')
+}
+
+/** Recording one local outcome: a reply is owed, and no provider is reached. */
+async function decideReplyNeeded(root: HTMLElement) {
+  await waitFor(() => expect(evidence(root)).toHaveTextContent('Triage current'))
+  await chooseOutcome(root, 'Reply needed')
+  await press(root, 'Record decision')
+  await expect(handlingPanel(root)).toHaveTextContent('Local work status')
+}
+
+/**
+ * The whole guarded path a person walks for one message: decide Handle now,
+ * approve that exact proposal, then separately confirm the one attempt. Each
+ * step stays its own press, which is the point of the path.
+ */
+async function walkGuardedDone(root: HTMLElement) {
+  await waitFor(() => expect(evidence(root)).toHaveTextContent('Triage current'))
+  await decideHandleNow(root)
+  await press(root, 'Approve')
+  await press(root, 'Confirm and run Spark Done')
+}
+
+/** How a story answers the one guarded execution request the page may send. */
+type ExecuteDone = NonNullable<
+  Extract<NonNullable<Props['proposals']>, { mode: 'enabled' }>['onExecute']
+>
+
+/** No Spark action ever runs in a story: every execution answer is fictional. */
+const staysBlocked: ExecuteDone = () =>
+  Promise.resolve({ status: 'blocked' as const, reason: 'disabled' as const })
+
+/** A story whose open row may be decided about, listing `states`. */
+const proposing = (
+  states: Readonly<Record<string, StoredClassification>> = storedStates,
+  onExecute: ExecuteDone = staysBlocked,
+) =>
   ({
     ...classified,
     classifications: reading('reading-1', states),
@@ -2950,7 +2999,7 @@ const proposing = (states: Readonly<Record<string, StoredClassification>> = stor
             approvedAt: new Date().toISOString(),
           }),
         }),
-      onExecute: () => Promise.resolve({ status: 'blocked' as const, reason: 'disabled' as const }),
+      onExecute,
     },
   }) satisfies Partial<Props>
 
@@ -2974,7 +3023,19 @@ export const ProposeMailboxAction: Story = {
       'Nothing is proposed, so nothing would change.',
     )
 
-    await press(canvasElement, 'Propose Spark Done')
+    // The handling step is the only way into Spark Done, and it says what
+    // each outcome changes before anything is chosen.
+    await expect(handlingPanel(canvasElement)).toHaveTextContent(
+      'Choose the work owed for this exact message version',
+    )
+    await expect(handlingPanel(canvasElement)).toHaveTextContent(
+      'Spark acts on that ID, so another copy carrying it may change too',
+    )
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('Nothing recorded')
+
+    await decideHandleNow(canvasElement)
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('Proposed, not run')
+    await expect(handlingAnnounced(canvasElement)).toHaveTextContent('Handle now')
     await expect(actionPanel(canvasElement)).toHaveTextContent('Waiting for you')
     // Exactly the open row's copy, by the ids a provider would be given.
     // Nothing added an alias copy to it.
@@ -3029,9 +3090,18 @@ export const NothingToProposeAgainst: Story = {
   play: async ({ canvasElement }) => {
     await waitFor(() => expect(actionPanel(canvasElement)).toHaveTextContent('Nothing proposed'))
 
+    // Every outcome is about one version, so none of the four can be
+    // recorded. They stay visible and say why.
+    for (const outcome of ['Handle now', 'Reply needed', 'Follow up later', 'Read only']) {
+      await expect(within(canvasElement).getByRole('radio', { name: outcome })).toBeDisabled()
+    }
     await expect(
-      within(canvasElement).getByRole('button', { name: 'Propose Spark Done' }),
+      within(canvasElement).getByRole('button', { name: 'Record decision' }),
     ).toBeDisabled()
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('Nothing to decide against')
+    await expect(handlingPanel(canvasElement)).toHaveTextContent(
+      'does not name an exact version for this message',
+    )
     await expect(actionPanel(canvasElement)).toHaveTextContent('Waiting')
   },
 }
@@ -3068,7 +3138,7 @@ export const ProposalLapsesOnNewerMessage: Story = {
   render: (args) => <WithMovingThread {...args} />,
   play: async ({ canvasElement, args }) => {
     await waitFor(() => expect(evidence(canvasElement)).toHaveTextContent('Triage current'))
-    await press(canvasElement, 'Propose Spark Done')
+    await decideHandleNow(canvasElement)
     await press(canvasElement, 'Approve')
     await expect(actionResult(canvasElement)).toHaveTextContent('Approved, not carried out')
 
@@ -3085,8 +3155,206 @@ export const ProposalLapsesOnNewerMessage: Story = {
     // The copy it named is still named, and now says where it stands.
     await expect(namedCopies(canvasElement)).toEqual(['studio · message m1'])
     await expect(within(canvasElement).getByRole('button', { name: 'Approve' })).toBeDisabled()
+    // The decision that asked for it stays open in the same words, and can
+    // be taken back so a person may decide against what holds now.
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('Out of date')
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('The work stays open')
+    await expect(
+      within(canvasElement).getByRole('button', { name: 'Change decision' }),
+    ).toBeEnabled()
     // No thread was read again to find that out.
     await expect(args.loadBody).toHaveBeenCalledTimes(1)
+  },
+}
+
+/**
+ * The three outcomes that stay in this app. Recording one keeps the work
+ * open here and asks Spark for nothing: no proposal is made, the action
+ * panel stays empty, and the copy says the mail is still in the Inbox and
+ * that nothing was stored. All data in this story is fictional.
+ */
+export const HandlingRecordsLocalWorkOnly: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: proposing(),
+  play: async ({ canvasElement }) => {
+    await decideReplyNeeded(canvasElement)
+    await expect(handlingPanel(canvasElement)).toHaveTextContent(
+      'The mail stays in your Spark Inbox',
+    )
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('nothing was stored')
+
+    // Nothing was proposed, so the guarded path was never entered.
+    await expect(actionPanel(canvasElement)).toHaveTextContent('Nothing proposed')
+    await expect(namedCopies(canvasElement)).toEqual([])
+    await expect(
+      within(canvasElement).queryByRole('button', { name: 'Approve' }),
+    ).not.toBeInTheDocument()
+
+    // A decision can be taken back, which leaves nothing behind.
+    await press(canvasElement, 'Change decision')
+    await expect(handlingAnnounced(canvasElement)).toHaveTextContent('Decision cleared')
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('Nothing recorded')
+  },
+}
+
+/**
+ * Handle now, approved and then confirmed, with a fictional provider answer
+ * that reads back as confirmed. Only that readback is shown as Done, and the
+ * decision is locked afterwards: nothing here may suggest the attempt can be
+ * repeated. No Spark action runs.
+ */
+export const HandleNowRunsGuardedDone: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: proposing(storedStates, () => Promise.resolve({ status: 'confirmed' as const })),
+  play: async ({ canvasElement }) => {
+    await walkGuardedDone(canvasElement)
+
+    await waitFor(() => expect(handlingPanel(canvasElement)).toHaveTextContent('Done confirmed'))
+    await expect(handlingPanel(canvasElement)).toHaveTextContent(
+      'read back in Archive and absent from Inbox',
+    )
+    await expect(actionResult(canvasElement)).toHaveTextContent('Done confirmed')
+    await expect(
+      within(canvasElement).getByRole('button', { name: 'Change decision' }),
+    ).toBeDisabled()
+  },
+}
+
+/** A confirmed Done belongs to the older message, not to a later thread version. */
+export const ConfirmedDoneLeavesNewerMessageOpen: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: proposing(storedStates, () => Promise.resolve({ status: 'confirmed' as const })),
+  render: (args) => <WithMovingThread {...args} />,
+  play: async ({ canvasElement, args }) => {
+    await walkGuardedDone(canvasElement)
+    await waitFor(() => expect(handlingPanel(canvasElement)).toHaveTextContent('Done confirmed'))
+
+    await press(canvasElement, 'Refresh mail')
+    await waitFor(() => expect(handlingPanel(canvasElement)).toHaveTextContent('New work open'))
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('Earlier Spark Done confirmed')
+    await expect(handlingPanel(canvasElement)).toHaveTextContent(
+      'That confirmation does not handle the current version; the work stays open',
+    )
+    await expect(handlingAnnounced(canvasElement)).toHaveTextContent('New work open')
+    await expect(
+      within(canvasElement).getByRole('button', { name: 'Change decision' }),
+    ).toBeDisabled()
+    await expect(args.loadBody).toHaveBeenCalledTimes(1)
+  },
+}
+
+/**
+ * The same path, with a provider answer that did not settle. Spark may have
+ * changed the message and may not, so the work stays visibly open, the
+ * attempt is locked against another automatic run, and nothing anywhere
+ * reads as finished. No Spark action runs.
+ */
+export const UncertainDoneStaysOpen: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: proposing(storedStates, () => Promise.resolve({ status: 'uncertain' as const })),
+  play: async ({ canvasElement }) => {
+    await walkGuardedDone(canvasElement)
+
+    await waitFor(() =>
+      expect(handlingPanel(canvasElement)).toHaveTextContent('Still open, unresolved'),
+    )
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('check Spark yourself')
+    await expect(handlingPanel(canvasElement)).not.toHaveTextContent('Done confirmed')
+    await expect(actionPanel(canvasElement)).toHaveTextContent('Uncertain')
+    await expect(handlingAnnounced(canvasElement)).toHaveTextContent('Still open')
+    // Nothing on the page may still claim the mailbox was left alone.
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('Spark may have changed')
+    await expect(handlingPanel(canvasElement)).not.toHaveTextContent('Spark unchanged')
+    await expect(
+      within(canvasElement).getByRole('button', { name: 'Change decision' }),
+    ).toBeDisabled()
+  },
+}
+
+/**
+ * A local outcome, recorded, and then a refresh that lists a judgment the
+ * store contradicts: a later message reached this thread. The decision was
+ * about the version before it, so it reads as out of date and the work stays
+ * open. Nothing is retargeted onto the newer version, and nothing was sent
+ * to Spark for it either way. All data is fictional.
+ */
+export const LocalDecisionLapsesOnNewerMessage: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: proposing(),
+  render: (args) => <WithMovingThread {...args} />,
+  play: async ({ canvasElement, args }) => {
+    await decideReplyNeeded(canvasElement)
+
+    // A refresh lists a judgment the store contradicts: the thread moved on.
+    await press(canvasElement, 'Refresh mail')
+    await waitFor(() => expect(handlingPanel(canvasElement)).toHaveTextContent('Out of date'))
+    await expect(handlingPanel(canvasElement)).toHaveTextContent(
+      'A later message has reached this thread since you decided',
+    )
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('The work stays open')
+    // It still says which decision it was, and stays takeable-back.
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('Reply needed')
+    await expect(handlingAnnounced(canvasElement)).toHaveTextContent('Out of date')
+    await expect(
+      within(canvasElement).getByRole('button', { name: 'Change decision' }),
+    ).toBeEnabled()
+    // Nothing reached a provider for a local outcome, then or now.
+    await expect(actionPanel(canvasElement)).toHaveTextContent('Nothing proposed')
+    await expect(args.loadBody).toHaveBeenCalledTimes(1)
+  },
+}
+
+/**
+ * The same reader with no Spark action path connected. Handle now is offered
+ * and refused in words, the local outcomes still record work here, and no
+ * mailbox action panel is shown at all.
+ */
+export const HandlingWithoutAConnectedAction: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: {
+    ...classified,
+    loadBody: fn(provingBodies({ m1: m1Current })),
+    proposals: { mode: 'off' },
+  },
+  play: async ({ canvasElement }) => {
+    await waitFor(() => expect(evidence(canvasElement)).toHaveTextContent('Triage current'))
+
+    await expect(within(canvasElement).getByRole('radio', { name: 'Handle now' })).toBeDisabled()
+    await expect(handlingPanel(canvasElement)).toHaveTextContent(
+      'no Spark action path is connected',
+    )
+    await expect(actionPanel(canvasElement)).toBeNull()
+
+    await chooseOutcome(canvasElement, 'Read only')
+    await press(canvasElement, 'Record decision')
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('Read only')
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('Local work status')
+  },
+}
+
+/**
+ * The handling step at 320px. The four outcomes stack under the message
+ * instead of squeezing their effect lines out of sight, and nothing
+ * overflows sideways.
+ */
+export const HandlingOnMobile: Story = {
+  globals: { viewport: { value: 'mobile1', isRotated: false } },
+  args: proposing(),
+  play: async ({ canvasElement }) => {
+    await userEvent.click(reviewedRow(canvasElement))
+    await waitFor(() => expect(handlingPanel(canvasElement)).toHaveTextContent('Handle now'))
+
+    // The step sits under the body, inside the region the reader scrolls,
+    // and nothing in it overflows sideways at this width.
+    await expect(content(canvasElement)).toContainElement(handlingPanel(canvasElement))
+    await expect(content(canvasElement).scrollWidth).toBeLessThanOrEqual(
+      content(canvasElement).clientWidth + 1,
+    )
+
+    await chooseOutcome(canvasElement, 'Follow up later')
+    await press(canvasElement, 'Record decision')
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('Follow up later')
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('nothing was stored')
   },
 }
 

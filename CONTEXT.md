@@ -79,8 +79,9 @@ probes `spark accounts` on the executing host; neither proves that all mail,
 the classifier, or local review storage works.
 
 The terms below include future concepts. Logical-message correlation is not
-implemented. The root route exposes only guarded Spark Done, never an
-automatic action from classification or review.
+implemented. Handling outcomes are offered in the reader and stored nowhere:
+a decision is kept while the message stays open. The root route exposes only
+guarded Spark Done, never an automatic action from classification or review.
 
 ## Mailbox
 
@@ -130,12 +131,39 @@ A provider-independent communication that may have more than one delivery or mai
 
 One delivery of a logical message to a recipient or alias. A delivery may produce mailbox copies in more than one mailbox.
 
+## Handling outcome
+
+What a person decided to do about one mailbox copy, as of the thread version
+they were shown: "handle now", "reply needed", "follow up later" or "read
+only". Every outcome changes this application's local record of the work
+owed and nothing else, except "handle now", which also proposes one guarded
+Spark Done, because it is the only outcome claiming the message is finished.
+The other three move no mail, schedule nothing with Spark, and leave the copy
+where it is. Deciding
+an outcome runs no provider command: a proposal it makes still waits for the
+approval, receipt and readback every Spark Done waits for. Reply expectation
+and deadline remain outside review; a handling outcome is a work decision, not
+a classifier label anyone confirms.
+
+The reader offers the four outcomes under the open message. Choosing "handle
+now" is the only way into Spark Done there, and the guarded steps stay
+separate below it. A decision whose action was blocked, lapsed or left
+uncertain keeps saying the work is open, and an uncertain attempt locks the
+decision rather than allowing another automatic run. A row whose exact
+version the reading does not name can record no decision at all; that is
+refused in words. Nothing is stored: a decision is kept while the message
+stays open and is gone after that.
+
 ## Mailbox action
 
-A requested provider mutation. Spark Done addresses one message ID and does
-not accept a mailbox selector. The selected mailbox copy is context for
-preflight and readback, not an exact write boundary. A classification or
-review is not a mailbox action.
+A requested provider mutation. Spark Done addresses exactly one provider
+message ID and accepts no mailbox selector, so the ID, not the row, is what
+Spark acts on. The selected mailbox copy is context for preflight and
+readback, not an exact write boundary: another copy carrying that same ID,
+such as one delivery to an address and an alias, can be affected by an action
+decided on one row. Unresolved attempts are locked by that ID alone, so a
+pending or uncertain receipt blocks every copy sharing it. A classification,
+a review or a handling outcome is not a mailbox action.
 
 ## Action proposal
 
@@ -157,3 +185,17 @@ The durable record claimed before one Spark Done attempt. It stores a
 confirmed status and readback time only after Archive/Inbox verification;
 otherwise a pending or uncertain status prevents an automatic retry on the
 same message ID.
+
+## Opening a message in Spark
+
+Not available. No Spark command or URL scheme was executed and observed to
+select one exact message, so the application claims no such link. The
+supported CLI surface reads accounts, emails and threads only. Spark's help
+describes a desktop deep link that its own Command Center copies for a
+message already selected inside Spark; its payload is opaque and nothing
+documents building one from the provider message ID this application holds.
+Nothing could be run either way here, because Spark's CLI ships with macOS
+Spark Desktop and the host running these checks does not have it. Proving a
+link means running it on the Mac in that Spark session and observing the
+selected message; until then a message ID is something to read and copy,
+never to follow.
