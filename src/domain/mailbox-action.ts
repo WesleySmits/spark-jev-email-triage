@@ -56,7 +56,7 @@ export type MailboxActionKind = z.infer<typeof mailboxActionKindSchema>
  * and the thread version to check immediately before action. Spark does not
  * accept the mailbox id as a write boundary.
  */
-const actionTargetSchema = z.strictObject({
+export const actionTargetSchema = z.strictObject({
   /** The selected row's copy, used for preflight and readback only. */
   copy: mailboxCopyRefSchema,
   /** Provider-local: it means nothing outside `copy.mailboxId`. */
