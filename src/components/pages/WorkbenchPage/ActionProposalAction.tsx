@@ -2,7 +2,6 @@ import { useState } from 'react'
 import type { DoneApprovalResult, DoneExecutionResult } from '../../../app/done-action'
 import {
   admitApproval,
-  proposeMailboxAction,
   type ActionApproval,
   type ApprovalRefusal,
   type MailboxActionProposal,
@@ -20,30 +19,21 @@ import {
   actionResult,
   actionStages,
   actionTargets,
+  blockedText,
   standingOf,
   withdrawnAnnouncement,
   type ActionResult,
   type HeldProposal,
   type LabelOf,
-  type Proposable,
 } from './action'
 
-type ActionProposalActionProps = Readonly<{
-  /**
-   * What a proposal about the open row may name: the one mailbox copy it
-   * would be applied to, and the judgment that explains it. Left out where
-   * the row names no version anyone could propose against, which is when
-   * proposing is offered and refused rather than hidden.
-   */
-  proposable: Proposable | undefined
+export type ProposalDependencies = Readonly<{
   /**
    * What the reading says about that copy's thread now, where it says
    * anything. It is what a held proposal is measured against, so a reading
    * that moves the row on invalidates a proposal made before it.
    */
   observation: TargetObservation | undefined
-  /** How this computer names the person approving. Never a mailbox address. */
-  approver: string
   /** How a mailbox copy is named here: as the rail names its mailbox. */
   labelOf: LabelOf
   /** Server-owned approval and execution. Omitted in isolated Storybook examples. */
@@ -57,23 +47,6 @@ type ActionProposalActionProps = Readonly<{
     | undefined
   onConfirmed?: (() => void) | undefined
 }>
-
-/** The clock the proposal and the approval are stamped with. */
-const now = () => new Date().toISOString()
-
-const blockedMessages: Readonly<Record<string, string>> = {
-  disabled: 'Done actions are switched off on this computer.',
-  invalid_scope: 'This selected message cannot be acted on.',
-  approval: 'The approval expired or no longer matches this proposal.',
-  preflight: 'Spark could not confirm the selected message and thread are unchanged.',
-  receipt_unavailable: 'The local action record is unavailable.',
-  journal_unavailable: 'The local action record is unavailable.',
-  replay: 'This message already has an action attempt. Check Spark manually.',
-  conflict: 'This message already has an action attempt. Check Spark manually.',
-  local_only: 'Done is available only from this local app.',
-  origin: 'Done is available only from this local app.',
-}
-const blockedText = (reason: string) => blockedMessages[reason] ?? 'Done could not proceed.'
 
 function outcomeAnnouncement(result: DoneExecutionResult): string {
   if (result.status === 'confirmed') return 'Spark Done confirmed by Archive and Inbox readback.'
@@ -104,13 +77,12 @@ function executionRequest(
  * it, rather than quietly following the row onto a version nobody proposed
  * against.
  */
-function useProposal({
-  proposable,
+export function useProposal({
   observation,
   onApprove,
   onExecute,
   onConfirmed,
-}: ActionProposalActionProps) {
+}: ProposalDependencies) {
   const [held, setHeld] = useState<HeldProposal | null>(null)
   const [refusal, setRefusal] = useState<ApprovalRefusal | null>(null)
   const [announcement, setAnnouncement] = useState('')
@@ -141,22 +113,14 @@ function useProposal({
         : announcement,
     standing,
     observations,
-    propose: () => {
-      if (proposable === undefined) return
+    /**
+     * Hold the one proposal a handling decision produced. The decision owns
+     * what is proposed and against which version; nothing is proposed here
+     * on its own, and holding one still permits nothing.
+     */
+    propose: (proposal: MailboxActionProposal) => {
       setExecution(null)
-      settle(
-        {
-          proposal: proposeMailboxAction({
-            kind: 'markAsDone',
-            scope: 'spark-message-id',
-            targets: [proposable.target],
-            basis: proposable.basis,
-            proposedAt: now(),
-          }),
-          approval: null,
-        },
-        null,
-      )
+      settle({ proposal, approval: null }, null)
     },
     /**
      * Approving, which is its own transition and its own refusal. The
@@ -211,35 +175,17 @@ function useProposal({
   } as const
 }
 
-type Held = ReturnType<typeof useProposal>
+/** Everything one row's guarded Done path holds, as the hook keeps it. */
+export type Held = ReturnType<typeof useProposal>
 
-const terminal = (result: DoneExecutionResult | null) =>
-  result?.status === 'confirmed' || result?.status === 'uncertain'
-
-/** Propose, approve, then separately confirm execution. */
-function buttonsFor(state: Held, canPropose: boolean, connected: boolean): readonly PanelAction[] {
-  if (state.held === null) {
-    return [
-      {
-        id: 'propose',
-        label: 'Propose Spark Done',
-        variant: 'secondary',
-        disabled: !canPropose,
-        onClick: state.propose,
-      },
-    ]
-  }
-  return [
-    ...approvalButton(state, connected),
-    ...executeButton(state, connected),
-    {
-      id: 'withdraw',
-      label: 'Withdraw',
-      variant: 'quiet',
-      disabled: state.busy || terminal(state.execution),
-      onClick: state.withdraw,
-    },
-  ]
+/**
+ * Approve, then separately confirm execution. Nothing here proposes or
+ * withdraws: the handling decision above the panel owns both, so one message
+ * never carries two ways of asking for the same Spark Done.
+ */
+function buttonsFor(state: Held, connected: boolean): readonly PanelAction[] {
+  if (state.held === null) return []
+  return [...approvalButton(state, connected), ...executeButton(state, connected)]
 }
 
 function approvalButton(state: Held, connected: boolean): readonly PanelAction[] {
@@ -319,16 +265,20 @@ function resultFor(state: Held, connected: boolean): ActionResult {
 }
 
 /**
- * The mailbox action panel for the open message. Approval is persisted by the
- * server; a second click requests one guarded provider attempt. Only a
- * confirmed Archive/Inbox readback is shown as Done.
+ * The mailbox action panel for the open message: the three stages of the one
+ * proposal a handling decision produced, approval, and the separate
+ * confirmation that requests one guarded provider attempt. Only a confirmed
+ * Archive/Inbox readback is shown as Done.
  *
- * Give it a new `key` per row, so one message's proposal never carries to
- * the next.
+ * It renders nothing that proposes: a person asks for Spark Done by deciding
+ * Handle now above it, which is the only way into this path.
  */
-export function ActionProposalAction(props: ActionProposalActionProps) {
-  const state = useProposal(props)
-  const stages = actionStages(state.held, state.standing, props.onExecute !== undefined)
+export function ActionProposalView({
+  state,
+  labelOf,
+  connected,
+}: Readonly<{ state: Held; labelOf: LabelOf; connected: boolean }>) {
+  const stages = actionStages(state.held, state.standing, connected)
   const executionStage = executionStageFor(state.execution, stages[2])
   return (
     <>
@@ -338,20 +288,20 @@ export function ActionProposalAction(props: ActionProposalActionProps) {
         summary="Spark Done acts on a message ID. The mailbox shown here is context, not a write boundary. A new message could arrive between check and action."
         stages={[...stages.slice(0, 2), ...(executionStage === undefined ? [] : [executionStage])]}
         targetsTitle="Selected from"
-        targets={actionTargets(state.held, state.observations, props.labelOf)}
+        targets={actionTargets(state.held, state.observations, labelOf)}
         targetsNote="Spark receives the message ID, not the mailbox ID. Another visible copy may change too."
         targetsEmpty="Nothing is proposed, so no mailbox copy is named."
-        effect={actionEffect(state.held, props.labelOf)}
+        effect={actionEffect(state.held, labelOf)}
         preconditionsTitle="Before anything could run"
         preconditions={actionPreconditions(
           state.held,
           state.standing,
           state.observations,
-          props.labelOf,
-          props.onExecute !== undefined,
+          labelOf,
+          connected,
         )}
-        actions={buttonsFor(state, props.proposable !== undefined, props.onExecute !== undefined)}
-        result={resultFor(state, props.onExecute !== undefined)}
+        actions={buttonsFor(state, connected)}
+        result={resultFor(state, connected)}
       />
       {/* The panel announces nothing itself, so its caller says what happened. */}
       <p className="workbench__action-status" role="status">

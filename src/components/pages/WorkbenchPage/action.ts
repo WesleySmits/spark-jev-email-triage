@@ -412,6 +412,26 @@ export function actionResult(
   }
 }
 
+/**
+ * Why a guarded Done did not proceed, in words. Every reason is a
+ * content-free code from the server or the executor, and each answer says
+ * what it means here without naming a message.
+ */
+const blockedMessages: Readonly<Record<string, string>> = {
+  disabled: 'Done actions are switched off on this computer.',
+  invalid_scope: 'This selected message cannot be acted on.',
+  approval: 'The approval expired or no longer matches this proposal.',
+  preflight: 'Spark could not confirm the selected message and thread are unchanged.',
+  receipt_unavailable: 'The local action record is unavailable.',
+  journal_unavailable: 'The local action record is unavailable.',
+  replay: 'This message already has an action attempt. Check Spark manually.',
+  conflict: 'This message already has an action attempt. Check Spark manually.',
+  local_only: 'Done is available only from this local app.',
+  origin: 'Done is available only from this local app.',
+}
+
+export const blockedText = (reason: string) => blockedMessages[reason] ?? 'Done could not proceed.'
+
 /** What a withdrawal leaves behind: nothing proposed, and nothing done. */
 export const withdrawnAnnouncement = `Proposal withdrawn. Nothing was proposed, approved or carried out. ${unchanged}`
 
