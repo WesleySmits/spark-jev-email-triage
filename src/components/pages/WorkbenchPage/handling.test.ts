@@ -155,16 +155,31 @@ describe('recordedDecision', () => {
     )
   })
 
-  it('keeps provider evidence over a thread that moved on', () => {
-    // An uncertain attempt stays uncertain and stays locked: a later message
-    // says nothing about what Spark may already have done.
+  it('keeps an earlier confirmed Done while reopening work on a newer message', () => {
+    const view = recordedDecision('handle_now', moved, lapsed, { status: 'confirmed' })
+    expect(view.state).toEqual({ label: 'New work open', tone: 'danger' })
+    expect(view.detail).toContain('confirmed by Archive and Inbox readback for the earlier message')
+    expect(view.detail).toContain('does not handle the current version')
+    expect(view.tags).toEqual(['Decision', 'Earlier Spark Done confirmed', 'Work still open'])
+    expect(view.locked).toBe(true)
+  })
+
+  it('keeps an earlier uncertain attempt unresolved when the thread moves on', () => {
     const view = recordedDecision('handle_now', moved, lapsed, { status: 'uncertain' })
     expect(view.state.label).toBe('Still open, unresolved')
+    expect(view.detail).toContain('current version is still open work')
+    expect(view.detail).toContain('no automatic retry')
     expect(view.locked).toBe(true)
-    expect(recordedDecision('handle_now', moved, lapsed, { status: 'confirmed' })).toMatchObject({
-      state: { label: 'Done confirmed' },
-      locked: true,
+  })
+
+  it('keeps a blocked reason and the newer version open', () => {
+    const view = recordedDecision('handle_now', moved, lapsed, {
+      status: 'blocked',
+      reason: 'disabled',
     })
+    expect(view.state.label).toBe('Out of date')
+    expect(view.detail).toContain('switched off on this computer')
+    expect(view.detail).toContain('The work stays open')
   })
 
   it('shows only a confirmed readback as done, and locks that attempt', () => {

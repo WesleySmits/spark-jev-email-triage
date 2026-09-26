@@ -3220,6 +3220,29 @@ export const HandleNowRunsGuardedDone: Story = {
   },
 }
 
+/** A confirmed Done belongs to the older message, not to a later thread version. */
+export const ConfirmedDoneLeavesNewerMessageOpen: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: proposing(storedStates, () => Promise.resolve({ status: 'confirmed' as const })),
+  render: (args) => <WithMovingThread {...args} />,
+  play: async ({ canvasElement, args }) => {
+    await walkGuardedDone(canvasElement)
+    await waitFor(() => expect(handlingPanel(canvasElement)).toHaveTextContent('Done confirmed'))
+
+    await press(canvasElement, 'Refresh mail')
+    await waitFor(() => expect(handlingPanel(canvasElement)).toHaveTextContent('New work open'))
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('Earlier Spark Done confirmed')
+    await expect(handlingPanel(canvasElement)).toHaveTextContent(
+      'That confirmation does not handle the current version; the work stays open',
+    )
+    await expect(handlingAnnounced(canvasElement)).toHaveTextContent('New work open')
+    await expect(
+      within(canvasElement).getByRole('button', { name: 'Change decision' }),
+    ).toBeDisabled()
+    await expect(args.loadBody).toHaveBeenCalledTimes(1)
+  },
+}
+
 /**
  * The same path, with a provider answer that did not settle. Spark may have
  * changed the message and may not, so the work stays visibly open, the

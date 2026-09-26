@@ -202,6 +202,33 @@ function executedRecorded(result: DoneExecutionResult): RecordedView {
   }
 }
 
+/** Keep the old provider result visible without treating a newer version as handled. */
+function executedAfterVersionMoved(
+  result: DoneExecutionResult,
+  reason: keyof typeof movedOn,
+): RecordedView {
+  if (result.status === 'confirmed') {
+    return {
+      title: labels.handle_now,
+      detail: `Spark Done was confirmed by Archive and Inbox readback for the earlier message. ${movedOn[reason]} That confirmation does not handle the current version; the work stays open. ${lockedNote}`,
+      state: { label: 'New work open', tone: 'danger' },
+      tags: ['Decision', 'Earlier Spark Done confirmed', 'Work still open'],
+      locked: true,
+    }
+  }
+  if (result.status === 'uncertain') {
+    return {
+      title: labels.handle_now,
+      detail: `The earlier Spark attempt is uncertain and may have changed that message. ${movedOn[reason]} The current version is still open work. Check Spark yourself; no automatic retry is allowed. ${lockedNote}`,
+      state: { label: 'Still open, unresolved', tone: 'danger' },
+      tags: ['Decision', 'Earlier Spark attempt uncertain', 'Work still open'],
+      locked: true,
+    }
+  }
+  const stale = outOfDate('handle_now', reason)
+  return { ...stale, detail: `${blockedText(result.reason)} ${stale.detail}` }
+}
+
 /** Where one recorded Handle now stands before anything was sent to Spark. */
 function proposedRecorded(standing: ActionStanding | null): RecordedView {
   if (standing?.stage === 'approved') {
@@ -230,10 +257,9 @@ function proposedRecorded(standing: ActionStanding | null): RecordedView {
  * decision out of date whatever it was, because no outcome describes a
  * version the mail has moved past.
  *
- * Provider evidence is answered first and is never discarded by a later
- * message: an attempt that was confirmed or left uncertain keeps saying so,
- * and keeps its lock, because what Spark may already have done does not stop
- * being true when the thread moves on.
+ * Provider evidence is retained when a later message arrives, while the
+ * current version is shown as open work. Confirmed or uncertain attempts
+ * keep their lock because a later message cannot undo their provider result.
  */
 export function recordedDecision(
   outcome: HandlingOutcome,
@@ -241,6 +267,9 @@ export function recordedDecision(
   standing: ActionStanding | null,
   execution: DoneExecutionResult | null,
 ): RecordedView {
+  if (execution !== null && version.status === 'broken') {
+    return executedAfterVersionMoved(execution, version.reason)
+  }
   if (execution !== null) return executedRecorded(execution)
   if (version.status === 'broken') return outOfDate(outcome, version.reason)
   if (outcome !== 'handle_now') return localRecorded(outcome)
