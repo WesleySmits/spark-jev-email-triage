@@ -2950,6 +2950,14 @@ async function decideHandleNow(root: HTMLElement) {
   await press(root, 'Record decision')
 }
 
+/** Recording one local outcome: a reply is owed, and no provider is reached. */
+async function decideReplyNeeded(root: HTMLElement) {
+  await waitFor(() => expect(evidence(root)).toHaveTextContent('Triage current'))
+  await chooseOutcome(root, 'Reply needed')
+  await press(root, 'Record decision')
+  await expect(handlingPanel(root)).toHaveTextContent('Local work status')
+}
+
 /**
  * The whole guarded path a person walks for one message: decide Handle now,
  * approve that exact proposal, then separately confirm the one attempt. Each
@@ -3169,11 +3177,7 @@ export const HandlingRecordsLocalWorkOnly: Story = {
   globals: { viewport: { value: 'desktop', isRotated: false } },
   args: proposing(),
   play: async ({ canvasElement }) => {
-    await waitFor(() => expect(evidence(canvasElement)).toHaveTextContent('Triage current'))
-
-    await chooseOutcome(canvasElement, 'Reply needed')
-    await press(canvasElement, 'Record decision')
-    await expect(handlingPanel(canvasElement)).toHaveTextContent('Local work status')
+    await decideReplyNeeded(canvasElement)
     await expect(handlingPanel(canvasElement)).toHaveTextContent(
       'The mail stays in your Spark Inbox',
     )
@@ -3241,6 +3245,39 @@ export const UncertainDoneStaysOpen: Story = {
     await expect(
       within(canvasElement).getByRole('button', { name: 'Change decision' }),
     ).toBeDisabled()
+  },
+}
+
+/**
+ * A local outcome, recorded, and then a refresh that lists a judgment the
+ * store contradicts: a later message reached this thread. The decision was
+ * about the version before it, so it reads as out of date and the work stays
+ * open. Nothing is retargeted onto the newer version, and nothing was sent
+ * to Spark for it either way. All data is fictional.
+ */
+export const LocalDecisionLapsesOnNewerMessage: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: proposing(),
+  render: (args) => <WithMovingThread {...args} />,
+  play: async ({ canvasElement, args }) => {
+    await decideReplyNeeded(canvasElement)
+
+    // A refresh lists a judgment the store contradicts: the thread moved on.
+    await press(canvasElement, 'Refresh mail')
+    await waitFor(() => expect(handlingPanel(canvasElement)).toHaveTextContent('Out of date'))
+    await expect(handlingPanel(canvasElement)).toHaveTextContent(
+      'A later message has reached this thread since you decided',
+    )
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('The work stays open')
+    // It still says which decision it was, and stays takeable-back.
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('Reply needed')
+    await expect(handlingAnnounced(canvasElement)).toHaveTextContent('Out of date')
+    await expect(
+      within(canvasElement).getByRole('button', { name: 'Change decision' }),
+    ).toBeEnabled()
+    // Nothing reached a provider for a local outcome, then or now.
+    await expect(actionPanel(canvasElement)).toHaveTextContent('Nothing proposed')
+    await expect(args.loadBody).toHaveBeenCalledTimes(1)
   },
 }
 

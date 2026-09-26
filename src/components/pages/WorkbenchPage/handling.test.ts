@@ -4,7 +4,9 @@ import {
   approveProposal,
   actionStanding,
   proposeMailboxAction,
+  targetStanding,
   type ActionStanding,
+  type ActionTarget,
   type TargetObservation,
 } from '../../../domain/mailbox-action'
 import {
@@ -45,6 +47,21 @@ const approval = approveProposal(proposal, {
 const proposed = actionStanding(proposal, null, [read('11')])
 const approved = actionStanding(proposal, approval, [read('11')])
 const lapsed: ActionStanding = actionStanding(proposal, approval, [read('12')])
+
+/** The version a decision named, as one target. */
+const decided: ActionTarget = {
+  copy: { mailboxId: studio, messageId: '11' },
+  threadId: 't-11',
+  latestMessageId: '11',
+}
+
+/** Where that version stands in a reading that ends at `latestMessageId`. */
+const version = (latestMessageId: string) => targetStanding(decided, [read(latestMessageId)])
+
+/** The reading still ends where the decision was made. */
+const holds = version('11')
+/** A later message has reached the thread since. */
+const moved = version('12')
 
 describe('handlingOptions', () => {
   it('offers every outcome the domain names, with what each one changes', () => {
@@ -88,7 +105,7 @@ describe('handlingNote', () => {
 
 describe('recordedDecision', () => {
   it('keeps a local outcome local, and says nothing was stored', () => {
-    const view = recordedDecision('reply_needed', null, null)
+    const view = recordedDecision('reply_needed', holds, null, null)
     expect(view).toMatchObject({ title: 'Reply needed', locked: false })
     expect(view.state.label).toBe('Local work status')
     expect(view.detail).toContain('mail stays in your Spark Inbox')
@@ -96,30 +113,69 @@ describe('recordedDecision', () => {
   })
 
   it('never reads as done while Spark has only been asked', () => {
-    expect(recordedDecision('handle_now', proposed, null)).toMatchObject({
+    expect(recordedDecision('handle_now', holds, proposed, null)).toMatchObject({
       state: { label: 'Proposed, not run' },
       locked: false,
     })
-    expect(recordedDecision('handle_now', approved, null).state.label).toBe('Approved, not run')
-    expect(recordedDecision('handle_now', approved, null).detail).toContain('nothing has been sent')
+    expect(recordedDecision('handle_now', holds, approved, null).state.label).toBe(
+      'Approved, not run',
+    )
+    expect(recordedDecision('handle_now', holds, approved, null).detail).toContain(
+      'nothing has been sent',
+    )
   })
 
   it('leaves a lapsed proposal as open work that can be decided again', () => {
-    const view = recordedDecision('handle_now', lapsed, null)
+    const view = recordedDecision('handle_now', moved, lapsed, null)
     expect(view.state).toEqual({ label: 'Out of date', tone: 'danger' })
     expect(view.detail).toContain('The work stays open')
     expect(view.locked).toBe(false)
   })
 
+  it('never lets a later message make a local decision current', () => {
+    // The same decision, before and after a message reached the thread.
+    expect(recordedDecision('reply_needed', holds, null, null).state.label).toBe(
+      'Local work status',
+    )
+    const view = recordedDecision('reply_needed', moved, null, null)
+    expect(view).toMatchObject({ title: 'Reply needed', locked: false })
+    expect(view.state).toEqual({ label: 'Out of date', tone: 'danger' })
+    expect(view.detail).toContain('A later message has reached this thread since you decided')
+    expect(view.detail).toContain('The work stays open')
+    // A local decision reached no provider, so that much is still true.
+    expect(view.tags).toEqual(['Decision', 'Spark unchanged', 'Work still open'])
+  })
+
+  it('says which way a copy moved, rather than assuming a later message', () => {
+    const other = targetStanding(decided, [
+      { copy: decided.copy, observed: 'moved', reason: 'other_thread' },
+    ])
+    expect(recordedDecision('read_only', other, null, null).detail).toContain(
+      'belongs to another thread',
+    )
+  })
+
+  it('keeps provider evidence over a thread that moved on', () => {
+    // An uncertain attempt stays uncertain and stays locked: a later message
+    // says nothing about what Spark may already have done.
+    const view = recordedDecision('handle_now', moved, lapsed, { status: 'uncertain' })
+    expect(view.state.label).toBe('Still open, unresolved')
+    expect(view.locked).toBe(true)
+    expect(recordedDecision('handle_now', moved, lapsed, { status: 'confirmed' })).toMatchObject({
+      state: { label: 'Done confirmed' },
+      locked: true,
+    })
+  })
+
   it('shows only a confirmed readback as done, and locks that attempt', () => {
-    const view = recordedDecision('handle_now', approved, { status: 'confirmed' })
+    const view = recordedDecision('handle_now', holds, approved, { status: 'confirmed' })
     expect(view.state).toEqual({ label: 'Done confirmed', tone: 'done' })
     expect(view.detail).toContain('read back in Archive and absent from Inbox')
     expect(view.locked).toBe(true)
   })
 
   it('keeps an uncertain attempt open, locked and never retried on its own', () => {
-    const view = recordedDecision('handle_now', approved, { status: 'uncertain' })
+    const view = recordedDecision('handle_now', holds, approved, { status: 'uncertain' })
     expect(view.state).toEqual({ label: 'Still open, unresolved', tone: 'danger' })
     expect(view.detail).toContain('may have changed this message')
     expect(view.detail).toContain('no automatic retry is allowed')
@@ -127,7 +183,7 @@ describe('recordedDecision', () => {
   })
 
   it('keeps blocked work open and says which guard refused it', () => {
-    const view = recordedDecision('handle_now', approved, {
+    const view = recordedDecision('handle_now', holds, approved, {
       status: 'blocked',
       reason: 'disabled',
     })
@@ -141,25 +197,29 @@ describe('recordedDecision', () => {
 describe('handlingTags', () => {
   it('says Spark is unchanged only while nothing was sent to it', () => {
     expect(handlingTags(null)).toContain('Spark unchanged')
-    expect(handlingTags(recordedDecision('read_only', null, null))).toContain('Spark unchanged')
-    expect(handlingTags(recordedDecision('handle_now', proposed, null))).toContain(
+    expect(handlingTags(recordedDecision('read_only', holds, null, null))).toContain(
+      'Spark unchanged',
+    )
+    expect(handlingTags(recordedDecision('handle_now', holds, proposed, null))).toContain(
       'Spark unchanged so far',
     )
   })
 
   it('never claims Spark is unchanged after an attempt that did not settle', () => {
-    const tags = handlingTags(recordedDecision('handle_now', approved, { status: 'uncertain' }))
+    const tags = handlingTags(
+      recordedDecision('handle_now', holds, approved, { status: 'uncertain' }),
+    )
     expect(tags).toEqual(['Decision', 'Spark may have changed', 'Work still open'])
     expect(tags.join(' ')).not.toContain('unchanged')
   })
 
   it('claims a confirmed Done only where a readback proved it', () => {
-    expect(handlingTags(recordedDecision('handle_now', approved, { status: 'confirmed' }))).toEqual(
-      ['Decision', 'Spark Done confirmed by readback'],
-    )
+    expect(
+      handlingTags(recordedDecision('handle_now', holds, approved, { status: 'confirmed' })),
+    ).toEqual(['Decision', 'Spark Done confirmed by readback'])
     expect(
       handlingTags(
-        recordedDecision('handle_now', approved, { status: 'blocked', reason: 'replay' }),
+        recordedDecision('handle_now', holds, approved, { status: 'blocked', reason: 'replay' }),
       ),
     ).toContain('No Spark action sent')
   })
@@ -175,7 +235,7 @@ describe('handlingStatus', () => {
   })
 
   it('announces where a recorded decision stands', () => {
-    const view = recordedDecision('handle_now', approved, { status: 'uncertain' })
+    const view = recordedDecision('handle_now', holds, approved, { status: 'uncertain' })
     expect(handlingStatus(view, false)).toContain('Still open, unresolved')
   })
 })

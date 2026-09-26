@@ -1,5 +1,11 @@
 import { useState } from 'react'
-import { decideHandling, handlingRequest, type HandlingOutcome } from '../../../domain/handling'
+import {
+  decideHandling,
+  handlingRequest,
+  type HandlingDecision,
+  type HandlingOutcome,
+} from '../../../domain/handling'
+import { targetStanding } from '../../../domain/mailbox-action'
 import { HandlingPanel } from '../../organisms/HandlingPanel/HandlingPanel'
 import { ActionProposalView, useProposal, type ProposalDependencies } from './ActionProposalAction'
 import type { Proposable } from './action'
@@ -45,28 +51,44 @@ const now = () => new Date().toISOString()
  * the work is open. An uncertain attempt also locks the decision, because
  * changing it would suggest a settled state this app cannot prove.
  *
+ * The decision is kept as the domain records it, against the copy and thread
+ * version it named, and is measured against what the reading says about that
+ * copy now. This component deliberately survives a new reading of the same
+ * row, so a later message must be seen to make the decision out of date
+ * rather than silently carry it onto the version that replaced it. That
+ * holds for the three outcomes that reach no provider as much as for Handle
+ * now: an old answer to "what do I owe this mail" is not an answer about
+ * mail that has since been added to.
+ *
  * Give it a new `key` per row, so one message's decision never carries to
  * the next.
  */
 export function HandlingAction({ proposable, ...dependencies }: HandlingActionProps) {
   const state = useProposal(dependencies)
   const [chosen, setChosen] = useState<HandlingOutcome | null>(null)
-  const [decided, setDecided] = useState<HandlingOutcome | null>(null)
+  const [decided, setDecided] = useState<HandlingDecision | null>(null)
   const [cleared, setCleared] = useState(false)
   const connected = dependencies.onExecute !== undefined
-  const view = decided === null ? null : recordedDecision(decided, state.standing, state.execution)
+  const view =
+    decided === null
+      ? null
+      : recordedDecision(
+          decided.outcome,
+          targetStanding(decided.target, state.observations),
+          state.standing,
+          state.execution,
+        )
   const record = () => {
     if (chosen === null || proposable === undefined) return
-    const request = handlingRequest(
-      decideHandling({
-        outcome: chosen,
-        target: proposable.target,
-        basis: proposable.basis,
-        decidedAt: now(),
-      }),
-    )
+    const decision = decideHandling({
+      outcome: chosen,
+      target: proposable.target,
+      basis: proposable.basis,
+      decidedAt: now(),
+    })
+    const request = handlingRequest(decision)
     setCleared(false)
-    setDecided(request.outcome)
+    setDecided(decision)
     if (request.proposal !== null) state.propose(request.proposal)
   }
   const announced = handlingStatus(view, cleared)

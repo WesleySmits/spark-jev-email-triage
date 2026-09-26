@@ -15,6 +15,11 @@
  * - An attempt that did not settle never reads as finished. A blocked,
  *   uncertain or lapsed Done leaves the work explicitly open, and an
  *   uncertain one says the mailbox may have changed anyway.
+ * - A later message never makes an old decision current. Every decision,
+ *   including the three that reach no provider, is about one mailbox copy
+ *   and one thread version; once the reading moves that version on, the
+ *   decision reads as out of date and the work as open, and only a person
+ *   deciding again replaces it. Nothing is retargeted quietly.
  * - Nothing claims a decision was stored. There is no store for a work
  *   status yet, so the copy says a decision is kept while the message stays
  *   open and no longer.
@@ -23,7 +28,7 @@
  */
 import type { DoneExecutionResult } from '../../../app/done-action'
 import { handlingOutcomes, type HandlingOutcome } from '../../../domain/handling'
-import type { ActionStanding } from '../../../domain/mailbox-action'
+import type { ActionStanding, TargetStanding } from '../../../domain/mailbox-action'
 import type { HandlingOptionView } from '../../organisms/HandlingPanel/HandlingPanel'
 import { blockedText } from './action'
 
@@ -144,6 +149,29 @@ const localRecorded = (outcome: Exclude<HandlingOutcome, 'handle_now'>): Recorde
 
 const lockedNote = 'This attempt is locked, so the decision cannot be changed here.'
 
+const movedOn = {
+  newer_message: 'A later message has reached this thread since you decided.',
+  other_thread: 'This copy now belongs to another thread than the one you decided about.',
+} as const
+
+/**
+ * A decision about a version this row has moved past. It is shown as what it
+ * is — out of date, with the work still open — and never quietly moved onto
+ * the version that replaced it. Nothing was sent to Spark for it: a decision
+ * whose attempt may have reached the provider is answered before this.
+ */
+const outOfDate = (outcome: HandlingOutcome, reason: keyof typeof movedOn): RecordedView => ({
+  title: labels[outcome],
+  detail: `${movedOn[reason]} This decision is about the version before it, so it no longer describes this message. The work stays open: decide again against the version that holds now. ${unchanged}`,
+  state: { label: 'Out of date', tone: 'danger' },
+  tags: [
+    'Decision',
+    outcome === 'handle_now' ? 'Nothing sent to Spark' : 'Spark unchanged',
+    'Work still open',
+  ],
+  locked: false,
+})
+
 /** Where one recorded Handle now stands once Spark was asked, or refused. */
 function executedRecorded(result: DoneExecutionResult): RecordedView {
   if (result.status === 'confirmed') {
@@ -176,15 +204,6 @@ function executedRecorded(result: DoneExecutionResult): RecordedView {
 
 /** Where one recorded Handle now stands before anything was sent to Spark. */
 function proposedRecorded(standing: ActionStanding | null): RecordedView {
-  if (standing?.stage === 'invalidated') {
-    return {
-      title: labels.handle_now,
-      detail: `A later message reached this thread, so the proposal lapsed and nothing ran. The work stays open: decide again against the version that holds now. ${unchanged}`,
-      state: { label: 'Out of date', tone: 'danger' },
-      tags: ['Decision', 'Nothing sent to Spark', 'Work still open'],
-      locked: false,
-    }
-  }
   if (standing?.stage === 'approved') {
     return {
       title: labels.handle_now,
@@ -204,17 +223,28 @@ function proposedRecorded(standing: ActionStanding | null): RecordedView {
 }
 
 /**
- * What one recorded decision amounts to now. For Handle now that includes
- * where the guarded Done path stands, because a decision whose action was
- * blocked, lapsed or left uncertain is work that is still open.
+ * What one recorded decision amounts to now.
+ *
+ * `version` is where the copy and thread version the decision named stand in
+ * the reading now, as `targetStanding` reports it. A broken one makes the
+ * decision out of date whatever it was, because no outcome describes a
+ * version the mail has moved past.
+ *
+ * Provider evidence is answered first and is never discarded by a later
+ * message: an attempt that was confirmed or left uncertain keeps saying so,
+ * and keeps its lock, because what Spark may already have done does not stop
+ * being true when the thread moves on.
  */
 export function recordedDecision(
   outcome: HandlingOutcome,
+  version: TargetStanding,
   standing: ActionStanding | null,
   execution: DoneExecutionResult | null,
 ): RecordedView {
+  if (execution !== null) return executedRecorded(execution)
+  if (version.status === 'broken') return outOfDate(outcome, version.reason)
   if (outcome !== 'handle_now') return localRecorded(outcome)
-  return execution === null ? proposedRecorded(standing) : executedRecorded(execution)
+  return proposedRecorded(standing)
 }
 
 /** What one recorded decision amounts to, in one line. */
