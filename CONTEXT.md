@@ -79,10 +79,9 @@ probes `spark accounts` on the executing host; neither proves that all mail,
 the classifier, or local review storage works.
 
 The terms below include future concepts. Logical-message correlation is not
-implemented. Handling outcomes are defined as a domain model and are offered
-nowhere in the app, stored nowhere, and wired to nothing. The root route
-exposes only guarded Spark Done, never an automatic action from
-classification or review.
+implemented. Handling outcomes are offered in the reader and stored nowhere:
+a decision is kept while the message stays open. The root route exposes only
+guarded Spark Done, never an automatic action from classification or review.
 
 ## Mailbox
 
@@ -145,6 +144,15 @@ an outcome runs no provider command: a proposal it makes still waits for the
 approval, receipt and readback every Spark Done waits for. Reply expectation
 and deadline remain outside review; a handling outcome is a work decision, not
 a classifier label anyone confirms.
+
+The reader offers the four outcomes under the open message. Choosing "handle
+now" is the only way into Spark Done there, and the guarded steps stay
+separate below it. A decision whose action was blocked, lapsed or left
+uncertain keeps saying the work is open, and an uncertain attempt locks the
+decision rather than allowing another automatic run. A row whose exact
+version the reading does not name can record no decision at all; that is
+refused in words. Nothing is stored: a decision is kept while the message
+stays open and is gone after that.
 
 ## Mailbox action
 
