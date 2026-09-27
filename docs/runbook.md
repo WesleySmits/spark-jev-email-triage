@@ -138,6 +138,15 @@ listing and body evidence open it read-only. Backups can include judgments,
 reviewer account names, review timestamps and save-request records as well
 as mail metadata. Treat the database and backups as private.
 
+Recording work in the reader (Reply needed, Follow up later, Handled in Spark)
+and reopening it from the Open work tab append rows to the schema-6 work
+tables through the same loopback-only app server. Like a review, a decision
+never creates, migrates or upgrades the database: a missing file or another
+schema stores nothing and the panel says "Not saved". Backups therefore also
+hold work decisions, the local account name that made them and any due
+dates. Handled in Spark runs no Spark command and is not evidence that mail
+moved.
+
 A review does not complete or mutate mail. The store records the decision a
 person made about each field separately, so a field nobody reviewed keeps
 showing the model's own label and says so. The app's panel decides the

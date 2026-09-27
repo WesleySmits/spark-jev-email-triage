@@ -70,8 +70,9 @@ and Jev-call limits, durable readback, cooperative Stop and idempotent Restart.
 It is loopback-only, default-off behind `JEV_MANUAL_RUNS_ENABLED=1`, and also
 requires `TYPESAFE_API_KEY`. A run sends minimized thread content to Jev;
 loading, refreshing and reviewing in the app make no model calls. There is no
-reply-expectation or deadline editor, no persisted completion and no Undo of a
-saved review.
+reply-expectation or deadline editor for a classification (the optional due
+date on a saved work decision is the person's own, not a label), no persisted
+completion and no Undo of a saved review.
 
 The queue is a worklist grouped by attention: needs review, high priority,
 attention, not triaged and informational, in that order. A row's group comes
@@ -96,16 +97,31 @@ in the page claims one, and Tab, Enter and Escape keep working. On narrow
 screens, the setting remains available through the Filters sheet.
 
 Under the open message the reader asks what happens next: handle now, reply
-needed, follow up later, or read only, for the exact mailbox copy and thread
-version shown. The three local outcomes record work in this app only; no
-Spark command is sent and the mail stays in the Inbox. "Handle now" is the
-only way to start the guarded Spark Done path, which keeps its separate
-approval, fresh preflight, durable receipt and Archive/Inbox readback. Spark
-acts on the provider message ID, so another copy carrying that ID may change
-too, and the panel says so. A blocked, lapsed or uncertain attempt leaves the
-work visibly open; only a confirmed readback reads as done. Decisions are not
-stored yet: one is kept while its message stays open. No link that opens one
-exact message in Spark is offered, because none has been proven.
+needed, follow up later, handled in Spark, or read only, for the exact
+mailbox copy and thread version shown. The local outcomes record work in
+this app only; no Spark command is sent and the mail stays where it is.
+"Handle now" is the only way to start the guarded Spark Done path, which
+keeps its separate approval, fresh preflight, durable receipt and
+Archive/Inbox readback. Spark acts on the provider message ID, so another
+copy carrying that ID may change too, and the panel says so. A blocked,
+lapsed or uncertain attempt leaves the work visibly open; only a confirmed
+readback reads as done. No link that opens one exact message in Spark is
+offered, because none has been proven.
+
+Reply needed, Follow up later (with an optional due date) and Handled in
+Spark are saved to the local work record and stay after the app is closed;
+the reader reads back what is saved for the open copy. Handled in Spark is
+the person's own claim and is never shown as a confirmed Done. The queue pane
+has an **Open work** tab beside the **Spark Inbox** tab (variant A). It lists
+overdue follow-up, open work, work that could not be checked against the
+current reading, and completed decisions, each counted per mailbox copy from
+this app's own record and never as a Spark Inbox count. Refresh reads the
+record again and checks each copy against the new reading: listed copies are
+in the Inbox, a copy is out of it only when both Inbox views read its mailbox
+to the end, and anything else says unknown. Version drift, work owed on mail
+that left the Inbox, and a claimed closure Spark still lists are shown as
+conflicts. A completed claim can be reopened. Aliases and other mailbox
+copies stay separate items.
 
 The web process needs the local Spark CLI to read mail. A successful build
 or `/health` response does not prove Spark readiness. See
@@ -431,9 +447,11 @@ pnpm readback:spark                      # whether Spark answers on this host
   thread version decided against, and `followUpWork` reads a decision the
   thread has moved past as lapsed with the work open, so a later message
   never makes an old closure current. `handled_in_spark` records a person's claim and runs no Spark
-  command. Nothing in the app writes these rows yet: the reader's handling
-  step is unchanged and still keeps its decision only while a message is
-  open.
+  command. The reader writes these rows through `ReviewDesk.recordWork`
+  (loopback-only, never creating or migrating the database), and
+  `ReviewDesk.work` reads every decided copy back, bounded to the most
+  recently decided 200 copies with their whole history.
+  `src/domain/open-work.ts` places each copy against the current reading.
   Evaluation snapshots are separate local JSON files under `.data/`.
 - A `current` or `unverified` classification offers a review of its category
   and its priority; stale, failed, absent or unreadable classifications do not. The save

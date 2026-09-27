@@ -78,12 +78,31 @@ supported workflows and current limitations.
 probes `spark accounts` on the executing host; neither proves that all mail,
 the classifier, or local review storage works.
 
+Wesley selected variant A for remaining work: an Open work tab beside the
+Spark Inbox tab in the queue pane, with completed decisions listed under it,
+while the handling step stays in the reader. The reader saves "reply
+needed", "follow up later" (optionally by a date) and "handled in Spark" to
+the local record of recorded work decisions; "read only" and "handle now" add
+nothing to it. The route reads that record with the inbox, so saved work is
+there again after the app was closed, and reads it again on Refresh and after
+every save the store confirmed. Each tab counts its own source: the Inbox tab
+counts rows this reading loaded from Spark, and Open work counts mailbox
+copies this application saved a decision about. Neither is added to the
+other.
+
+Open work measures every saved copy against the current reading. A copy the
+reading lists is in the Spark Inbox; a copy whose mailbox both Inbox views
+read to the end without listing it is not; anything else is unknown, with the
+limit named (a bounded reading, a mailbox that failed, a mailbox the reading
+does not hold). Version drift, work still owed on mail that left the Inbox,
+and a claimed closure Spark still lists are shown as conflicts and are never
+resolved by rewriting the record. A saved decision whose version this reading
+does not name reads as "not checked". A closure that still stands can be
+reopened against the exact copy and version it was saved for.
+
 The terms below include future concepts. Logical-message correlation is not
-implemented. Handling outcomes are offered in the reader and stored nowhere:
-a decision is kept while the message stays open. The separate local record of
-recorded work decisions exists in the database and the store, and nothing in
-the app writes to it yet. The root route exposes only
-guarded Spark Done, never an automatic action from classification or review.
+implemented. The root route exposes only guarded Spark Done, never an
+automatic action from classification, review or a work decision.
 
 ## Mailbox
 
@@ -136,25 +155,29 @@ One delivery of a logical message to a recipient or alias. A delivery may produc
 ## Handling outcome
 
 What a person decided to do about one mailbox copy, as of the thread version
-they were shown: "handle now", "reply needed", "follow up later" or "read
-only". Every outcome changes this application's local record of the work
-owed and nothing else, except "handle now", which also proposes one guarded
-Spark Done, because it is the only outcome claiming the message is finished.
-The other three move no mail, schedule nothing with Spark, and leave the copy
-where it is. Deciding
+they were shown: "handle now", "reply needed", "follow up later", "handled
+in Spark" or "read only". Every outcome changes this application's local
+record of the work owed and nothing else, except "handle now", which also
+proposes one guarded Spark Done, because it is the only outcome asking Spark
+to finish the message. "Handled in Spark" is the person's own claim that they
+already did; it asks Spark nothing. The other outcomes move no mail, schedule
+nothing with Spark, and leave the copy where it is. Deciding
 an outcome runs no provider command: a proposal it makes still waits for the
 approval, receipt and readback every Spark Done waits for. Reply expectation
 and deadline remain outside review; a handling outcome is a work decision, not
 a classifier label anyone confirms.
 
-The reader offers the four outcomes under the open message. Choosing "handle
+The reader offers the outcomes under the open message. Choosing "handle
 now" is the only way into Spark Done there, and the guarded steps stay
 separate below it. A decision whose action was blocked, lapsed or left
 uncertain keeps saying the work is open, and an uncertain attempt locks the
 decision rather than allowing another automatic run. A row whose exact
 version the reading does not name can record no decision at all; that is
-refused in words. Nothing is stored: a decision is kept while the message
-stays open and is gone after that.
+refused in words. "Reply needed", "follow up later" and "handled in Spark"
+are saved as recorded work decisions, and the panel follows the store's
+answer: saving, saved, not saved or unconfirmed. "Read only" and "handle
+now" are kept while the message stays open and are not saved there; a Done
+is recorded by its own receipt and readback.
 
 ## Recorded work decision
 
@@ -182,7 +205,8 @@ decided twice even though Spark would act on the one provider message id.
 themselves. No Spark command runs for it, nothing is read back, and no row is
 evidence that a mailbox changed; the guarded Done path keeps its own approval,
 receipt and readback. Reopening is refused unless the record says the work was
-closed.
+closed. The Open work tab lists a claimed closure as completed, as the
+person's claim, and flags it when Spark still lists the copy in the Inbox.
 
 ## Mailbox action
 
