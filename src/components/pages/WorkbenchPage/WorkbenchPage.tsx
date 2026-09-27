@@ -15,6 +15,7 @@ import type {
   DoneExecutionResult,
 } from '../../../app/done-action'
 import type { MailboxActionProposal } from '../../../domain/mailbox-action'
+import type { WorkDecisionRequest, WorkDecisionResult } from '../../../app/open-work'
 import type { BodyLoader } from '../../../app/inbox'
 import type { InboxDiscoveryScope } from '../../../app/live-inbox'
 import { sameSubject } from '../../../domain/review'
@@ -243,6 +244,11 @@ type WorkbenchPageProps = Readonly<{
    * is blocked: nothing here reaches a mailbox or asks anything to.
    */
   proposals?: WorkbenchProposals | undefined
+  recordedWork?:
+    | Readonly<{
+        onRecord: (request: WorkDecisionRequest) => Promise<WorkDecisionResult>
+      }>
+    | undefined
   /** Sync status and profile. The page owns the search. */
   topBar: Omit<
     ComponentProps<typeof TopBar>,
@@ -1106,6 +1112,7 @@ function readerReview(
  */
 function readerHandling(
   proposals: WorkbenchProposals | undefined,
+  recordedWork: WorkbenchPageProps['recordedWork'],
   evidence: Evidence,
   open: WorkbenchMessage | undefined,
   listed: ListedEvidence | undefined,
@@ -1124,6 +1131,7 @@ function readerHandling(
       onApprove={enabled?.onApprove}
       onExecute={enabled?.onExecute}
       onConfirmed={enabled?.onConfirmed}
+      onRecordWork={recordedWork?.onRecord}
     />
   )
 }
@@ -1484,6 +1492,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             )}
             proposal={readerHandling(
               props.proposals,
+              props.recordedWork,
               evidence,
               state.open,
               props.classifications,

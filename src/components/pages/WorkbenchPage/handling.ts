@@ -20,9 +20,8 @@
  *   and one thread version; once the reading moves that version on, the
  *   decision reads as out of date and the work as open, and only a person
  *   deciding again replaces it. Nothing is retargeted quietly.
- * - Nothing claims a decision was stored. There is no store for a work
- *   status yet, so the copy says a decision is kept while the message stays
- *   open and no longer.
+ * - Only the caller may claim a decision was saved. The pure view defaults to
+ *   its transient wording; a caller that got a durable save may say so.
  * - No link into Spark is offered. Opening one exact message there is
  *   unproven, and `spark/message-link.ts` records why.
  */
@@ -92,13 +91,13 @@ export const handlingSummary =
 /**
  * What recording changes and what it does not, including the two things a
  * person cannot see for themselves: that Spark acts on the message ID rather
- * than on the row, and that nothing here is stored.
+ * than on the row, and where durable work will appear when connected.
  */
-export function handlingNote(messageId: string | undefined): string {
+export function handlingNote(messageId: string | undefined, durable = false): string {
   if (messageId === undefined) {
     return `This reading does not name an exact version for this message, so no decision can be recorded against it. ${unchanged}`
   }
-  return `Reply needed, Follow up later and Read only record work in this app only: no Spark command is sent and the mail stays in your Inbox. Handle now proposes one guarded Spark Done for message ID ${messageId}; Spark acts on that ID, so another copy carrying it may change too. Nothing is stored yet, so a decision is kept only while this message stays open, and no link that opens this exact message in Spark has been proven.`
+  return `Reply needed and Follow up later ${durable ? 'save local work' : 'record work in this app only'}: no Spark command is sent and the mail stays in your Inbox. Read only keeps no open work. Handle now proposes one guarded Spark Done for message ID ${messageId}; Spark acts on that ID, so another copy carrying it may change too. ${durable ? 'The saved work appears in Open work.' : 'Nothing is stored yet, so a decision is kept only while this message stays open.'} No link that opens this exact message in Spark has been proven.`
 }
 
 /**
@@ -139,9 +138,15 @@ export type RecordedView = Readonly<{
   locked: boolean
 }>
 
-const localRecorded = (outcome: Exclude<HandlingOutcome, 'handle_now'>): RecordedView => ({
+const localRecorded = (
+  outcome: Exclude<HandlingOutcome, 'handle_now'>,
+  durable: boolean,
+): RecordedView => ({
   title: labels[outcome],
-  detail: `Recorded in this app only. The mail stays in your Spark Inbox, and nothing was stored: this decision is kept while the message stays open. ${unchanged}`,
+  detail:
+    durable && outcome !== 'read_only'
+      ? `Recorded in this app only. This decision was saved as local work. ${unchanged}`
+      : `Recorded in this app only. The mail stays in your Spark Inbox, and nothing was stored: this decision is kept while the message stays open. ${unchanged}`,
   state: { label: 'Local work status', tone: 'review' },
   tags: ['Decision', 'Local work status', 'Spark unchanged'],
   locked: false,
@@ -266,13 +271,14 @@ export function recordedDecision(
   version: TargetStanding,
   standing: ActionStanding | null,
   execution: DoneExecutionResult | null,
+  durable = false,
 ): RecordedView {
   if (execution !== null && version.status === 'broken') {
     return executedAfterVersionMoved(execution, version.reason)
   }
   if (execution !== null) return executedRecorded(execution)
   if (version.status === 'broken') return outOfDate(outcome, version.reason)
-  if (outcome !== 'handle_now') return localRecorded(outcome)
+  if (outcome !== 'handle_now') return localRecorded(outcome, durable)
   return proposedRecorded(standing)
 }
 

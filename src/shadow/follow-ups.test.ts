@@ -17,7 +17,7 @@ import {
 import type { TargetObservation } from '../domain/mailbox-action'
 import { mailboxCopyId, type MailboxCopyRef } from '../domain/mailbox-copy'
 import { openDatabase } from './database'
-import { readFollowUpRequest, readFollowUps, recordFollowUp } from './follow-ups'
+import { readDecidedCopies, readFollowUpRequest, readFollowUps, recordFollowUp } from './follow-ups'
 
 // `spark/process` is the only module that starts a process. Nothing below
 // imports it, and a started process would show up here all the same.
@@ -271,5 +271,82 @@ describe('one save, asked for twice', () => {
         { status: 'absent' },
       )
     })
+  })
+})
+
+describe('reading every copy anybody decided about', () => {
+  it('lists nothing where nobody has decided anything', () => {
+    expect(reopened((db) => readDecidedCopies(db))).toEqual({ copies: [], nextCursor: null })
+  })
+
+  it('survives the process that wrote it and keeps each copy’s whole history', () => {
+    const closure = decide('handled_in_spark')
+    const reopen = decide('reopen')
+    expect(recordAndClose(closure)).toEqual({ status: 'recorded' })
+    expect(recordAndClose(reopen)).toEqual({ status: 'recorded' })
+
+    const read = reopened((db) => readDecidedCopies(db))
+    expect(read.nextCursor).toBeNull()
+    expect(read.copies).toEqual([{ copy: copy(studio), decisions: [reopen, closure] }])
+  })
+
+  it('keeps one delivery to an address and an alias as two copies', () => {
+    expect(recordAndClose(decide('reply_needed'))).toEqual({ status: 'recorded' })
+    expect(recordAndClose(decide('handled_in_spark', { mailboxId: alias }))).toEqual({
+      status: 'recorded',
+    })
+
+    const { copies } = reopened((db) => readDecidedCopies(db))
+    // The provider message id is the same in both; the mailbox is what tells
+    // them apart, so neither copy's decision answers for the other.
+    expect(copies.map(({ copy: each }) => each)).toEqual([copy(alias), copy(studio)])
+    expect(copies.map(({ decisions }) => decisions[0]?.kind)).toEqual([
+      'handled_in_spark',
+      'reply_needed',
+    ])
+  })
+
+  it('lists the most recently decided copy first, by what this database received', () => {
+    // An earlier `decidedAt` on the later save: a corrected clock must not
+    // put the copy decided second at the back of the list.
+    expect(recordAndClose(decide('reply_needed'))).toEqual({ status: 'recorded' })
+    expect(
+      recordAndClose(
+        decide('reply_needed', { mailboxId: alias, decidedAt: '2026-09-26T09:00:00.000Z' }),
+      ),
+    ).toEqual({ status: 'recorded' })
+
+    expect(reopened((db) => readDecidedCopies(db).copies.map(({ copy: each }) => each))).toEqual([
+      copy(alias),
+      copy(studio),
+    ])
+  })
+
+  it('pages every copy without truncating history or shifting older copies after a new save', () => {
+    for (const index of [1, 2, 3]) {
+      expect(
+        recordAndClose(decide('reply_needed', { mailboxId: `box-${String(index)}@mail.example` })),
+      ).toEqual({ status: 'recorded' })
+    }
+    const first = reopened((db) => readDecidedCopies(db, null, 2))
+    expect(first.copies.map(({ copy: each }) => each.mailboxId)).toEqual([
+      'box-3@mail.example',
+      'box-2@mail.example',
+    ])
+    expect(first.nextCursor).toEqual({ snapshotId: 3, beforeId: 2 })
+
+    // A later decision moves box 1 to the top of a fresh read, but must not
+    // make its original copy disappear from this reading's older page.
+    expect(recordAndClose(decide('follow_up_later', { mailboxId: 'box-1@mail.example' }))).toEqual({
+      status: 'recorded',
+    })
+    const older = reopened((db) => readDecidedCopies(db, first.nextCursor, 2))
+    expect(older.nextCursor).toBeNull()
+    expect(older.copies.map(({ copy: each }) => each.mailboxId)).toEqual(['box-1@mail.example'])
+    expect(older.copies[0]?.decisions.map(({ kind }) => kind)).toEqual([
+      'follow_up_later',
+      'reply_needed',
+    ])
+    expect(reopened((db) => readDecidedCopies(db, null, 3)).nextCursor).toBeNull()
   })
 })

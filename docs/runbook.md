@@ -138,6 +138,19 @@ listing and body evidence open it read-only. Backups can include judgments,
 reviewer account names, review timestamps and save-request records as well
 as mail metadata. Treat the database and backups as private.
 
+The reader can also save Reply needed and Follow up later to that schema-6
+file. Open work and Completed decisions list those local records in separate
+tabs, apart from Spark Inbox and unread counts. They check recorded copies
+through bounded Spark reads; an
+older page can be loaded explicitly, and all displayed counts describe loaded
+copies only. Each request checks at most 50 local copies against Spark. An
+unknown result or a version conflict must be inspected, not treated as
+completed. Opening one recorded item reads its thread on demand and lets a
+person record a new decision against the version just shown; body text is not
+stored in the work record. A person may record a handled-in-Spark claim or reopen a closed
+version locally. These controls do not send Spark write commands. The app
+does not create or migrate the shadow database for this workflow.
+
 A review does not complete or mutate mail. The store records the decision a
 person made about each field separately, so a field nobody reviewed keeps
 showing the model's own label and says so. The app's panel decides the
