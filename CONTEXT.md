@@ -7,7 +7,7 @@ reviews of a classification's category and priority. The legacy Complete control
 guarded Done panel can archive one selected Spark message ID after human
 approval and a second confirmation. The action server is disabled by default.
 The CLI `pnpm shadow --apply` stores classifications;
-the review desk appends human reviews to the same local schema-5 SQLite file.
+the review desk appends human reviews to the same local schema-6 SQLite file.
 The default is `.data/shadow-triage.sqlite`; `--db` selects the CLI path and
 `SHADOW_DATABASE_PATH` selects the app path.
 
@@ -80,7 +80,9 @@ the classifier, or local review storage works.
 
 The terms below include future concepts. Logical-message correlation is not
 implemented. Handling outcomes are offered in the reader and stored nowhere:
-a decision is kept while the message stays open. The root route exposes only
+a decision is kept while the message stays open. The separate local record of
+recorded work decisions exists in the database and the store, and nothing in
+the app writes to it yet. The root route exposes only
 guarded Spark Done, never an automatic action from classification or review.
 
 ## Mailbox
@@ -153,6 +155,31 @@ decision rather than allowing another automatic run. A row whose exact
 version the reading does not name can record no decision at all; that is
 refused in words. Nothing is stored: a decision is kept while the message
 stays open and is gone after that.
+
+## Recorded work decision
+
+What a person decided about the work one mailbox copy owes, kept in the local
+database rather than held while a message is open: a reply is needed, they
+will follow it up later and optionally by when, they finished it in Spark
+themselves, or work they had closed is open again. A due date belongs only to
+the two decisions that leave work open.
+
+A decision names one mailbox copy and the exact thread version it was decided
+against, as a review names its subject. Decisions are appended and the
+database refuses to change or drop one, so what somebody said, when, and
+against which version stays readable as that copy's history; deciding again
+adds a row and the newest decision says where the work stands. A newest
+decision whose version the thread has moved past is lapsed: the work reads as
+open again and is never carried onto the version that replaced it, which is
+what keeps a later message from making an old closure current. Each copy
+carries its own decisions, so one delivery to an address and an alias is
+decided twice even though Spark would act on the one provider message id.
+
+"Handled in Spark" is a person's claim that they finished the message there
+themselves. No Spark command runs for it, nothing is read back, and no row is
+evidence that a mailbox changed; the guarded Done path keeps its own approval,
+receipt and readback. Reopening is refused unless the record says the work was
+closed.
 
 ## Mailbox action
 

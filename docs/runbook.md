@@ -68,7 +68,7 @@ No API key or database is needed to read the inbox. An absent default
 To use existing judgments/reviews, set `SHADOW_DATABASE_PATH` in the terminal
 that starts the app to the same local file selected by the shadow CLI's
 `--db`. Relative paths resolve from the repository working directory. The
-file must be a readable schema-5 database, and saving a review also needs
+file must be a readable schema-6 database, and saving a review also needs
 write access to it and its directory. An unreadable/unsupported store is
 shown as unavailable, separately from Spark readiness. Follow the upgrade
 section for an old database; do not run classification merely to start or
@@ -132,7 +132,7 @@ or Jev; it is not a migration of the user's database.
 
 The app reads those judgments and can append a review of one classification
 in the same SQLite file. `SHADOW_DATABASE_PATH` must match a CLI `--db`
-override. The review server opens an existing schema-5 file for writing,
+override. The review server opens an existing schema-6 file for writing,
 without migration;
 listing and body evidence open it read-only. Backups can include judgments,
 reviewer account names, review timestamps and save-request records as well
@@ -169,7 +169,7 @@ ID; inspect Spark manually before any further action. Spark may affect
 another visible copy of the message, and a new message may arrive between
 preflight and the command.
 
-## Upgrade an existing shadow database to schema 5
+## Upgrade an existing shadow database to schema 6
 
 Do this on the machine that holds the local SQLite file before using the
 review desk with an older database. Stop the app and any `pnpm shadow --apply`
@@ -191,7 +191,7 @@ sqlite3 "$db" ".backup '$backup'"
 sqlite3 "$backup" 'PRAGMA integrity_check; PRAGMA foreign_key_check; PRAGMA user_version;'
 ```
 
-The backup check must print `ok`, no foreign-key rows, then `1`, `2`, `3` or `4`.
+The backup check must print `ok`, no foreign-key rows, then `1`, `2`, `3`, `4` or `5`.
 If it does not, stop and investigate the original database before changing
 anything.
 Keep the backup until the upgraded app and stored classifications have been
@@ -202,12 +202,14 @@ pnpm shadow --migrate --db "$db"
 sqlite3 "$db" 'PRAGMA integrity_check; PRAGMA foreign_key_check; PRAGMA user_version;'
 ```
 
-The migration prints `migration ok: schema 5` or, on a repeat, `migration
+The migration prints `migration ok: schema 6` or, on a repeat, `migration
 skipped: schema current`. The final SQLite check must print `ok`, no
-foreign-key rows, then `5`. A missing file, unsupported schema, damaged
+foreign-key rows, then `6`. A missing file, unsupported schema, damaged
 database, or populated schema-1 `corrections` table is refused. Schema 1
-upgrades through every later schema; schemas 2, 3 and 4 upgrade through the
-ones after them to 5. The migration
+upgrades through every later schema; schemas 2, 3, 4 and 5 upgrade through
+the ones after them to 6. Schema 6 adds the local record of the work a
+person decided one mailbox copy owes; it creates empty tables and changes
+no stored classification or review. The migration
 uses one SQLite transaction, so an error before commit leaves the original schema in
 place. The review desk can then read the existing classifications and store
 reviews. Never use `shadow --apply` merely to upgrade a database: that is a
@@ -220,15 +222,16 @@ reviews written after the backup, so decide on it before resuming work.
 ```sh
 sqlite3 "$db" 'PRAGMA wal_checkpoint(TRUNCATE);'
 test ! -e "$db-wal" && test ! -e "$db-shm" || exit 1
-test ! -e "$db.schema5-retained.sqlite" || exit 1
-mv "$db" "$db.schema5-retained.sqlite"
+test ! -e "$db.schema6-retained.sqlite" || exit 1
+mv "$db" "$db.schema6-retained.sqlite"
 cp -p "$backup" "$db"
 sqlite3 "$db" 'PRAGMA integrity_check; PRAGMA foreign_key_check; PRAGMA user_version;'
 ```
 
 The restored check must print `ok`, no foreign-key rows, then the original
-schema version (`1`, `2`, `3` or `4`). Run an app version compatible with that
-schema, or upgrade it again before starting the schema-5 app. Keep the retained file private for investigation;
+schema version (`1`, `2`, `3`, `4` or `5`). Run an app version compatible with
+that schema, or upgrade it again before starting the schema-6 app. A rollback
+to a schema before 6 also discards every recorded work decision. Keep the retained file private for investigation;
 do not put either SQLite file in a release report.
 
 ## 1. Build: the required check

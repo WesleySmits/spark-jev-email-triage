@@ -4,9 +4,9 @@
  *
  * Stored data is limited to what review needs: mailbox, thread, and message
  * ids; scrubbed and truncated display fields; judgment values, probabilities,
- * and versions; run status and counts; provider error codes; and the human
- * reviews of stored classifications. Never bodies, attachment contents, or
- * credentials.
+ * and versions; run status and counts; provider error codes; the human
+ * reviews of stored classifications; and the work a person recorded for one
+ * mailbox copy. Never bodies, attachment contents, or credentials.
  *
  * Migrations are append-only. Each runs in one transaction with its version
  * bump, so a failed migration leaves the previous version intact.
@@ -247,6 +247,75 @@ const migrations: readonly string[] = [
 
   CREATE TRIGGER review_fields_are_never_removed BEFORE DELETE ON review_fields BEGIN
     SELECT RAISE(ABORT, 'A stored review decision is history and cannot be removed');
+  END;
+  `,
+  // 6: the work a person says one mailbox copy owes, kept rather than held
+  //    while a message is open. Each row names the copy and the exact thread
+  //    version it was decided against, so a message that arrives afterwards
+  //    leaves the decision describing the version before it instead of
+  //    silently making an old closure current. Reading that out is the
+  //    domain's `followUpWork`; the table only keeps what was said.
+  //
+  //    The rows reference no judgment. Work is owed on mail whether or not a
+  //    classifier ever judged it, and tying the record to a judgment would
+  //    make unclassified mail undecidable.
+  //
+  //    `handled_in_spark` is a person's claim that they finished the message
+  //    in Spark themselves. Nothing here asked Spark, and no row is evidence
+  //    that a mailbox changed; the guarded Done path keeps its own approval,
+  //    receipt and readback.
+  //
+  //    Appended only, like reviews: the triggers refuse an update and a
+  //    delete in the database itself, so deciding again adds a row and the
+  //    history of a copy stays readable. `follow_up_requests` gives one Save
+  //    its identity, so a retry of the same request reads its first result
+  //    instead of recording a second decision.
+  `
+  CREATE TABLE follow_up_decisions (
+    id INTEGER PRIMARY KEY,
+    mailbox_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    thread_id TEXT NOT NULL,
+    latest_message_id TEXT NOT NULL,
+    kind TEXT NOT NULL
+      CHECK (kind IN ('reply_needed', 'follow_up_later', 'handled_in_spark', 'reopen')),
+    due_at TEXT,
+    decided_by TEXT NOT NULL,
+    decided_at TEXT NOT NULL,
+    CHECK (due_at IS NULL OR kind IN ('reply_needed', 'follow_up_later'))
+  ) STRICT;
+
+  CREATE INDEX follow_up_decisions_by_copy
+    ON follow_up_decisions (mailbox_id, message_id, decided_at);
+
+  CREATE TRIGGER follow_up_decisions_are_never_changed
+  BEFORE UPDATE ON follow_up_decisions BEGIN
+    SELECT RAISE(ABORT, 'A recorded decision is history and cannot be changed');
+  END;
+
+  CREATE TRIGGER follow_up_decisions_are_never_removed
+  BEFORE DELETE ON follow_up_decisions BEGIN
+    SELECT RAISE(ABORT, 'A recorded decision is history and cannot be removed');
+  END;
+
+  CREATE TABLE follow_up_requests (
+    request_id TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('recorded', 'refused')),
+    refusal_reason TEXT,
+    decision_id INTEGER REFERENCES follow_up_decisions (id),
+    CHECK ((status = 'recorded') = (decision_id IS NOT NULL AND refusal_reason IS NULL)),
+    CHECK ((status = 'refused') = (refusal_reason IS NOT NULL AND decision_id IS NULL))
+  ) STRICT;
+
+  CREATE TRIGGER follow_up_requests_are_never_changed
+  BEFORE UPDATE ON follow_up_requests BEGIN
+    SELECT RAISE(ABORT, 'A decision request result cannot be changed');
+  END;
+
+  CREATE TRIGGER follow_up_requests_are_never_removed
+  BEFORE DELETE ON follow_up_requests BEGIN
+    SELECT RAISE(ABORT, 'A decision request result cannot be removed');
   END;
   `,
 ]
