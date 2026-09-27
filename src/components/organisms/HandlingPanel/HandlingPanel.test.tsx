@@ -157,11 +157,13 @@ describe('HandlingPanel', () => {
   it('reads back what the record already holds above the chooser', () => {
     const elements = rendered({
       ...base,
-      saved: {
-        heading: 'Saved in Open work',
-        title: 'Reply needed',
-        detail: 'Saved by you.',
-        state: { label: 'Open work', tone: 'review' },
+      workRecord: {
+        saved: {
+          heading: 'Saved in Open work',
+          title: 'Reply needed',
+          detail: 'Saved by you.',
+          state: { label: 'Open work', tone: 'review' },
+        },
       },
     })
     const saved = withClass(elements, 'handling-panel__saved')
@@ -175,7 +177,7 @@ describe('HandlingPanel', () => {
 
   it('places the field a chosen outcome needs between the options and the note', () => {
     const field = <input aria-label="Due date" />
-    const elements = rendered({ ...base, field })
+    const elements = rendered({ ...base, workRecord: { field } })
     const inputs = elements.filter((element) => element.type === 'input')
     expect(inputs).toHaveLength(1)
   })

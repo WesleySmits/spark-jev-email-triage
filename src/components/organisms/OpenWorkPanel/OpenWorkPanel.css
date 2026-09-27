@@ -33,22 +33,23 @@
   font: var(--text-meta);
 }
 
-/* The same sticky overline titles the grouped queue uses. */
+/* Sticky overline titles, as the grouped queue has, inset like the items
+ * below them so the section and its work line up. */
 .open-work__section-title {
+  display: flex;
+  gap: var(--s2);
+  align-items: baseline;
   position: sticky;
   top: 0;
   z-index: 1;
   margin: 0;
-  display: flex;
-  align-items: baseline;
-  gap: var(--s2);
-  padding: var(--s2) var(--s3);
+  padding: var(--s2) var(--s4);
+  background: var(--surface-2);
   border-bottom: 1px solid var(--line);
   color: var(--muted);
-  background: var(--surface-2);
   font: var(--text-overline);
-  letter-spacing: var(--tracking-overline);
   text-transform: uppercase;
+  letter-spacing: var(--tracking-overline);
 }
 
 .open-work__section-count {

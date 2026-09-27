@@ -183,19 +183,21 @@ export const SavedReadbackWithDueDate: Story = {
     ...base,
     chosen: 'follow_up_later',
     recordDisabled: false,
-    saved: {
-      heading: 'Saved in Open work',
-      title: 'Follow up later',
-      detail:
-        'Saved by you on 26 Sep, 09:15, due Fri 2 Oct. It is about this exact mailbox copy and version, and stays open until you decide again.',
-      state: { label: 'Open work', tone: 'review' },
+    workRecord: {
+      saved: {
+        heading: 'Saved in Open work',
+        title: 'Follow up later',
+        detail:
+          'Saved by you on 26 Sep, 09:15, due Fri 2 Oct. It is about this exact mailbox copy and version, and stays open until you decide again.',
+        state: { label: 'Open work', tone: 'review' },
+      },
+      field: (
+        <p className="handling-panel__field">
+          <label htmlFor="due-story">Due date (optional)</label>
+          <input id="due-story" type="date" defaultValue="2026-10-02" />
+        </p>
+      ),
     },
-    field: (
-      <p className="handling-panel__field">
-        <label htmlFor="due-story">Due date (optional)</label>
-        <input id="due-story" type="date" defaultValue="2026-10-02" />
-      </p>
-    ),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)

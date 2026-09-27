@@ -21,7 +21,7 @@ import type {
   WorkDecisionOutcome,
   WorkDecisionRequest,
 } from '../../../app/open-work'
-import { decideFollowUp, type FollowUpDecision } from '../../../domain/follow-up'
+import { admitFollowUp, decideFollowUp, type FollowUpDecision } from '../../../domain/follow-up'
 import type { ListedEvidence } from './classification'
 import type { WorkbenchMessage } from './workbench'
 import { WorkbenchPage } from './WorkbenchPage'
@@ -3517,23 +3517,16 @@ const workStates: Readonly<Record<string, StoredClassification>> = Object.fromEn
   ]),
 )
 
-/** The open row's thread, read now, naming the version its judgment names. */
-const workBodies = (): BodyLoader => {
-  const load = bodiesAfter(0)
-  return async (id, options) => {
-    const body = await load(id, options)
-    const row = liveRows.find((message) => message.id === id)
-    const judged = workStates[id]
-    if (body === null || row === undefined || judged === undefined) return body
-    return {
-      ...body,
-      classification: {
-        ...judged,
-        state: judged.state === 'stale' ? 'stale' : 'current',
-      } as StoredClassification,
-    }
-  }
-}
+/**
+ * What each row's thread read proves: the version its judgment names holds,
+ * except m2's, where a later message has arrived since.
+ */
+const workProofs: Readonly<Record<string, StoredClassification>> = Object.fromEntries(
+  Object.entries(workStates).map(([id, judged]) => [
+    id,
+    judged.state === 'unverified' ? { ...judged, state: 'current' } : judged,
+  ]),
+)
 
 const decided = (
   mailboxId: string,
@@ -3591,9 +3584,6 @@ function useStoryWorkStore(initial: RecordedWork) {
   const onRecord = (request: WorkDecisionRequest): Promise<WorkDecisionOutcome> => {
     const key = JSON.stringify(request.target.copy)
     const history = copies.get(key) ?? []
-    if (request.kind === 'reopen' && history[0]?.kind !== 'handled_in_spark') {
-      return Promise.resolve({ status: 'refused', reason: 'nothing_to_reopen' })
-    }
     // The Save id identifies the request; it is not part of the decision.
     const decision = decideFollowUp({
       target: request.target,
@@ -3602,6 +3592,9 @@ function useStoryWorkStore(initial: RecordedWork) {
       decidedBy: 'you',
       decidedAt: workNow,
     })
+    // The same rule the real store applies, from the same domain module.
+    const admission = admitFollowUp(decision, history)
+    if (admission.status === 'refused') return Promise.resolve(admission)
     copies.set(key, [decision, ...history])
     return Promise.resolve({ status: 'recorded' })
   }
@@ -3650,7 +3643,7 @@ function WithWork({ initialWork, reachOf, ...args }: Props & WorkSetup) {
 const workArgs = {
   ...proposing(workStates),
   messages: liveRows,
-  loadBody: fn(workBodies()),
+  loadBody: fn(provingBodies(workProofs)),
 } satisfies Partial<Props>
 
 /** As the route reads reach: the three sample mailboxes were read, bounded; others are absent. */
@@ -3849,14 +3842,17 @@ export const OpenWorkOnMobile: Story = {
   globals: { viewport: { value: 'phone390', isRotated: false } },
   ...withWork(),
   play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
     await userEvent.click(workTab(canvasElement))
-    const tabs = canvasElement.querySelector('.workspace-tabs')
-    await expect(tabs?.scrollWidth).toBeLessThanOrEqual(tabs?.clientWidth ?? 0)
-    const panel = workPanel(canvasElement)
-    if (!panel) throw new Error('No Open work panel')
-    const [first] = within(panel).getAllByRole('button', { name: 'Open in reader' })
-    if (!first) throw new Error('No listed item to open')
-    await userEvent.click(first)
+    const tabs = canvas.getByRole('navigation', { name: 'Workbench lists' })
+    await expect(tabs.scrollWidth).toBeLessThanOrEqual(tabs.clientWidth)
+    const panel = canvas.getByRole('region', { name: 'Open work' })
+    await userEvent.click(
+      within(panel).getByRole('button', {
+        name: 'Open in reader',
+        description: 'Can delivery move a week earlier?',
+      }),
+    )
     await waitFor(() => expect(handlingPanel(canvasElement)).toBeVisible())
     await userEvent.click(within(canvasElement).getByRole('button', { name: /Back/ }))
     await expect(workPanel(canvasElement)).toBeVisible()

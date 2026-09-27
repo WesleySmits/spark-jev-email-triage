@@ -287,7 +287,7 @@ export type DecidedCopies = Readonly<{
 }>
 
 /** How many copies one read of the whole record may return. */
-export const decidedCopyLimit = 200
+const decidedCopyLimit = 200
 
 /**
  * Every copy with a recorded decision, bounded by `limit` copies. A row this

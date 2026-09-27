@@ -19,6 +19,7 @@ import {
   handlingTags,
   handlingTitle,
   recordedDecision,
+  type RecordedView,
 } from './handling'
 import { storedView } from './work-save'
 import { dueInstant, useWorkSave, type WorkSaving } from './useWorkSave'
@@ -123,26 +124,16 @@ export function HandlingAction({ proposable, work, ...dependencies }: HandlingAc
           setChosen(asOutcome(value))
         }}
         note={handlingNote(proposable?.target.copy.messageId, work !== undefined)}
-        field={
-          work !== undefined &&
-          (chosen === 'reply_needed' || chosen === 'follow_up_later') && (
-            <DueField value={due} onChange={setDue} />
-          )
+        workRecord={
+          work && {
+            saved: savedReadback(work),
+            field: takesDue(chosen) && <DueField value={due} onChange={setDue} />,
+          }
         }
-        saved={savedReadback(work)}
         recordLabel="Record decision"
         onRecord={record}
         recordDisabled={chosen === null || proposable === undefined}
-        recorded={
-          view === null
-            ? undefined
-            : {
-                ...view,
-                changeLabel: 'Change decision',
-                onChange: change,
-                changeDisabled: view.locked || state.busy,
-              }
-        }
+        recorded={recordedProps(view, change, state.busy)}
         tags={handlingTags(view)}
         result={handlingResult(proposable !== undefined)}
       />
@@ -157,9 +148,19 @@ export function HandlingAction({ proposable, work, ...dependencies }: HandlingAc
   )
 }
 
+/** Whether an outcome owes work by a date a person may name. */
+const takesDue = (outcome: HandlingOutcome | null) =>
+  outcome === 'reply_needed' || outcome === 'follow_up_later'
+
+/** The recorded decision as the panel shows it, with the one way back. */
+function recordedProps(view: RecordedView | null, onChange: () => void, busy: boolean) {
+  if (view === null) return undefined
+  return { ...view, changeLabel: 'Change decision', onChange, changeDisabled: view.locked || busy }
+}
+
 /** What the record already held for this copy, as the panel shows it. */
-function savedReadback(work: WorkSaving | undefined) {
-  const view = storedView(work?.stored)
+function savedReadback(work: WorkSaving) {
+  const view = storedView(work.stored)
   return view === null ? undefined : { heading: 'Saved in Open work', ...view }
 }
 

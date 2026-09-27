@@ -149,32 +149,37 @@ function savedText(item: OpenWorkItem): string {
 
 type Labels = Readonly<{ labelOf: (mailboxId: string) => string }>
 
+/** What the item is about: the listed subject, or its provider id where none is listed. */
+const titleOf = (item: OpenWorkItem, row: WorkbenchMessage | undefined) =>
+  row?.subject ?? `Message ${item.copy.messageId} (not in this reading)`
+
+function decisionOf(item: OpenWorkItem): WorkItemView['decision'] {
+  const [latest] = item.history
+  if (latest === undefined) return { label: 'No decision', tone: 'neutral' }
+  return {
+    label: kindLabels[latest.kind],
+    tone: latest.kind === 'handled_in_spark' ? 'neutral' : 'review',
+  }
+}
+
+/** Only a closure that still stands is reopened; lapsed work is open already. */
+const reopenOf = (item: OpenWorkItem) =>
+  item.group === 'completed' && canReopen(item) ? item.history[0]?.target : undefined
+
 /** One item in words, with the row to open and the reopen it offers. */
-export function workItemView(
-  item: OpenWorkItem,
-  reading: WorkReading,
-  { labelOf }: Labels,
-): WorkItemView {
+function workItemView(item: OpenWorkItem, reading: WorkReading, { labelOf }: Labels): WorkItemView {
   const row = rowFor(item.copy, reading.messages)
-  const latest = item.history[0]
   return {
     id: item.copyId,
-    title: row?.subject ?? `Message ${item.copy.messageId} (not in this reading)`,
+    title: titleOf(item, row),
     source: labelOf(item.copy.mailboxId),
-    decision: {
-      label: latest === undefined ? 'No decision' : kindLabels[latest.kind],
-      tone: latest?.kind === 'handled_in_spark' ? 'neutral' : 'review',
-    },
+    decision: decisionOf(item),
     standing: standings[item.group],
     saved: savedText(item),
     inbox: inboxText(item.inbox),
     conflicts: item.conflicts.map((conflict) => conflictWords[conflict]),
     rowId: row?.id,
-    // Only a closure that still stands is reopened; lapsed work is open already.
-    reopen:
-      item.group === 'completed' && canReopen(item) && latest !== undefined
-        ? latest.target
-        : undefined,
+    reopen: reopenOf(item),
   }
 }
 

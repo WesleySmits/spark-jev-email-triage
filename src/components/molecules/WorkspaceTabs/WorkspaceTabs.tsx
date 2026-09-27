@@ -1,7 +1,7 @@
 import './WorkspaceTabs.css'
 
 /** One tab: its name, its own count and where that count comes from. */
-export type WorkspaceTab = Readonly<{
+type WorkspaceTab = Readonly<{
   id: string
   /** The visible name, e.g. "Spark Inbox". */
   label: string

@@ -210,10 +210,7 @@ function LoadedPage({
   // retry is global but costs no mail that did arrive.
   const syncLabel = syncScopeLabel(inbox.scope)
   const { view } = inbox.scope
-  const found = discovery?.status === 'ready' ? discovery : undefined
-  const shown = found ?? inbox
-  const refreshSummary = 'refresh' in inbox ? inbox.refresh : undefined
-  const reach = mailboxReachItems(shown.scope, shown.mailboxes, refreshSummary)
+  const { shown, reach } = shownReading(inbox, discovery)
   return (
     <div ref={root} className="app-root app-root--inbox">
       <div className="inbox-view__workbench">
@@ -231,22 +228,7 @@ function LoadedPage({
           mailboxReach={{ items: reach, onRetry: reread }}
           scope={inbox.scope}
           worklist={{ coverage: worklistCoverage(coverage, view) }}
-          discovery={{
-            scope: found?.scope,
-            ...(discovery?.status === 'unavailable' && {
-              error: 'Search unavailable. The loaded selection is still shown.',
-            }),
-            loading,
-            resetKey: inbox.reading,
-            onSearch: (query) => {
-              void onSearch({ view, query })
-            },
-            onContinue: () => {
-              if (found)
-                void onSearch({ view, query: found.scope.query, cursor: found.scope.cursor })
-            },
-            onClear: onClearSearch,
-          }}
+          discovery={discoveryProps({ inbox, discovery, loading, onSearch, onClearSearch })}
           queueControls={
             <>
               <InboxViewBar scope={inbox.scope} loading={loading} onChange={change} />
@@ -290,12 +272,7 @@ function LoadedPage({
             onExecute: ReviewDesk.executeDone,
             onConfirmed: reread,
           }}
-          work={{
-            recorded: work,
-            reachOf: mailboxReachIn(inbox.scope, coverage),
-            onRecord: ReviewDesk.recordWork,
-            onChanged: onWorkChanged,
-          }}
+          work={workbenchWork(work, inbox, coverage, onWorkChanged)}
           topBar={{
             syncStatus: 'connected',
             syncLabel,
@@ -309,6 +286,62 @@ function LoadedPage({
     </div>
   )
 }
+
+/**
+ * What the workbench lists: a finished search's rows, else the reading's,
+ * with the mailbox reach the rail shows for them.
+ */
+function shownReading(inbox: ReadyDesk, discovery: DeskDiscovery | undefined) {
+  const shown = discovery?.status === 'ready' ? discovery : inbox
+  const refreshSummary = 'refresh' in inbox ? inbox.refresh : undefined
+  return { shown, reach: mailboxReachItems(shown.scope, shown.mailboxes, refreshSummary) }
+}
+
+type DiscoveryInput = Pick<
+  LoadedPageProps,
+  'inbox' | 'discovery' | 'loading' | 'onSearch' | 'onClearSearch'
+>
+
+/**
+ * Search as the workbench takes it: the scope of a finished search, or why
+ * search is unavailable while the loaded selection stays shown.
+ */
+function discoveryProps({ inbox, discovery, loading, onSearch, onClearSearch }: DiscoveryInput) {
+  const { view } = inbox.scope
+  const found = discovery?.status === 'ready' ? discovery : undefined
+  return {
+    scope: found?.scope,
+    ...(discovery?.status === 'unavailable' && {
+      error: 'Search unavailable. The loaded selection is still shown.',
+    }),
+    loading,
+    resetKey: inbox.reading,
+    onSearch: (query: string) => {
+      void onSearch({ view, query })
+    },
+    onContinue: () => {
+      if (found) void onSearch({ view, query: found.scope.query, cursor: found.scope.cursor })
+    },
+    onClear: onClearSearch,
+  }
+}
+
+/**
+ * The saved work list as the workbench takes it: the record as last read,
+ * what this reading and the Inbox Zero scan prove about each mailbox, and
+ * where a decision is saved. Nothing here reaches Spark.
+ */
+const workbenchWork = (
+  recorded: RecordedWork,
+  inbox: ReadyDesk,
+  coverage: InboxCoverage | undefined,
+  onChanged: () => void,
+) => ({
+  recorded,
+  reachOf: mailboxReachIn(inbox.scope, coverage),
+  onRecord: ReviewDesk.recordWork,
+  onChanged,
+})
 
 /** The page for what the loader found: waiting, no mailboxes or the inbox. */
 function Page(props: PageProps) {
@@ -416,16 +449,35 @@ function loadedMessageSummary(inbox: DeskView | DeskRefresh) {
 }
 
 /**
+ * What the last Refresh proved changed, until it is dismissed. A later
+ * Refresh shows its own notice again.
+ */
+function useRefreshedNotice(inbox: DeskView | DeskRefresh) {
+  const refreshed = inbox.status === 'ready' && 'refresh' in inbox ? inbox.refresh : undefined
+  const [dismissed, setDismissed] = useState<string>()
+  const notice = refreshed && refreshNotice(refreshed)
+  return {
+    visible: Boolean(refreshed && dismissed !== refreshed.refreshedAt),
+    title: notice?.title,
+    detail: notice?.detail,
+    onDismiss: () => {
+      if (refreshed) setDismissed(refreshed.refreshedAt)
+    },
+  }
+}
+
+/**
  * The saved work list, read once by the loader and again on Refresh or after
  * a save the store confirmed. A newer read always wins over an older one.
  */
 function useRecordedWork(initial: RecordedWork) {
   const [work, setWork] = useState(initial)
   const sequence = useRef(0)
-  const reread = async () => {
+  const reread = () => {
     const current = ++sequence.current
-    const next = await ReviewDesk.work()
-    if (current === sequence.current) setWork(next)
+    void ReviewDesk.work().then((next) => {
+      if (current === sequence.current) setWork(next)
+    })
   }
   return { work, reread } as const
 }
@@ -441,9 +493,7 @@ function Home() {
   const [waited, setWaited] = useState(false)
   const { count, label: messages } = loadedMessageSummary(inbox)
   const notice = useConnectedNotice(root, waited && count > 0)
-  const refreshed = inbox.status === 'ready' && 'refresh' in inbox ? inbox.refresh : undefined
-  const [dismissedRefresh, setDismissedRefresh] = useState<string>()
-  const refreshedNotice = refreshed && refreshNotice(refreshed)
+  const refreshedToast = useRefreshedNotice(inbox)
   const triage = useTriageRunController({
     reading: inbox.status === 'ready' ? inbox.reading : undefined,
     gateway: triageGateway,
@@ -462,7 +512,7 @@ function Home() {
           notice.hide()
           // Refresh checks the saved work against the new reading, so it
           // reads the record again beside the mailbox.
-          void recordedWork.reread()
+          recordedWork.reread()
           return refresh()
         }}
         onChange={read}
@@ -473,9 +523,7 @@ function Home() {
         loading={loading}
         triage={triage}
         work={recordedWork.work}
-        onWorkChanged={() => {
-          void recordedWork.reread()
-        }}
+        onWorkChanged={recordedWork.reread}
       />
       <LocalStatusToast
         visible={notice.visible}
@@ -484,15 +532,7 @@ function Home() {
         dismissLabel="Dismiss"
         onDismiss={notice.hide}
       />
-      <LocalStatusToast
-        visible={Boolean(refreshed && dismissedRefresh !== refreshed.refreshedAt)}
-        title={refreshedNotice?.title}
-        detail={refreshedNotice?.detail}
-        dismissLabel="Dismiss"
-        onDismiss={() => {
-          if (refreshed) setDismissedRefresh(refreshed.refreshedAt)
-        }}
-      />
+      <LocalStatusToast {...refreshedToast} dismissLabel="Dismiss" />
     </>
   )
 }

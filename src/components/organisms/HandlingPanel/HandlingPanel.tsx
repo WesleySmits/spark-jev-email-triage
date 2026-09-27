@@ -58,10 +58,13 @@ type HandlingPanelProps = Readonly<{
   onChoose: (value: string) => void
   /** One line under the options, e.g. what this records and what it does not. */
   note: string
-  /** An optional field the chosen option needs, e.g. a due date, under the options. */
-  field?: ReactNode
-  /** What a durable record already holds, above the chooser. Left out: nothing is shown. */
-  saved?: SavedDecisionView | undefined
+  /**
+   * What a durable work record adds, where the caller keeps one: what it
+   * already holds for this message, shown above the chooser, and a field the
+   * chosen option needs, e.g. a due date, under the options. Left out: the
+   * panel is the chooser alone.
+   */
+  workRecord?: Readonly<{ saved?: SavedDecisionView | undefined; field?: ReactNode }> | undefined
   recordLabel: string
   onRecord: () => void
   /** Recording is refused whenever the caller says there is nothing to record. */
@@ -112,8 +115,7 @@ export function HandlingPanel({
   chosen,
   onChoose,
   note,
-  field,
-  saved,
+  workRecord,
   recordLabel,
   onRecord,
   recordDisabled = false,
@@ -137,33 +139,55 @@ export function HandlingPanel({
           {summary}
         </p>
       </div>
-      {saved && !recorded && <SavedDecision saved={saved} />}
-      {recorded ? (
-        <RecordedDecision decision={recorded} />
-      ) : (
-        <OutcomeChooser
-          group={{ name: `${id}-outcome`, titleId, summaryId }}
-          options={options}
-          chosen={chosen}
-          onChoose={onChoose}
-          note={note}
-          field={field}
-          recordLabel={recordLabel}
-          onRecord={onRecord}
-          recordDisabled={recordDisabled}
-          result={result}
-        />
-      )}
+      <PanelBody
+        recorded={recorded}
+        saved={workRecord?.saved}
+        chooser={
+          <OutcomeChooser
+            group={{ name: `${id}-outcome`, titleId, summaryId }}
+            options={options}
+            chosen={chosen}
+            onChoose={onChoose}
+            note={note}
+            field={workRecord?.field}
+            recordLabel={recordLabel}
+            onRecord={onRecord}
+            recordDisabled={recordDisabled}
+            result={result}
+          />
+        }
+      />
       <Tags tags={tags} />
     </section>
   )
 }
 
+type BodyProps = Readonly<{
+  recorded: RecordedDecisionView | undefined
+  saved: SavedDecisionView | undefined
+  chooser: ReactNode
+}>
+
+/**
+ * The recorded decision where one stands, or the chooser with what the
+ * durable record already holds above it.
+ */
+function PanelBody({ recorded, saved, chooser }: BodyProps) {
+  if (recorded) return <RecordedDecision decision={recorded} />
+  return (
+    <>
+      {saved && <SavedDecision saved={saved} />}
+      {chooser}
+    </>
+  )
+}
+
 type ChooserProps = Pick<
   HandlingPanelProps,
-  'options' | 'chosen' | 'onChoose' | 'note' | 'field' | 'recordLabel' | 'onRecord' | 'result'
+  'options' | 'chosen' | 'onChoose' | 'note' | 'recordLabel' | 'onRecord' | 'result'
 > &
   Readonly<{
+    field: ReactNode
     /** What names the radiogroup and what groups its radios. */
     group: Readonly<{ name: string; titleId: string; summaryId: string }>
     recordDisabled: boolean
