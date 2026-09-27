@@ -1,7 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import { decideFollowUp } from '../../../domain/follow-up'
-import type { WorkDecisionRequest, WorkMessageRead } from '../../../app/open-work'
+import type {
+  WorkDecisionRequest,
+  WorkDecisionResult,
+  WorkMessageRead,
+} from '../../../app/open-work'
 import { openWorkList, openWorkTally } from '../../../domain/open-work'
 import { OpenWorkPage } from './OpenWorkPage'
 
@@ -93,7 +97,10 @@ const meta = {
     moreError: false,
     onRefresh: fn(),
     onLoadMore: fn(),
-    onRecord: fn(() => Promise.resolve({ status: 'recorded' as const })),
+    onRecord: fn((request: WorkDecisionRequest): Promise<WorkDecisionResult> => {
+      if (!request.requestId) throw new Error('A save needs a request id')
+      return Promise.resolve({ status: 'recorded' })
+    }),
     onRead: fn((): Promise<WorkMessageRead> => Promise.resolve({ status: 'unavailable' })),
   },
 } satisfies Meta<typeof OpenWorkPage>
@@ -108,6 +115,22 @@ export const Overdue: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'I handled this in Spark' }))
     await expect(args.onRecord).toHaveBeenCalledOnce()
     await expect(canvas.getByText(/claim saved locally/)).toBeVisible()
+  },
+}
+export const UncertainSave: Story = {
+  args: {
+    onRecord: fn((request: WorkDecisionRequest): Promise<WorkDecisionResult> => {
+      if (!request.requestId) throw new Error('A save needs a request id')
+      return Promise.resolve({ status: 'unknown' })
+    }),
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    const button = canvas.getByRole('button', { name: 'I handled this in Spark' })
+    await userEvent.click(button)
+    await expect(canvas.getByText(/Could not save: unknown/)).toBeVisible()
+    await expect(button).toBeDisabled()
+    await expect(args.onRecord).toHaveBeenCalledOnce()
   },
 }
 export const NoRecordedWork: Story = {

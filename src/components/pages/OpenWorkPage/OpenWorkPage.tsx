@@ -43,15 +43,18 @@ function WorkControls({
   onRecord: Props['onRecord']
 }>) {
   const [saving, setSaving] = useState(false)
+  const [uncertain, setUncertain] = useState(false)
   const [result, setResult] = useState('')
   const latest = item.history[0]
   const target = latest?.target
   const verified = item.work.state !== 'unobserved' && item.work.state !== 'lapsed'
+  const blocked = saving || uncertain || !verified
   const save = (kind: 'reopen' | 'handled_in_spark') => {
     if (!target) return
     setSaving(true)
     void onRecord({ target, kind, dueAt: null, requestId: crypto.randomUUID() })
       .then((answer) => {
+        setUncertain(answer.status === 'unknown')
         setResult(
           answer.status === 'recorded'
             ? kind === 'reopen'
@@ -70,7 +73,7 @@ function WorkControls({
         <Button
           variant="secondary"
           type="button"
-          disabled={saving || !verified}
+          disabled={blocked}
           onClick={() => {
             save('reopen')
           }}
@@ -82,7 +85,7 @@ function WorkControls({
         <Button
           variant="secondary"
           type="button"
-          disabled={saving || !verified}
+          disabled={blocked}
           onClick={() => {
             save('handled_in_spark')
           }}
