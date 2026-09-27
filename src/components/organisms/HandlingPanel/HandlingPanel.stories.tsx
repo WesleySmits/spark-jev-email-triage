@@ -34,7 +34,7 @@ const outcomes: readonly HandlingOptionView[] = [
   },
 ]
 
-const note = `Reply needed, Follow up later and Read only record work in this app only: no Spark command is sent and the mail stays in your Inbox. Handle now proposes one guarded Spark Done for message ID ${messageId}; Spark acts on that ID, so another copy carrying it may change too. Nothing is stored yet, so a decision is kept only while this message stays open.`
+const note = `Reply needed, Follow up later and Read only record work in this app only: no Spark command is sent and the mail stays in your Inbox. Handle now proposes one guarded Spark Done for message ID ${messageId}; Spark acts on that ID, so another copy carrying it may change too. Nothing is stored here, so a decision is kept only while this message stays open.`
 
 const base = {
   title: 'What happens next?',
@@ -99,7 +99,7 @@ export const RecordedLocally: Story = {
     recorded: {
       title: 'Reply needed',
       detail:
-        'Recorded in this app only. The mail stays in your Spark Inbox, and nothing was stored: this decision is kept while the message stays open. Your mailbox is unchanged.',
+        'Recorded in this app only. The mail stays in your Spark Inbox, and nothing was saved: this decision is kept while the message stays open. Your mailbox is unchanged.',
       state: { label: 'Local work status', tone: 'review' },
       changeLabel: 'Change decision',
       onChange: fn(),
@@ -165,10 +165,46 @@ export const DoneNotConnected: Story = {
   },
 }
 
-/** At 320px the four outcomes stack instead of squeezing their effect lines. */
+/** At 320px the outcomes stack instead of squeezing their effect lines. */
 export const Narrow: Story = {
   globals: { viewport: { value: 'mobile1', isRotated: false } },
   play: async ({ canvasElement }) => {
     await expect(canvasElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth)
+  },
+}
+
+/**
+ * What the local work record already holds for this message, read back above
+ * the chooser, with the due-date field Follow up later offers. Deciding again
+ * adds to what is kept; nothing here saves or reaches Spark.
+ */
+export const SavedReadbackWithDueDate: Story = {
+  args: {
+    ...base,
+    chosen: 'follow_up_later',
+    recordDisabled: false,
+    saved: {
+      heading: 'Saved in Open work',
+      title: 'Follow up later',
+      detail:
+        'Saved by you on 26 Sep, 09:15, due Fri 2 Oct. It is about this exact mailbox copy and version, and stays open until you decide again.',
+      state: { label: 'Open work', tone: 'review' },
+    },
+    field: (
+      <p className="handling-panel__field">
+        <label htmlFor="due-story">Due date (optional)</label>
+        <input id="due-story" type="date" defaultValue="2026-10-02" />
+      </p>
+    ),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('Saved in Open work')).toBeVisible()
+    await expect(canvas.getByText('Open work')).toBeVisible()
+    const due = canvas.getByLabelText('Due date (optional)')
+    await userEvent.click(due)
+    await expect(due).toHaveFocus()
+    // The chooser stays: deciding again is visibly adding to what is kept.
+    await expect(canvas.getAllByRole('radio')).toHaveLength(4)
   },
 }

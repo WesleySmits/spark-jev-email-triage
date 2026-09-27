@@ -58,16 +58,16 @@ export function WorkspaceTabs({ label, tabs, current, onSelect, className }: Wor
             <button
               type="button"
               className="workspace-tabs__tab"
+              // The name starts with the visible label and count, and adds
+              // what the count is of, so it is never read as another total.
+              aria-label={`${tab.label}: ${tab.count} ${tab.countLabel}`}
               aria-current={tab.id === current ? 'page' : undefined}
               onClick={() => {
                 onSelect(tab.id)
               }}
             >
               <span className="workspace-tabs__label">{tab.label}</span>
-              <span className="workspace-tabs__count" aria-hidden="true">
-                {tab.count}
-              </span>
-              <span className="workspace-tabs__sr">{`: ${tab.count} ${tab.countLabel}`}</span>
+              <span className="workspace-tabs__count">{tab.count}</span>
             </button>
           </li>
         ))}

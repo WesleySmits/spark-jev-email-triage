@@ -49,12 +49,9 @@ describe('WorkspaceTabs', () => {
 
   it('says what each count is of, so two sources never read as one figure', () => {
     const { buttons } = render()
-    const hidden = buttons.map((button) =>
-      descendants(button).find((element) => element.props['className'] === 'workspace-tabs__sr'),
-    )
-    expect(hidden.map((element) => element?.props['children'])).toEqual([
-      ': 10 loaded messages loaded from Spark',
-      ': 3 open items saved in this app',
+    expect(buttons.map((button) => button.props['aria-label'])).toEqual([
+      'Spark Inbox: 10 loaded messages loaded from Spark',
+      'Open work: 3 open items saved in this app',
     ])
   })
 

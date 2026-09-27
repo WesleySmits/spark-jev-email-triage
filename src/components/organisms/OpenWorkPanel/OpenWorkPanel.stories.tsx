@@ -111,7 +111,7 @@ export const WithWork: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByRole('heading', { level: 1, name: 'Open work' })).toBeVisible()
     await expect(canvas.getByText(/Not a Spark Inbox count/)).toBeVisible()
-    for (const name of ['Overdue follow-up1', 'Open work2', 'Completed here1']) {
+    for (const name of ['Overdue follow-up 1', 'Open work 2', 'Completed here 1']) {
       await expect(canvas.getByRole('heading', { level: 2, name })).toBeVisible()
     }
     // One delivery to an address and an alias stays two items.
@@ -162,7 +162,7 @@ export const NoOpenWork: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByRole('heading', { name: 'No open work saved here' })).toBeVisible()
-    await expect(canvas.getByRole('heading', { level: 2, name: 'Completed here1' })).toBeVisible()
+    await expect(canvas.getByRole('heading', { level: 2, name: 'Completed here 1' })).toBeVisible()
   },
 }
 
@@ -193,7 +193,7 @@ export const Unavailable: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByRole('heading', { name: 'Open work could not be read' })).toBeVisible()
-    await expect(canvas.queryByRole('heading', { level: 2, name: /Open work\d/ })).toBeNull()
+    await expect(canvas.queryByRole('heading', { level: 2, name: /Open work \d/ })).toBeNull()
   },
 }
 

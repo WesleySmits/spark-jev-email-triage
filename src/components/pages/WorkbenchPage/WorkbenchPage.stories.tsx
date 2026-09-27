@@ -14,6 +14,14 @@ import type {
 } from '../../../domain/stored-classification'
 import type { ReviewReason, SuspicionSignal } from '../../../domain/triage'
 import { approveProposal } from '../../../domain/mailbox-action'
+import type {
+  MailboxReachOf,
+  RecordedWork,
+  RecordedWorkCopy,
+  WorkDecisionOutcome,
+  WorkDecisionRequest,
+} from '../../../app/open-work'
+import { decideFollowUp, type FollowUpDecision } from '../../../domain/follow-up'
 import type { ListedEvidence } from './classification'
 import type { WorkbenchMessage } from './workbench'
 import { WorkbenchPage } from './WorkbenchPage'
@@ -2933,7 +2941,7 @@ const expectedEffect = (root: HTMLElement) =>
 const press = (root: HTMLElement, name: string) =>
   userEvent.click(within(root).getByRole('button', { name, hidden: false }))
 
-/** The handling step in the reader: the four outcomes and what they change. */
+/** The handling step in the reader: the outcomes and what they change. */
 const handlingPanel = (root: HTMLElement) =>
   root.querySelector<HTMLElement>('.workbench__reader .handling-panel')
 
@@ -3171,7 +3179,7 @@ export const ProposalLapsesOnNewerMessage: Story = {
  * The three outcomes that stay in this app. Recording one keeps the work
  * open here and asks Spark for nothing: no proposal is made, the action
  * panel stays empty, and the copy says the mail is still in the Inbox and
- * that nothing was stored. All data in this story is fictional.
+ * that nothing was saved. All data in this story is fictional.
  */
 export const HandlingRecordsLocalWorkOnly: Story = {
   globals: { viewport: { value: 'desktop', isRotated: false } },
@@ -3181,7 +3189,7 @@ export const HandlingRecordsLocalWorkOnly: Story = {
     await expect(handlingPanel(canvasElement)).toHaveTextContent(
       'The mail stays in your Spark Inbox',
     )
-    await expect(handlingPanel(canvasElement)).toHaveTextContent('nothing was stored')
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('nothing was saved')
 
     // Nothing was proposed, so the guarded path was never entered.
     await expect(actionPanel(canvasElement)).toHaveTextContent('Nothing proposed')
@@ -3333,7 +3341,7 @@ export const HandlingWithoutAConnectedAction: Story = {
 }
 
 /**
- * The handling step at 320px. The four outcomes stack under the message
+ * The handling step at 320px. The outcomes stack under the message
  * instead of squeezing their effect lines out of sight, and nothing
  * overflows sideways.
  */
@@ -3354,7 +3362,7 @@ export const HandlingOnMobile: Story = {
     await chooseOutcome(canvasElement, 'Follow up later')
     await press(canvasElement, 'Record decision')
     await expect(handlingPanel(canvasElement)).toHaveTextContent('Follow up later')
-    await expect(handlingPanel(canvasElement)).toHaveTextContent('nothing was stored')
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('nothing was saved')
   },
 }
 
@@ -3479,5 +3487,378 @@ export const DesktopHasNoFilterButton: Story = {
     await expect(canvas.getByRole('complementary', { name: 'Filters' })).toBeVisible()
     await expect(canvas.queryByRole('button', { name: 'Filters' })).not.toBeInTheDocument()
     await expect(canvas.queryByRole('dialog')).not.toBeInTheDocument()
+  },
+}
+
+// Open work, variant A. Fictional throughout: the record below is what the
+// local work store would hold, and no story reaches Spark or a store.
+
+/** The instant overdue is measured against, fixed so the stories do not age. */
+const workNow = '2026-09-27T12:00:00.000Z'
+
+/** Live-shaped rows: each names its provider id, as a listed copy does. */
+const liveRows = listedRows.map((message) => ({ ...message, messageId: message.id }))
+
+/** A stored judgment naming each row's own mailbox copy, at the version shown. */
+const ownJudgment = (message: WorkbenchMessage, state: 'unverified' | 'stale') =>
+  ({
+    ...m1Unverified,
+    subject: {
+      ...subjectOf(message.id),
+      copy: { mailboxId: message.mailbox, messageId: message.id },
+    },
+    ...(state === 'stale' && { state: 'stale', reason: 'newer_message' }),
+  }) as StoredClassification
+
+const workStates: Readonly<Record<string, StoredClassification>> = Object.fromEntries(
+  liveRows.map((message) => [
+    message.id,
+    ownJudgment(message, message.id === 'm2' ? 'stale' : 'unverified'),
+  ]),
+)
+
+/** The open row's thread, read now, naming the version its judgment names. */
+const workBodies = (): BodyLoader => {
+  const load = bodiesAfter(0)
+  return async (id, options) => {
+    const body = await load(id, options)
+    const row = liveRows.find((message) => message.id === id)
+    const judged = workStates[id]
+    if (body === null || row === undefined || judged === undefined) return body
+    return {
+      ...body,
+      classification: {
+        ...judged,
+        state: judged.state === 'stale' ? 'stale' : 'current',
+      } as StoredClassification,
+    }
+  }
+}
+
+const decided = (
+  mailboxId: string,
+  messageId: string,
+  kind: FollowUpDecision['kind'],
+  dueAt: string | null = null,
+): FollowUpDecision =>
+  decideFollowUp({
+    target: {
+      copy: { mailboxId, messageId },
+      threadId: `t-${messageId}`,
+      latestMessageId: messageId,
+    },
+    kind,
+    dueAt,
+    decidedBy: 'you',
+    decidedAt: '2026-09-19T08:30:00.000Z',
+  })
+
+const copyRecord = (decisions: readonly FollowUpDecision[]): RecordedWorkCopy => {
+  const [latest] = decisions
+  if (latest === undefined) throw new Error('A recorded copy has a decision')
+  return { copy: latest.target.copy, decisions }
+}
+
+/**
+ * m1 is overdue; m2 was closed and a later message has reached it since; m3
+ * was claimed handled and Spark still lists it; and the same delivery as m1
+ * reached an alias this reading does not hold.
+ */
+const savedWork: RecordedWork = {
+  status: 'ready',
+  bounded: false,
+  readAt: workNow,
+  copies: [
+    copyRecord([decided('studio', 'm1', 'follow_up_later', '2026-09-25T21:59:59.999Z')]),
+    copyRecord([decided('atelier', 'm2', 'handled_in_spark')]),
+    copyRecord([decided('personal', 'm3', 'handled_in_spark')]),
+    copyRecord([decided('alias@mail.example', 'm1', 'reply_needed')]),
+  ],
+}
+
+/** A fictional local work store: appends, refuses a reopen of open work, and reads back. */
+function useStoryWorkStore(initial: RecordedWork) {
+  const [recorded, setRecorded] = useState(initial)
+  const [copies] = useState(
+    () =>
+      new Map(
+        (initial.status === 'ready' ? initial.copies : []).map((copy) => [
+          JSON.stringify(copy.copy),
+          [...copy.decisions],
+        ]),
+      ),
+  )
+  const onRecord = (request: WorkDecisionRequest): Promise<WorkDecisionOutcome> => {
+    const key = JSON.stringify(request.target.copy)
+    const history = copies.get(key) ?? []
+    if (request.kind === 'reopen' && history[0]?.kind !== 'handled_in_spark') {
+      return Promise.resolve({ status: 'refused', reason: 'nothing_to_reopen' })
+    }
+    // The Save id identifies the request; it is not part of the decision.
+    const decision = decideFollowUp({
+      target: request.target,
+      kind: request.kind,
+      dueAt: request.dueAt,
+      decidedBy: 'you',
+      decidedAt: workNow,
+    })
+    copies.set(key, [decision, ...history])
+    return Promise.resolve({ status: 'recorded' })
+  }
+  const onChanged = () => {
+    const ordered = [...copies.values()].map(copyRecord)
+    setRecorded({ status: 'ready', bounded: false, readAt: workNow, copies: ordered })
+  }
+  return { recorded, onRecord, onChanged } as const
+}
+
+type WorkSetup = Readonly<{ initialWork: RecordedWork; reachOf?: MailboxReachOf | undefined }>
+
+/**
+ * Stands in for the route: one work store for the whole story, and a page
+ * that can be closed and opened again over it, as reopening the app does.
+ */
+function WithWork({ initialWork, reachOf, ...args }: Props & WorkSetup) {
+  const store = useStoryWorkStore(initialWork)
+  const [opened, setOpened] = useState(0)
+  return (
+    <>
+      <button
+        type="button"
+        style={{ position: 'fixed', right: 8, bottom: 8, zIndex: 10 }}
+        onClick={() => {
+          setOpened((count) => count + 1)
+        }}
+      >
+        Close and reopen the app
+      </button>
+      <WorkbenchPage
+        key={opened}
+        {...args}
+        work={{
+          recorded: store.recorded,
+          reachOf,
+          onRecord: store.onRecord,
+          onChanged: store.onChanged,
+          now: () => workNow,
+        }}
+      />
+    </>
+  )
+}
+
+const workArgs = {
+  ...proposing(workStates),
+  messages: liveRows,
+  loadBody: fn(workBodies()),
+} satisfies Partial<Props>
+
+/** As the route reads reach: the three sample mailboxes were read, bounded; others are absent. */
+const listedMailboxes: MailboxReachOf = (mailboxId) =>
+  ['studio', 'atelier', 'personal'].includes(mailboxId) ? 'bounded' : 'absent'
+
+/** A story over one fictional work store that starts as `initialWork`. */
+const withWork = (initialWork: RecordedWork = savedWork, reachOf?: MailboxReachOf) => ({
+  args: workArgs,
+  render: (args: Props) => <WithWork {...args} initialWork={initialWork} reachOf={reachOf} />,
+})
+
+const workTab = (root: HTMLElement) => within(root).getByRole('button', { name: /^Open work/ })
+const inboxTab = (root: HTMLElement) => within(root).getByRole('button', { name: /^Spark Inbox/ })
+const workPanel = (root: HTMLElement) => root.querySelector<HTMLElement>('.open-work')
+
+/**
+ * Variant A: Open work is its own tab beside the Spark Inbox, and each tab
+ * counts only its own source. Overdue, open and completed work sit apart,
+ * with each conflict in words: a later message reopened m2, m3 is claimed
+ * handled while Spark still lists it, and the alias copy of m1 cannot be
+ * checked against this reading. The copies of m1 stay two items.
+ */
+export const OpenWorkBesideInbox: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  ...withWork(savedWork, listedMailboxes),
+  play: async ({ canvasElement }) => {
+    await expect(inboxTab(canvasElement)).toHaveAccessibleName(
+      'Spark Inbox: 4 loaded messages loaded from Spark',
+    )
+    await expect(workTab(canvasElement)).toHaveAccessibleName(
+      'Open work: 2 open items saved in this app',
+    )
+    await userEvent.click(workTab(canvasElement))
+    const panel = workPanel(canvasElement)
+    if (!panel) throw new Error('No Open work panel')
+    const list = within(panel)
+    await expect(list.getByText(/Not a Spark Inbox count/)).toBeVisible()
+    await expect(list.getByText('1 open · 1 overdue · 1 completed · 1 not checked')).toBeVisible()
+    for (const name of [/^Overdue follow-up/, /^Open work \d/, /^Not checked/, /^Completed here/]) {
+      await expect(list.getByRole('heading', { level: 2, name })).toBeVisible()
+    }
+    await expect(list.getByText(/Out of date: the thread has a newer version/)).toBeVisible()
+    await expect(list.getByText(/Spark still lists it in the Inbox/)).toBeVisible()
+    await expect(list.getByText('Mailbox: alias@mail.example')).toBeVisible()
+    await expect(
+      list.getByText(/Spark Inbox unknown: this mailbox is not in the reading/),
+    ).toBeVisible()
+    // Nothing reads as a confirmed Done.
+    await expect(panel).not.toHaveTextContent('Done confirmed')
+  },
+}
+
+/**
+ * The whole slice once: a decision saved in the reader appears in Open work,
+ * and is still there, and read back in the reader, after the app is closed
+ * and opened again. No Spark command runs for it.
+ */
+export const SavedWorkSurvivesReopening: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  ...withWork({ status: 'absent' }),
+  play: async ({ canvasElement, args }) => {
+    await expect(workTab(canvasElement)).toHaveAccessibleName(/^Open work: 0/)
+    await waitFor(() => expect(evidence(canvasElement)).toHaveTextContent('Triage current'))
+    await chooseOutcome(canvasElement, 'Follow up later')
+    await expect(within(canvasElement).getByLabelText('Due date (optional)')).toBeVisible()
+    await press(canvasElement, 'Record decision')
+    await waitFor(() => expect(handlingPanel(canvasElement)).toHaveTextContent('Saved here'))
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('stays after you close the app')
+    await expect(workTab(canvasElement)).toHaveAccessibleName(/^Open work: 1/)
+
+    await press(canvasElement, 'Close and reopen the app')
+    await expect(workTab(canvasElement)).toHaveAccessibleName(/^Open work: 1/)
+    await waitFor(() =>
+      expect(handlingPanel(canvasElement)).toHaveTextContent('Saved in Open work'),
+    )
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('Saved by you')
+
+    await userEvent.click(workTab(canvasElement))
+    const panel = workPanel(canvasElement)
+    await expect(panel).toHaveTextContent('Follow up later')
+    await expect(panel).toHaveTextContent('In Spark Inbox · unread')
+    // The guarded Done path was never entered for a local decision.
+    await expect(args.proposals).toMatchObject({ mode: 'enabled' })
+    await expect(actionPanel(canvasElement)).toHaveTextContent('Nothing proposed')
+  },
+}
+
+/**
+ * Handled in Spark is saved as the person's own claim and listed as
+ * completed, never as a confirmed Done. Reopening it records a reopen
+ * against the exact copy and version, and the work is open again.
+ */
+export const HandledClaimAndReopen: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  ...withWork({ status: 'absent' }),
+  play: async ({ canvasElement }) => {
+    await waitFor(() => expect(evidence(canvasElement)).toHaveTextContent('Triage current'))
+    await chooseOutcome(canvasElement, 'Handled in Spark')
+    await press(canvasElement, 'Record decision')
+    await waitFor(() => expect(handlingPanel(canvasElement)).toHaveTextContent('Your claim, saved'))
+    await expect(handlingPanel(canvasElement)).toHaveTextContent('not a confirmed Done')
+
+    await userEvent.click(workTab(canvasElement))
+    const panel = workPanel(canvasElement)
+    if (!panel) throw new Error('No Open work panel')
+    await expect(panel).toHaveTextContent('Completed · your claim')
+    await userEvent.click(within(panel).getByRole('button', { name: 'Reopen work' }))
+    await waitFor(() => expect(within(panel).getByRole('status')).toHaveTextContent('Reopened'))
+    await expect(panel).toHaveTextContent('Reopened')
+    await expect(workTab(canvasElement)).toHaveAccessibleName(/^Open work: 1/)
+  },
+}
+
+/**
+ * Three different empties stay apart: nothing loaded in this Inbox reading,
+ * and nothing saved as open work here. Neither is Inbox Zero, and neither
+ * says anything about the other.
+ */
+export const NoOpenWorkBesideAnEmptyReading: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  ...withWork({ status: 'absent' }),
+  args: {
+    ...workArgs,
+    messages: [],
+    scope: {
+      ...boundedScope,
+      mailboxes: boundedScope.mailboxes.map((mailbox) => ({
+        ...mailbox,
+        loaded: 0,
+        bounded: false,
+      })),
+      readable: 3,
+      loaded: 0,
+      bounded: false,
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('heading', { name: 'No mail loaded' })).toBeVisible()
+    await expect(inboxTab(canvasElement)).toHaveAccessibleName(
+      /^Spark Inbox: 0 loaded messages loaded from Spark/,
+    )
+    await userEvent.click(workTab(canvasElement))
+    await expect(canvas.getByRole('heading', { name: 'No open work saved here' })).toBeVisible()
+    await expect(canvas.getByText(/This says nothing about your Spark Inbox/)).toBeVisible()
+    await expect(canvas.queryByRole('heading', { name: 'No mail loaded' })).toBeNull()
+  },
+}
+
+/** A record that could not be read is said to be unreadable, never empty. */
+export const OpenWorkUnreadable: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  ...withWork({ status: 'unavailable' }),
+  play: async ({ canvasElement }) => {
+    await expect(workTab(canvasElement)).toHaveAccessibleName(/^Open work: \?/)
+    await userEvent.click(workTab(canvasElement))
+    await expect(
+      within(canvasElement).getByRole('heading', { name: 'Open work could not be read' }),
+    ).toBeVisible()
+    await expect(
+      within(canvasElement).queryByRole('heading', { name: 'No open work saved here' }),
+    ).toBeNull()
+  },
+}
+
+/**
+ * Proven absence: both Inbox views read every mailbox to the end and m9's
+ * saved work names a copy neither listed, so it is shown as no longer in
+ * the Spark Inbox with work still owed, rather than as done.
+ */
+export const OpenWorkLeftTheInbox: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  ...withWork(
+    {
+      status: 'ready',
+      bounded: false,
+      readAt: workNow,
+      copies: [copyRecord([decided('studio', 'm9', 'reply_needed')])],
+    },
+    () => 'complete',
+  ),
+  play: async ({ canvasElement }) => {
+    await userEvent.click(workTab(canvasElement))
+    const panel = workPanel(canvasElement)
+    await expect(panel).toHaveTextContent('Not in Spark Inbox · both views read completely')
+    await expect(panel).toHaveTextContent('No longer in the Spark Inbox, yet work is still saved')
+  },
+}
+
+/**
+ * At 390px the tabs sit at the top of the queue pane and fit; an item opens
+ * its message in the reader, and back returns to Open work.
+ */
+export const OpenWorkOnMobile: Story = {
+  globals: { viewport: { value: 'phone390', isRotated: false } },
+  ...withWork(),
+  play: async ({ canvasElement }) => {
+    await userEvent.click(workTab(canvasElement))
+    const tabs = canvasElement.querySelector('.workspace-tabs')
+    await expect(tabs?.scrollWidth).toBeLessThanOrEqual(tabs?.clientWidth ?? 0)
+    const panel = workPanel(canvasElement)
+    if (!panel) throw new Error('No Open work panel')
+    const [first] = within(panel).getAllByRole('button', { name: 'Open in reader' })
+    if (!first) throw new Error('No listed item to open')
+    await userEvent.click(first)
+    await waitFor(() => expect(handlingPanel(canvasElement)).toBeVisible())
+    await userEvent.click(within(canvasElement).getByRole('button', { name: /Back/ }))
+    await expect(workPanel(canvasElement)).toBeVisible()
   },
 }
