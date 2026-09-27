@@ -23,9 +23,18 @@ import type { InboxDiscoveryRequest, InboxListRequest } from '../app/live-inbox'
 import { useTriageRunController } from '../app/triage-run-client'
 import { mailboxReachItems } from '../app/mailbox-reach'
 import { refreshNotice } from '../app/refresh-notice'
+import { mailboxReachIn, type RecordedWork } from '../app/open-work'
 
 export const Route = createFileRoute('/')({
-  loader: () => readWithStart(() => ReviewDesk.open()),
+  // The saved work list is read beside the inbox, from the local record only,
+  // so what somebody decided is there again after the app was closed.
+  loader: async () => {
+    const [read, work] = await Promise.all([
+      readWithStart(() => ReviewDesk.open()),
+      ReviewDesk.work(),
+    ])
+    return { ...read, work }
+  },
   component: Home,
   errorComponent: Unreachable,
 })
@@ -136,6 +145,9 @@ type PageProps = Readonly<{
   coverage: InboxCoverage | undefined
   loading: boolean
   triage: ReturnType<typeof useTriageRunController>
+  /** The saved work list as last read, and how to read it again. */
+  work: RecordedWork
+  onWorkChanged: () => void
 }>
 
 type ReadyDesk = Extract<DeskView, { status: 'ready' }> | Extract<DeskRefresh, { status: 'ready' }>
@@ -177,6 +189,8 @@ function LoadedPage({
   coverage,
   loading,
   triage,
+  work,
+  onWorkChanged,
 }: LoadedPageProps) {
   const rememberReadFocus = useInboxReadFocus(root, loading)
   const reread = () => {
@@ -275,6 +289,12 @@ function LoadedPage({
             onApprove: ReviewDesk.approveDone,
             onExecute: ReviewDesk.executeDone,
             onConfirmed: reread,
+          }}
+          work={{
+            recorded: work,
+            reachOf: mailboxReachIn(inbox.scope, coverage),
+            onRecord: ReviewDesk.recordWork,
+            onChanged: onWorkChanged,
           }}
           topBar={{
             syncStatus: 'connected',
@@ -395,9 +415,25 @@ function loadedMessageSummary(inbox: DeskView | DeskRefresh) {
   } as const
 }
 
+/**
+ * The saved work list, read once by the loader and again on Refresh or after
+ * a save the store confirmed. A newer read always wins over an older one.
+ */
+function useRecordedWork(initial: RecordedWork) {
+  const [work, setWork] = useState(initial)
+  const sequence = useRef(0)
+  const reread = async () => {
+    const current = ++sequence.current
+    const next = await ReviewDesk.work()
+    if (current === sequence.current) setWork(next)
+  }
+  return { work, reread } as const
+}
+
 function Home() {
   const initialRead = Route.useLoaderData()
   const initial = initialRead.value
+  const recordedWork = useRecordedWork(initialRead.work)
   const { inbox, discovery, coverage, loading, read, refresh, search, clearSearch, request } =
     useDeskReading(initial, initialRead.startedAt)
   const root = useRef<HTMLDivElement>(null)
@@ -424,6 +460,9 @@ function Home() {
         }}
         onRefresh={() => {
           notice.hide()
+          // Refresh checks the saved work against the new reading, so it
+          // reads the record again beside the mailbox.
+          void recordedWork.reread()
           return refresh()
         }}
         onChange={read}
@@ -433,6 +472,10 @@ function Home() {
         coverage={coverage}
         loading={loading}
         triage={triage}
+        work={recordedWork.work}
+        onWorkChanged={() => {
+          void recordedWork.reread()
+        }}
       />
       <LocalStatusToast
         visible={notice.visible}

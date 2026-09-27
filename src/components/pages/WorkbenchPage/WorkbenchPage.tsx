@@ -42,6 +42,15 @@ import {
   WorkbenchTemplate,
 } from '../../templates/WorkbenchTemplate/WorkbenchTemplate'
 import { HandlingAction } from './HandlingAction'
+import {
+  QueuePane,
+  storedWorkFor,
+  useOpenWork,
+  workSaving,
+  type WorkbenchWork,
+  type WorkTab,
+} from './OpenWorkTab'
+import type { WorkReading } from './work'
 import { observationIn, proposableIn, threadReadIn, type LabelOf } from './action'
 import { idleBody, type BodyState } from './body'
 import {
@@ -243,6 +252,13 @@ type WorkbenchPageProps = Readonly<{
    * is blocked: nothing here reaches a mailbox or asks anything to.
    */
   proposals?: WorkbenchProposals | undefined
+  /**
+   * The work saved in this app: an Open work tab beside the Spark Inbox,
+   * with its own counts, and a durable record for the reader's decisions.
+   * Left out: no tab, and a decision in the reader is kept while the message
+   * stays open. Nothing here reaches a provider.
+   */
+  work?: WorkbenchWork | undefined
   /** Sync status and profile. The page owns the search. */
   topBar: Omit<
     ComponentProps<typeof TopBar>,
@@ -1111,14 +1127,18 @@ function readerHandling(
   listed: ListedEvidence | undefined,
   body: BodyState,
   labelOf: LabelOf,
+  work: Readonly<{ work: WorkbenchWork | undefined; reading: WorkReading }>,
 ) {
   if (proposals === undefined || open === undefined) return undefined
   const read = threadReadIn(open, listed, body)
   const enabled = proposals.mode === 'enabled' ? proposals : undefined
+  const stored =
+    work.work === undefined ? undefined : storedWorkFor(work.work.recorded, work.reading, open)
   return (
     <HandlingAction
       key={open.id}
       proposable={proposableIn(evidence.open, read)}
+      work={workSaving(work.work, stored)}
       observation={observationIn(evidence.open, read)}
       labelOf={labelOf}
       onApprove={enabled?.onApprove}
@@ -1390,6 +1410,20 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
     openAttention,
   } = useWorkbench(props)
   const sheet = useFilterSheet()
+  const [tab, setTab] = useState<WorkTab>('inbox')
+  const workReading: WorkReading = {
+    messages: props.messages,
+    classifications: props.classifications,
+    reachOf: props.work?.reachOf,
+    openRead: threadReadIn(state.open, props.classifications, body),
+  }
+  const openWork = useOpenWork(props.work, workReading, mailboxes)
+  // A saved item opens its listed row in the reader, clearing a filter that
+  // hides it; the Open work tab stays, so back returns to the list.
+  const openFromWork = (rowId: string) => {
+    if (!state.shown.some((message) => message.id === rowId)) state.reset()
+    state.openMessage(rowId)
+  }
   const title = props.discovery?.scope
     ? `“${props.discovery.scope.query}”`
     : queueTitle(props.scope, workflows, state.filter.workflow)
@@ -1439,28 +1473,38 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
           </FilterSheet>
         }
         queue={
-          <Queue
-            state={state}
-            title={title}
-            workflows={workflows}
-            mailboxes={mailboxes}
-            evidence={evidence}
-            scope={props.discovery?.scope ? undefined : props.scope}
-            discovery={props.discovery !== undefined}
-            worklist={worklist}
-            controls={
-              <>
-                {props.discovery && (
-                  <DiscoveryStatus
-                    scope={props.discovery.scope}
-                    error={props.discovery.error}
-                    loading={props.discovery.loading}
-                    onContinue={props.discovery.onContinue}
-                  />
-                )}
-                {props.queueControls}
-                {props.triage && <TriageRunControl {...props.triage} />}
-              </>
+          <QueuePane
+            openWork={openWork}
+            tab={tab}
+            onTab={setTab}
+            scope={props.scope}
+            loaded={state.messages.length}
+            onOpen={openFromWork}
+            inbox={
+              <Queue
+                state={state}
+                title={title}
+                workflows={workflows}
+                mailboxes={mailboxes}
+                evidence={evidence}
+                scope={props.discovery?.scope ? undefined : props.scope}
+                discovery={props.discovery !== undefined}
+                worklist={worklist}
+                controls={
+                  <>
+                    {props.discovery && (
+                      <DiscoveryStatus
+                        scope={props.discovery.scope}
+                        error={props.discovery.error}
+                        loading={props.discovery.loading}
+                        onContinue={props.discovery.onContinue}
+                      />
+                    )}
+                    {props.queueControls}
+                    {props.triage && <TriageRunControl {...props.triage} />}
+                  </>
+                }
+              />
             }
           />
         }
@@ -1489,6 +1533,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
               props.classifications,
               body,
               mailboxNames(props.messages),
+              { work: props.work, reading: workReading },
             )}
             guardedDone={
               props.proposals?.mode === 'enabled' && props.proposals.onExecute !== undefined
