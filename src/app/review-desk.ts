@@ -11,6 +11,8 @@
  * - `probe` only asks whether Spark answers; it learns nothing about mail.
  * - `review` records one person's reading of one stored classification.
  * - `approveDone` and `executeDone` call the local-only action server.
+ * - `work` reads the recorded work list; `recordWork` appends one decision
+ *   to it. Neither reaches Spark.
  *
  * Reviewing never completes a message. Only the explicit Done path can ask
  * Spark to change one, and its server owns approval, receipts and readback.
@@ -40,6 +42,8 @@ import { getSparkReadiness } from './spark-readiness.functions'
 import { approveDoneAction, executeDoneAction } from './done-action.functions'
 import type { DoneApprovalResult, DoneExecutionRequest, DoneExecutionResult } from './done-action'
 import type { MailboxActionProposal } from '../domain/mailbox-action'
+import type { RecordedWork, WorkDecisionOutcome, WorkDecisionRequest } from './open-work'
+import { getRecordedWork, saveWorkDecision } from './open-work.functions'
 import type {
   TriageRunReadResult,
   TriageRunRestart,
@@ -157,6 +161,22 @@ export const ReviewDesk = {
 
   executeDone: (request: DoneExecutionRequest): Promise<DoneExecutionResult> =>
     executeDoneAction({ data: request }).catch(() => ({ status: 'uncertain' }) as const),
+
+  /**
+   * Every mailbox copy anybody recorded work about, read from the local
+   * store only. A store that cannot be read is `unavailable`, never empty.
+   */
+  work: (): Promise<RecordedWork> =>
+    getRecordedWork().catch(() => ({ status: 'unavailable' }) as const),
+
+  /**
+   * Appends one work decision about one exact mailbox copy and thread
+   * version. No Spark command runs: "handled in Spark" is recorded as the
+   * person's claim. A lost answer is `unknown`, because the server may have
+   * committed; the same Save id records nothing twice.
+   */
+  recordWork: (request: WorkDecisionRequest): Promise<WorkDecisionOutcome> =>
+    saveWorkDecision({ data: request }).catch(() => ({ status: 'unknown' }) as const),
 
   /** Explicit Start is the only desk operation that may invoke Jev. */
   startTriage: (request: TriageRunStart): Promise<TriageRunStartResult> =>
