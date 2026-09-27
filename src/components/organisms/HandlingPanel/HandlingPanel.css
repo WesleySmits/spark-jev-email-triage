@@ -1,0 +1,110 @@
+/* HandlingPanel organism: the handling step under the open message. A person
+ * decides work here and proposes mail changes in the action panel below, so
+ * the two must not read as one control: this one sits on the recessed
+ * surface with the smaller control radius, while the action panel keeps the
+ * frame radius on --surface. Neither competes with the amber review panel.
+ * Token values live in src/styles/tokens.css; rules for their use in
+ * src/styles/README.md. */
+.handling-panel {
+  box-sizing: border-box;
+  container-type: inline-size;
+  min-width: 0;
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+  font: var(--text-ui);
+}
+
+/* The panel's own name, in the workbench's overline. */
+.handling-panel__title {
+  margin: 0;
+  color: var(--muted);
+  font: var(--text-overline);
+  letter-spacing: var(--tracking-overline);
+  text-transform: uppercase;
+}
+
+.handling-panel__summary {
+  margin: var(--s2) 0 0;
+  color: var(--ink-soft);
+}
+
+/* Two columns while there is room; one below 560px of container width, so
+ * the four outcomes never squeeze their effect lines out of sight. */
+.handling-panel__options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s2);
+  margin: var(--s4) 0 0;
+}
+
+.handling-panel__option {
+  min-width: 0;
+}
+
+.handling-panel__note,
+.handling-panel__decision-detail {
+  margin: var(--s3) 0 0;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.handling-panel__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin: var(--s4) 0 0;
+}
+
+.handling-panel__result {
+  display: grid;
+  gap: var(--s1);
+  min-width: 0;
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.handling-panel__result strong {
+  color: var(--ink);
+}
+
+/* What was decided, in place of the chooser. */
+.handling-panel__recorded {
+  display: grid;
+  justify-items: start;
+  margin: var(--s4) 0 0;
+}
+
+.handling-panel__decision {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin: 0;
+}
+
+.handling-panel__decision-title {
+  color: var(--ink);
+}
+
+.handling-panel__change {
+  margin: var(--s3) 0 0;
+}
+
+/* What this panel changes, as words. Colour carries nothing here. */
+.handling-panel__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin: var(--s4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+@container (max-width: 560px) {
+  .handling-panel__options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

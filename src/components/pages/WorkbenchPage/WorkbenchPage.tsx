@@ -41,7 +41,7 @@ import {
   compactQuery,
   WorkbenchTemplate,
 } from '../../templates/WorkbenchTemplate/WorkbenchTemplate'
-import { ActionProposalAction } from './ActionProposalAction'
+import { HandlingAction } from './HandlingAction'
 import { observationIn, proposableIn, threadReadIn, type LabelOf } from './action'
 import { idleBody, type BodyState } from './body'
 import {
@@ -142,7 +142,11 @@ type WorkbenchProposals =
   | Readonly<{ mode: 'off' }>
   | Readonly<{
       mode: 'enabled'
-      /** How this computer names the person approving. Never a mailbox address. */
+      /**
+       * How this computer names the person approving. Never a mailbox
+       * address. The server records the authoritative approver, so nothing
+       * in the page shows this instead of what the server recorded.
+       */
       approver: string
       onApprove?: ((proposal: MailboxActionProposal) => Promise<DoneApprovalResult>) | undefined
       onExecute?: ((request: DoneExecutionRequest) => Promise<DoneExecutionResult>) | undefined
@@ -1088,17 +1092,19 @@ function readerReview(
 }
 
 /**
- * The mailbox action panel under the review, or none. It is offered for the
- * open row wherever the page may propose at all, including where that row
- * names no version to propose against: proposing is then refused in words
- * rather than silently absent.
+ * The handling step under the review, and with it the guarded Done path it
+ * can start, or none. It is offered for the open row wherever the page may
+ * decide at all, including where that row names no version to decide
+ * against, and where no Spark action path is connected: both are refused in
+ * words rather than silently absent.
  *
- * The open row's id keys it, so one message's proposal never carries to the
- * next, while a reading that lists the mailbox again leaves it in place. A
- * proposal must be seen to lapse when a later message reaches its thread,
- * which is exactly what an unchanged panel under a changed reading shows.
+ * The open row's id keys it, so one message's decision and proposal never
+ * carry to the next, while a reading that lists the mailbox again leaves
+ * them in place. A proposal must be seen to lapse when a later message
+ * reaches its thread, which is exactly what an unchanged panel under a
+ * changed reading shows.
  */
-function readerProposal(
+function readerHandling(
   proposals: WorkbenchProposals | undefined,
   evidence: Evidence,
   open: WorkbenchMessage | undefined,
@@ -1106,18 +1112,18 @@ function readerProposal(
   body: BodyState,
   labelOf: LabelOf,
 ) {
-  if (proposals?.mode !== 'enabled' || open === undefined) return undefined
+  if (proposals === undefined || open === undefined) return undefined
   const read = threadReadIn(open, listed, body)
+  const enabled = proposals.mode === 'enabled' ? proposals : undefined
   return (
-    <ActionProposalAction
+    <HandlingAction
       key={open.id}
       proposable={proposableIn(evidence.open, read)}
       observation={observationIn(evidence.open, read)}
-      approver={proposals.approver}
       labelOf={labelOf}
-      onApprove={proposals.onApprove}
-      onExecute={proposals.onExecute}
-      onConfirmed={proposals.onConfirmed}
+      onApprove={enabled?.onApprove}
+      onExecute={enabled?.onExecute}
+      onConfirmed={enabled?.onConfirmed}
     />
   )
 }
@@ -1157,7 +1163,7 @@ function readerActions(
     return {
       note: {
         title: 'Guarded Done',
-        detail: 'Use the proposal panel below to approve and run Spark Done.',
+        detail: 'Choose Handle now below to propose it, then approve and confirm it there.',
       },
     }
   }
@@ -1476,7 +1482,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
               evidence,
               state.open?.id,
             )}
-            proposal={readerProposal(
+            proposal={readerHandling(
               props.proposals,
               evidence,
               state.open,

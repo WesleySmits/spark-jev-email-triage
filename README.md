@@ -95,6 +95,18 @@ storage, holds after a reload, and carries no mail. With the keys off nothing
 in the page claims one, and Tab, Enter and Escape keep working. On narrow
 screens, the setting remains available through the Filters sheet.
 
+Under the open message the reader asks what happens next: handle now, reply
+needed, follow up later, or read only, for the exact mailbox copy and thread
+version shown. The three local outcomes record work in this app only; no
+Spark command is sent and the mail stays in the Inbox. "Handle now" is the
+only way to start the guarded Spark Done path, which keeps its separate
+approval, fresh preflight, durable receipt and Archive/Inbox readback. Spark
+acts on the provider message ID, so another copy carrying that ID may change
+too, and the panel says so. A blocked, lapsed or uncertain attempt leaves the
+work visibly open; only a confirmed readback reads as done. Decisions are not
+stored yet: one is kept while its message stays open. No link that opens one
+exact message in Spark is offered, because none has been proven.
+
 The web process needs the local Spark CLI to read mail. A successful build
 or `/health` response does not prove Spark readiness. See
 [the runbook](docs/runbook.md) for separate deployment and host-local checks.
