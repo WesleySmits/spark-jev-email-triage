@@ -48,6 +48,7 @@ function WorkControls({
   const latest = item.history[0]
   const target = latest?.target
   const verified = item.work.state !== 'unobserved' && item.work.state !== 'lapsed'
+  const blocked = saving || uncertain || !verified
   const save = (kind: 'reopen' | 'handled_in_spark') => {
     if (!target) return
     setSaving(true)
@@ -72,7 +73,7 @@ function WorkControls({
         <Button
           variant="secondary"
           type="button"
-          disabled={saving || uncertain || !verified}
+          disabled={blocked}
           onClick={() => {
             save('reopen')
           }}
@@ -84,7 +85,7 @@ function WorkControls({
         <Button
           variant="secondary"
           type="button"
-          disabled={saving || uncertain || !verified}
+          disabled={blocked}
           onClick={() => {
             save('handled_in_spark')
           }}
