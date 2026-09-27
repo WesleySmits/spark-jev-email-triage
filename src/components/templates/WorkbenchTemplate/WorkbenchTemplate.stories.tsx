@@ -146,7 +146,7 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 /**
- * The approved desktop workbench at 1280px: top bar, 184px rail, bounded
+ * The approved desktop workbench at 1280px: top bar, 15dvw rail, bounded
  * queue and the reader taking the rest. Each pane scrolls on its own; the
  * page does not. Tab runs top bar, rail, queue, then reader. Pick other
  * slots in Controls.

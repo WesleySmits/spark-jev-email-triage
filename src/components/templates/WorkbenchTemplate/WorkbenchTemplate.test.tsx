@@ -90,7 +90,7 @@ describe('WorkbenchTemplate', () => {
     const workspace = desktop.get('.workbench > .workbench__workspace')
     expect(workspace?.get('flex')).toBe('1 1 auto')
     expect(workspace?.get('min-height')).toBe('0')
-    expect(workspace?.get('grid-template-columns')).toBe('184px minmax(0, 1fr)')
+    expect(workspace?.get('grid-template-columns')).toBe('15dvw minmax(0, 1fr)')
     expect(desktop.get('.workbench__main')?.get('grid-template-columns')).toBe(
       'clamp(280px, 30vw, 400px) minmax(0, 1fr)',
     )
@@ -98,14 +98,6 @@ describe('WorkbenchTemplate', () => {
       expect(desktop.get(pane)?.get('overflow-x')).toBe('hidden')
       expect(desktop.get(pane)?.get('overscroll-behavior')).toBe('contain')
     }
-  })
-
-  it('narrows the rail on smaller desktops', () => {
-    expect(
-      rules('(max-width: 1024px)')
-        .get('.workbench > .workbench__workspace')
-        ?.get('grid-template-columns'),
-    ).toBe('156px minmax(0, 1fr)')
   })
 
   it('puts the compact filters outside main, after the workspace', () => {
