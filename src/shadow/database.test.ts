@@ -42,6 +42,8 @@ describe('migrations', () => {
 
     expect(userVersion(db)).toBe(schemaVersion)
     expect(tableNames(db)).toEqual([
+      'follow_up_decisions',
+      'follow_up_requests',
       'judgment_messages',
       'judgments',
       'manual_run_items',
@@ -72,7 +74,9 @@ describe('migrations', () => {
     const path = disposablePath()
     const old = openDatabase(path)
     old.exec(
-      `DROP TABLE review_fields;
+      `DROP TABLE follow_up_requests;
+       DROP TABLE follow_up_decisions;
+       DROP TABLE review_fields;
        DROP TABLE manual_run_items;
        DROP TABLE manual_runs;
        PRAGMA user_version = 3;`,
@@ -82,7 +86,9 @@ describe('migrations', () => {
     expect(migrateExistingDatabase(path)).toBe('migrated')
     const upgraded = openReadOnly(path)
     expect(userVersion(upgraded)).toBe(schemaVersion)
-    expect(tableNames(upgraded)).toEqual(expect.arrayContaining(['manual_runs', 'review_fields']))
+    expect(tableNames(upgraded)).toEqual(
+      expect.arrayContaining(['follow_up_decisions', 'manual_runs', 'review_fields']),
+    )
     upgraded.close()
   })
 
