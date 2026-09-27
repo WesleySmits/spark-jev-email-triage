@@ -107,7 +107,7 @@ describe('recording a decision in a file', () => {
     })
   })
 
-  it('keeps every decision about a copy, newest first, and edits none of them', () => {
+  it('keeps every decision about a copy, latest first, and edits none of them', () => {
     recordAndClose(decide('reply_needed', { decidedAt: '2026-09-25T09:00:00.000Z' }))
     recordAndClose(decide('handled_in_spark', { decidedAt: '2026-09-26T09:00:00.000Z' }))
     recordAndClose(decide('reopen', { decidedAt: '2026-09-27T09:00:00.000Z' }))
@@ -117,6 +117,20 @@ describe('recording a decision in a file', () => {
       'handled_in_spark',
       'reply_needed',
     ])
+  })
+
+  it('keeps the order it recorded when a later save carries an earlier time', () => {
+    // A clock corrected between two saves. The reopen was recorded second and
+    // stamped earlier; reading by `decided_at` would leave the closure current
+    // and hide the work this person reopened.
+    recordAndClose(decide('handled_in_spark', { decidedAt: '2026-09-27T09:00:00.000Z' }))
+    expect(recordAndClose(decide('reopen', { decidedAt: '2026-09-25T08:00:00.000Z' }))).toEqual({
+      status: 'recorded',
+    })
+
+    const stored = reopened((db) => storedFor(db, studio))
+    expect(stored.map(({ kind }) => kind)).toEqual(['reopen', 'handled_in_spark'])
+    expect(followUpWork(stored, [observed(studio, '11')])).toMatchObject({ state: 'open' })
   })
 
   it('refuses to change or drop a decision in the database itself', () => {
@@ -230,6 +244,25 @@ describe('one save, asked for twice', () => {
       status: 'refused',
       reason: 'nothing_to_reopen',
     })
+  })
+
+  it('refuses one save id used by a second person for the same decision', () => {
+    const mine = decide('reply_needed')
+    const theirs = { ...mine, decidedBy: 'robin' }
+    expect(recordAndClose(mine, 'save-1')).toEqual({ status: 'recorded' })
+    expect(recordAndClose(theirs, 'save-1')).toEqual({
+      status: 'refused',
+      reason: 'request_conflict',
+    })
+    expect(reopened((db) => storedFor(db, studio))).toEqual([mine])
+  })
+
+  it('reads a retry of one decision stamped again as the same save', () => {
+    const decision = decide('reply_needed')
+    expect(recordAndClose(decision, 'save-1')).toEqual({ status: 'recorded' })
+    const restamped = { ...decision, decidedAt: '2026-09-27T09:16:00.000Z' }
+    expect(recordAndClose(restamped, 'save-1')).toEqual({ status: 'recorded' })
+    expect(reopened((db) => storedFor(db, studio))).toEqual([decision])
   })
 
   it('says nothing about a save id this database has never seen', () => {

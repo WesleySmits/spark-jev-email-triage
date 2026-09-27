@@ -7,6 +7,11 @@
  * a copy is what the record says it is: who decided what, against which
  * thread version, and when. Nothing edits or removes what somebody said.
  *
+ * That history is ordered by the row ids this database assigns, never by the
+ * `decidedAt` a caller supplied. A clock corrected between two saves would
+ * otherwise reorder them, and a closure could outrank the reopen that
+ * answered it. `decidedAt` stays on the row as what the caller said.
+ *
  * Every row names the copy and the exact thread version decided against.
  * Whether a stored decision still describes a row is not decided here, and
  * no query filters by version: the reading brings its own observation and
@@ -49,12 +54,23 @@ export type FollowUpRequestResult =
   | Readonly<{ status: 'refused'; reason: FollowUpRefusal }>
 
 /**
- * Stable content for comparing a retry: what a person asked for, without the
- * account name and instant this computer decides. A retry that asks for
- * something else under the same id is a conflict, not a repeat.
+ * Stable content for comparing a retry: what was asked for, and who asked.
+ * A retry that asks for something else under the same id is a conflict, not
+ * a repeat, and so is one that asks for the same thing as somebody else:
+ * the decider is part of what is recorded, and treating two people's
+ * decisions as one save would store one of them under the other's name.
+ *
+ * `decidedAt` is deliberately left out. A genuine retry of one save is the
+ * same decision even when the caller stamps it again, and comparing the
+ * instant would turn every retry into a conflict.
  */
 const requestPayload = ({ decision }: FollowUpRequest) =>
-  JSON.stringify({ target: decision.target, kind: decision.kind, dueAt: decision.dueAt })
+  JSON.stringify({
+    target: decision.target,
+    kind: decision.kind,
+    dueAt: decision.dueAt,
+    decidedBy: decision.decidedBy,
+  })
 
 const refusalSchema = z.enum(['nothing_to_reopen', 'request_conflict'])
 
@@ -191,22 +207,28 @@ export function recordFollowUp(
 }
 
 /**
- * Every decision recorded for one mailbox copy, newest first. The order
- * comes from the instant each row names, not from its text: this module
- * writes UTC, and a row another writer left in some other offset still sorts
- * by when it happened. One whose time SQLite cannot read sorts last.
+ * Every decision recorded for one mailbox copy, latest first, in the order
+ * this database committed them.
+ *
+ * `decided_at` does not order them. It is the instant the caller supplied,
+ * and a corrected clock, another offset or a backdated input can put an
+ * earlier one on a later save; ordering by it would let a closure saved
+ * yesterday outrank the reopen saved after it and hide work somebody
+ * reopened. The row id is assigned by SQLite when the row commits, so it
+ * says what this record actually received, and the callers that decide
+ * where work stands read this order rather than re-sorting it.
  */
 const query = `
   SELECT mailbox_id, message_id, thread_id, latest_message_id,
          kind, due_at, decided_by, decided_at
   FROM follow_up_decisions
   WHERE mailbox_id = :mailboxId AND message_id = :messageId
-  ORDER BY strftime('%Y-%m-%dT%H:%M:%fZ', decided_at) DESC, id DESC`
+  ORDER BY id DESC`
 
 const rowsSchema = z.array(decisionColumns)
 
 /**
- * The decisions recorded for each named copy, newest first, by copy id. A
+ * The decisions recorded for each named copy, latest first, by copy id. A
  * copy nobody decided about is absent, which is not an error. Copies are
  * looked up one at a time by mailbox and provider message id, so two copies
  * of one delivery keep their own decisions even though Spark would act on

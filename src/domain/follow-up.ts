@@ -21,7 +21,7 @@
  *   decided by `targetStanding` here too, rather than by a second rule that
  *   could drift from it.
  * - A decision never travels to a version nobody decided about. Once the
- *   reading moves the thread on, the newest decision is `lapsed`: the work
+ *   reading moves the thread on, the latest decision is `lapsed`: the work
  *   reads as open again, whatever it said, because a message that arrived
  *   after somebody closed a thread is work they never saw. This is what
  *   keeps an old `handled_in_spark` from quietly making a new message look
@@ -30,9 +30,13 @@
  *   delivery — to an address and to an alias — are two copies under
  *   `mailboxCopyId`, and each carries its own decisions, even though Spark
  *   would act on the provider message id they share.
- * - Deciding again does not edit what was decided before. The newest
+ * - Deciding again does not edit what was decided before. The latest
  *   decision says where the work stands; the ones before it stay readable as
  *   the history of that copy, which is what makes the record auditable.
+ *   Latest is the order the store committed, never the `decidedAt` a caller
+ *   supplied: a clock that was corrected between two saves must not reorder
+ *   what a person decided, and least of all let a closure outrank the reopen
+ *   that answered it.
  * - A due date belongs to work that stays open. `handled_in_spark` and
  *   `reopen` carry none: a date on work nobody owes, or on the act of
  *   reopening it, would be a deadline for nothing.
@@ -112,12 +116,12 @@ export const parseFollowUpDecision = (value: unknown): FollowUpDecision | null =
 /**
  * Where the work on one copy stands:
  * - `undecided`: nobody recorded a decision about this copy.
- * - `open`: the newest decision says work is owed on the version the reading
+ * - `open`: the latest decision says work is owed on the version the reading
  *   holds, with the date it named or none.
- * - `handled`: the newest decision says a person finished it in Spark. This
+ * - `handled`: the latest decision says a person finished it in Spark. This
  *   application neither asked Spark nor read anything back, so it is their
  *   claim about that exact version and no proof of where the mail is.
- * - `lapsed`: the newest decision names a version the thread has moved past.
+ * - `lapsed`: the latest decision names a version the thread has moved past.
  *   The work is open again and the decision is shown as what it is, out of
  *   date, rather than carried onto a version nobody decided about.
  * - `unobserved`: decisions exist and the reading names no version for this
@@ -135,29 +139,32 @@ export type FollowUpWork =
   | Readonly<{ state: 'unobserved'; decision: FollowUpDecision }>
 
 /**
- * Newest first, by the instant each decision names rather than by how that
- * instant was written. Decisions of one moment keep the given order, so a
- * store that reads them back in its own order decides the tie.
- */
-const newestFollowUpFirst = (decisions: readonly FollowUpDecision[]) =>
-  [...decisions].sort((a, b) => Date.parse(b.decidedAt) - Date.parse(a.decidedAt))
-
-/**
- * Where the work on one copy stands, given every decision recorded for it
- * and what the reading observed about that copy.
+ * Where the work on one copy stands, given every decision recorded for it,
+ * **latest first as the store recorded them**, and what the reading observed
+ * about that copy.
  *
- * The newest decision decides, because deciding again is how a person
- * replaces what they said; the ones before it are history and are read from
- * the same list wherever that history is shown. A newest decision whose
- * version the thread has moved past decides nothing about the version that
- * replaced it: the work reads as open again, which is the whole point of
- * binding a decision to a version.
+ * The latest decision decides, because deciding again is how a person
+ * replaces what they said; the ones after it in the list are history and are
+ * read from the same list wherever that history is shown.
+ *
+ * Latest means the last one the store committed, not the largest
+ * `decidedAt`. A decision carries the instant its caller supplied, and a
+ * corrected clock, a machine in another offset or a backdated input can put
+ * an earlier instant on a later save. Ordering by that instant would let a
+ * `handled_in_spark` saved yesterday outrank the reopen saved after it and
+ * hide work a person reopened, so the durable order of the record decides
+ * and `decidedAt` is kept as what the caller said, not as the sequence.
+ * `readFollowUps` is what establishes that order; nothing here re-sorts.
+ *
+ * A latest decision whose version the thread has moved past decides nothing
+ * about the version that replaced it: the work reads as open again, which is
+ * the whole point of binding a decision to a version.
  */
 export function followUpWork(
   decisions: readonly FollowUpDecision[],
   observations: readonly TargetObservation[],
 ): FollowUpWork {
-  const [decision] = newestFollowUpFirst(decisions)
+  const [decision] = decisions
   if (decision === undefined) return { state: 'undecided' }
   const standing = targetStanding(decision.target, observations)
   if (standing.status === 'broken') {
@@ -186,9 +193,9 @@ export type FollowUpAdmission =
 
 /**
  * Whether one decision may be recorded, given every decision already stored
- * for the copy it names. Pass what the store holds at that moment, inside
- * the transaction that would write, so a decision recorded in between cannot
- * be missed.
+ * for the copy it names, latest first as the store recorded them. Pass what
+ * the store holds at that moment, inside the transaction that would write,
+ * so a decision recorded in between cannot be missed.
  *
  * Only `reopen` is gated, and only on what the record says: it answers a
  * closure, so there has to be one. Which version each decision named makes
@@ -205,8 +212,8 @@ export function admitFollowUp(
   stored: readonly FollowUpDecision[],
 ): FollowUpAdmission {
   if (decision.kind !== 'reopen') return { status: 'admitted' }
-  const [newest] = newestFollowUpFirst(stored)
-  return newest?.kind === 'handled_in_spark'
+  const [latest] = stored
+  return latest?.kind === 'handled_in_spark'
     ? { status: 'admitted' }
     : { status: 'refused', reason: 'nothing_to_reopen' }
 }

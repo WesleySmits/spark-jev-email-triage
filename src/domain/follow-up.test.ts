@@ -91,20 +91,27 @@ describe('followUpWork', () => {
     expect(followUpWork([], here)).toEqual({ state: 'undecided' })
   })
 
-  it('reads the newest decision about the version the reading holds', () => {
+  it('reads the latest decision the store recorded about the shown version', () => {
     const dueAt = '2026-10-02T09:00:00.000Z'
-    const older = decide('reply_needed', { decidedAt: '2026-09-26T09:00:00.000Z' })
-    const newer = decide('follow_up_later', { dueAt, decidedAt: '2026-09-27T09:00:00.000Z' })
-    expect(followUpWork([older, newer], here)).toEqual({
+    const latest = decide('follow_up_later', { dueAt, decidedAt: '2026-09-27T09:00:00.000Z' })
+    const earlier = decide('reply_needed', { decidedAt: '2026-09-26T09:00:00.000Z' })
+    expect(followUpWork([latest, earlier], here)).toEqual({
       state: 'open',
-      decision: newer,
+      decision: latest,
       dueAt,
     })
-    // The order a store hands them over decides nothing; the instants do.
-    expect(followUpWork([newer, older], here)).toEqual({
+  })
+
+  it('reads the order the store recorded, not the instants a caller supplied', () => {
+    // A clock corrected between two saves: the reopen was recorded after the
+    // closure and carries the earlier instant. Sorting by `decidedAt` would
+    // hide the work this person reopened.
+    const reopened = decide('reopen', { decidedAt: '2026-09-25T08:00:00.000Z' })
+    const closed = decide('handled_in_spark', { decidedAt: '2026-09-27T09:00:00.000Z' })
+    expect(followUpWork([reopened, closed], here)).toEqual({
       state: 'open',
-      decision: newer,
-      dueAt,
+      decision: reopened,
+      dueAt: null,
     })
   })
 
@@ -141,7 +148,7 @@ describe('followUpWork', () => {
   it('reads a reopened message as work owed on the version reopened', () => {
     const handled = decide('handled_in_spark', { decidedAt: '2026-09-26T09:00:00.000Z' })
     const reopened = decide('reopen', { decidedAt: '2026-09-27T09:00:00.000Z' })
-    expect(followUpWork([handled, reopened], here)).toEqual({
+    expect(followUpWork([reopened, handled], here)).toEqual({
       state: 'open',
       decision: reopened,
       dueAt: null,
@@ -172,8 +179,9 @@ describe('admitFollowUp', () => {
     const closed = decide('handled_in_spark', { decidedAt: '2026-09-26T09:00:00.000Z' })
     const open = decide('reply_needed', { decidedAt: '2026-09-26T10:00:00.000Z' })
     expect(admitFollowUp(reopen, [closed])).toEqual({ status: 'admitted' })
-    // A closure the person has already answered is not a second one.
-    expect(admitFollowUp(reopen, [closed, open])).toEqual({
+    // Latest first: a closure the person has already answered is not a
+    // second one, whatever instant the decision after it carries.
+    expect(admitFollowUp(reopen, [open, closed])).toEqual({
       status: 'refused',
       reason: 'nothing_to_reopen',
     })

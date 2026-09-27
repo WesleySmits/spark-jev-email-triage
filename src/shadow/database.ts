@@ -256,6 +256,10 @@ const migrations: readonly string[] = [
   //    silently making an old closure current. Reading that out is the
   //    domain's `followUpWork`; the table only keeps what was said.
   //
+  //    Which decision is the latest is the row id, not `decided_at`. The
+  //    instant belongs to the caller and can be earlier on a later save
+  //    after a clock correction; the id is what this database committed.
+  //
   //    The rows reference no judgment. Work is owed on mail whether or not a
   //    classifier ever judged it, and tying the record to a judgment would
   //    make unclassified mail undecidable.
@@ -285,8 +289,11 @@ const migrations: readonly string[] = [
     CHECK (due_at IS NULL OR kind IN ('reply_needed', 'follow_up_later'))
   ) STRICT;
 
+  -- Ordered by the ids this database assigns, because that is the order it
+  -- received the decisions. The decided_at column is what a caller said and
+  -- can be earlier on a later save, so it orders nothing.
   CREATE INDEX follow_up_decisions_by_copy
-    ON follow_up_decisions (mailbox_id, message_id, decided_at);
+    ON follow_up_decisions (mailbox_id, message_id, id);
 
   CREATE TRIGGER follow_up_decisions_are_never_changed
   BEFORE UPDATE ON follow_up_decisions BEGIN

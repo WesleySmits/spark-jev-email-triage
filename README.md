@@ -425,10 +425,12 @@ pnpm readback:spark                      # whether Spark answers on this host
   needed, they will follow it up later and optionally by when, they finished
   it in Spark themselves, or work they closed is open again. Rows are
   appended and the database refuses to change or drop one, so a copy's
-  history stays readable. Each row names the exact thread version decided
-  against, and `followUpWork` reads a decision the thread has moved past as
-  lapsed with the work open, so a later message never makes an old closure
-  current. `handled_in_spark` records a person's claim and runs no Spark
+  history stays readable, ordered by the row ids the database assigns rather
+  than by the instant a caller stamped, so a corrected clock cannot let a
+  closure outrank the reopen that answered it. Each row names the exact
+  thread version decided against, and `followUpWork` reads a decision the
+  thread has moved past as lapsed with the work open, so a later message
+  never makes an old closure current. `handled_in_spark` records a person's claim and runs no Spark
   command. Nothing in the app writes these rows yet: the reader's handling
   step is unchanged and still keeps its decision only while a message is
   open.

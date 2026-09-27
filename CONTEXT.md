@@ -168,7 +168,10 @@ A decision names one mailbox copy and the exact thread version it was decided
 against, as a review names its subject. Decisions are appended and the
 database refuses to change or drop one, so what somebody said, when, and
 against which version stays readable as that copy's history; deciding again
-adds a row and the newest decision says where the work stands. A newest
+adds a row and the latest decision says where the work stands. Latest is the
+order this database committed the rows, not the instant a caller stamped on
+them: a clock corrected between two saves must not let a closure outrank the
+reopen that answered it. A latest
 decision whose version the thread has moved past is lapsed: the work reads as
 open again and is never carried onto the version that replaced it, which is
 what keeps a later message from making an old closure current. Each copy
