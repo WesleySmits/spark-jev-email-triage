@@ -37,6 +37,8 @@ import type { ConnectionReason } from './reconnect'
 import { checkReview, saveReview } from './review.functions'
 import type { SparkReadiness } from './spark-readiness'
 import { getSparkReadiness } from './spark-readiness.functions'
+import { getOpenWork, getWorkMessage, recordWorkDecision } from './open-work.functions'
+import type { WorkDecisionRequest, WorkMessageRequest } from './open-work'
 import { approveDoneAction, executeDoneAction } from './done-action.functions'
 import type { DoneApprovalResult, DoneExecutionRequest, DoneExecutionResult } from './done-action'
 import type { MailboxActionProposal } from '../domain/mailbox-action'
@@ -74,6 +76,11 @@ const rowsOf = (view: DeskView | DeskDiscovery | DeskRefresh) =>
   view.status === 'ready' ? view.messages : []
 
 export const ReviewDesk = {
+  openWork: () => getOpenWork().catch(() => ({ status: 'unavailable' }) as const),
+  workMessage: (request: WorkMessageRequest) =>
+    getWorkMessage({ data: request }).catch(() => ({ status: 'unavailable' }) as const),
+  recordWork: (request: WorkDecisionRequest) =>
+    recordWorkDecision({ data: request }).catch(() => ({ status: 'unknown' }) as const),
   /** The rail's workflows. Live mail isn't triaged yet, so there is one. */
   workflows: liveWorkflows,
 

@@ -23,6 +23,8 @@ import type { InboxDiscoveryRequest, InboxListRequest } from '../app/live-inbox'
 import { useTriageRunController } from '../app/triage-run-client'
 import { mailboxReachItems } from '../app/mailbox-reach'
 import { refreshNotice } from '../app/refresh-notice'
+import type { OpenWorkRead, WorkDecisionRequest } from '../app/open-work'
+import { OpenWorkPage } from '../components/pages/OpenWorkPage/OpenWorkPage'
 
 export const Route = createFileRoute('/')({
   loader: () => readWithStart(() => ReviewDesk.open()),
@@ -136,6 +138,7 @@ type PageProps = Readonly<{
   coverage: InboxCoverage | undefined
   loading: boolean
   triage: ReturnType<typeof useTriageRunController>
+  onRecordWork: (request: WorkDecisionRequest) => ReturnType<typeof ReviewDesk.recordWork>
 }>
 
 type ReadyDesk = Extract<DeskView, { status: 'ready' }> | Extract<DeskRefresh, { status: 'ready' }>
@@ -166,6 +169,31 @@ function worklistCoverage(coverage: InboxCoverage | undefined, view: InboxListRe
   return { result: coverage[view === 'unread' ? 'unread' : 'read'].result }
 }
 
+function continueDiscovery(
+  found: Extract<DeskDiscovery, { status: 'ready' }> | undefined,
+  view: InboxListRequest['view'],
+  onSearch: PageProps['onSearch'],
+) {
+  if (found) void onSearch({ view, query: found.scope.query, cursor: found.scope.cursor })
+}
+
+async function checkReviewAndRefresh(
+  subject: Parameters<typeof ReviewDesk.check>[0],
+  refresh: () => void,
+) {
+  const result = await ReviewDesk.check(subject)
+  if (result.status === 'recorded') refresh()
+  return result
+}
+
+function CoverageStatus({
+  coverage,
+  loading,
+}: Readonly<{ coverage: InboxCoverage | undefined; loading: boolean }>) {
+  if (!coverage) return null
+  return <InboxZeroStatusBar coverage={coverage} refreshing={loading} />
+}
+
 function LoadedPage({
   inbox,
   root,
@@ -177,6 +205,7 @@ function LoadedPage({
   coverage,
   loading,
   triage,
+  onRecordWork,
 }: LoadedPageProps) {
   const rememberReadFocus = useInboxReadFocus(root, loading)
   const reread = () => {
@@ -228,15 +257,14 @@ function LoadedPage({
               void onSearch({ view, query })
             },
             onContinue: () => {
-              if (found)
-                void onSearch({ view, query: found.scope.query, cursor: found.scope.cursor })
+              continueDiscovery(found, view, onSearch)
             },
             onClear: onClearSearch,
           }}
           queueControls={
             <>
               <InboxViewBar scope={inbox.scope} loading={loading} onChange={change} />
-              {coverage && <InboxZeroStatusBar coverage={coverage} refreshing={loading} />}
+              <CoverageStatus coverage={coverage} loading={loading} />
             </>
           }
           triage={{
@@ -263,11 +291,7 @@ function LoadedPage({
           review={{
             mode: 'enabled',
             onSaveReview: ReviewDesk.review,
-            onCheckReview: async (subject) => {
-              const result = await ReviewDesk.check(subject)
-              if (result.status === 'recorded') reread()
-              return result
-            },
+            onCheckReview: (subject) => checkReviewAndRefresh(subject, reread),
           }}
           proposals={{
             mode: 'enabled',
@@ -276,6 +300,7 @@ function LoadedPage({
             onExecute: ReviewDesk.executeDone,
             onConfirmed: reread,
           }}
+          recordedWork={{ onRecord: onRecordWork }}
           topBar={{
             syncStatus: 'connected',
             syncLabel,
@@ -395,7 +420,91 @@ function loadedMessageSummary(inbox: DeskView | DeskRefresh) {
   } as const
 }
 
-function Home() {
+function useOpenWorkSection() {
+  const [section, setSection] = useState<'inbox' | 'work' | 'completed'>('inbox')
+  const [openWork, setOpenWork] = useState<OpenWorkRead>()
+  const [workLoading, setWorkLoading] = useState(false)
+  const checkWork = async () => {
+    setWorkLoading(true)
+    try {
+      setOpenWork(await ReviewDesk.openWork())
+    } finally {
+      setWorkLoading(false)
+    }
+  }
+  const recordWork = async (request: WorkDecisionRequest) => {
+    const result = await ReviewDesk.recordWork(request)
+    if (result.status === 'recorded' && section !== 'inbox') void checkWork()
+    return result
+  }
+  return { section, setSection, openWork, workLoading, checkWork, recordWork } as const
+}
+
+function SectionTabs({
+  section,
+  onInbox,
+  onWork,
+  onCompleted,
+}: Readonly<{
+  section: 'inbox' | 'work' | 'completed'
+  onInbox: () => void
+  onWork: () => void
+  onCompleted: () => void
+}>) {
+  return (
+    <nav className="app-section-tabs" aria-label="Desk sections">
+      <button
+        type="button"
+        aria-current={section === 'inbox' ? 'page' : undefined}
+        onClick={onInbox}
+      >
+        Inbox
+      </button>
+      <button type="button" aria-current={section === 'work' ? 'page' : undefined} onClick={onWork}>
+        Open work
+      </button>
+      <button
+        type="button"
+        aria-current={section === 'completed' ? 'page' : undefined}
+        onClick={onCompleted}
+      >
+        Completed decisions
+      </button>
+    </nav>
+  )
+}
+
+function OpenWorkPane({
+  reading,
+  loading,
+  onRefresh,
+  onRecord,
+  mode,
+}: Readonly<{
+  reading: OpenWorkRead | undefined
+  loading: boolean
+  onRefresh: () => void
+  onRecord: (request: WorkDecisionRequest) => ReturnType<typeof ReviewDesk.recordWork>
+  mode: 'work' | 'completed'
+}>) {
+  if (!reading) return <main className="app-notice">Checking local work and Spark…</main>
+  return (
+    <OpenWorkPage
+      reading={reading}
+      loading={loading}
+      onRefresh={onRefresh}
+      onRecord={onRecord}
+      onRead={(copy) => ReviewDesk.workMessage({ copy })}
+      mode={mode}
+    />
+  )
+}
+
+function InboxHome({
+  onRecordWork,
+}: Readonly<{
+  onRecordWork: (request: WorkDecisionRequest) => ReturnType<typeof ReviewDesk.recordWork>
+}>) {
   const initialRead = Route.useLoaderData()
   const initial = initialRead.value
   const { inbox, discovery, coverage, loading, read, refresh, search, clearSearch, request } =
@@ -433,6 +542,7 @@ function Home() {
         coverage={coverage}
         loading={loading}
         triage={triage}
+        onRecordWork={onRecordWork}
       />
       <LocalStatusToast
         visible={notice.visible}
@@ -450,6 +560,42 @@ function Home() {
           if (refreshed) setDismissedRefresh(refreshed.refreshedAt)
         }}
       />
+    </>
+  )
+}
+
+function Home() {
+  const { section, setSection, openWork, workLoading, checkWork, recordWork } = useOpenWorkSection()
+  return (
+    <>
+      <SectionTabs
+        section={section}
+        onInbox={() => {
+          setSection('inbox')
+        }}
+        onWork={() => {
+          setSection('work')
+          void checkWork()
+        }}
+        onCompleted={() => {
+          setSection('completed')
+          void checkWork()
+        }}
+      />
+      <div hidden={section !== 'inbox'}>
+        <InboxHome onRecordWork={recordWork} />
+      </div>
+      {section !== 'inbox' && (
+        <OpenWorkPane
+          mode={section}
+          reading={openWork}
+          loading={workLoading}
+          onRefresh={() => {
+            void checkWork()
+          }}
+          onRecord={recordWork}
+        />
+      )}
     </>
   )
 }

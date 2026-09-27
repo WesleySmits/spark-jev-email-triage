@@ -79,11 +79,18 @@ probes `spark accounts` on the executing host; neither proves that all mail,
 the classifier, or local review storage works.
 
 The terms below include future concepts. Logical-message correlation is not
-implemented. Handling outcomes are offered in the reader and stored nowhere:
-a decision is kept while the message stays open. The separate local record of
-recorded work decisions exists in the database and the store, and nothing in
-the app writes to it yet. The root route exposes only
-guarded Spark Done, never an automatic action from classification or review.
+implemented. The reader saves Reply needed and Follow up later, with an
+optional due date, to the schema-6 local work record after checking the exact
+Spark thread version. Separate Open work and Completed decisions tabs read
+recorded decisions across restarts and check each copy's Inbox presence and
+version through bounded Spark reads. They show overdue, open, unknown and
+completed decisions apart from Spark Inbox counts. A person can claim they handled recorded work
+in Spark or reopen a closed version; neither sends a Spark write command.
+Selecting recorded work reads its current thread on demand and lets a person
+make a new decision against that version. An old decision is named as stale
+when the version changed; body text is never written to the work record.
+Handle now remains the guarded Spark Done proposal and Read only keeps no
+open work.
 
 ## Mailbox
 
@@ -153,8 +160,8 @@ separate below it. A decision whose action was blocked, lapsed or left
 uncertain keeps saying the work is open, and an uncertain attempt locks the
 decision rather than allowing another automatic run. A row whose exact
 version the reading does not name can record no decision at all; that is
-refused in words. Nothing is stored: a decision is kept while the message
-stays open and is gone after that.
+refused in words. Reply needed and Follow up later are stored locally. Handle
+now and Read only keep only the reader's transient decision.
 
 ## Recorded work decision
 
