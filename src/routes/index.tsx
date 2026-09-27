@@ -272,7 +272,7 @@ function LoadedPage({
             onExecute: ReviewDesk.executeDone,
             onConfirmed: reread,
           }}
-          work={workbenchWork(work, inbox, coverage, onWorkChanged)}
+          work={workbenchWork(work, inbox, discovery ? undefined : coverage, onWorkChanged)}
           topBar={{
             syncStatus: 'connected',
             syncLabel,
@@ -329,7 +329,9 @@ function discoveryProps({ inbox, discovery, loading, onSearch, onClearSearch }: 
 /**
  * The saved work list as the workbench takes it: the record as last read,
  * what this reading and the Inbox Zero scan prove about each mailbox, and
- * where a decision is saved. Nothing here reaches Spark.
+ * where a decision is saved. While a search is shown the rows are its
+ * matches, so no coverage is passed and absence proves nothing. Nothing here
+ * reaches Spark.
  */
 const workbenchWork = (
   recorded: RecordedWork,

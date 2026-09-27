@@ -74,8 +74,9 @@ export type RecordedWork =
 
 /**
  * How far one reading reached into a mailbox, across both Inbox views:
- * - `complete`: both views read the mailbox to the end, so a copy neither
- *   listed is not in its Inbox.
+ * - `complete`: the shown view read the mailbox to the end, and the other
+ *   view read it to the end and held nothing there, so a copy the shown rows
+ *   do not list is not in its Inbox.
  * - `bounded`: some view may have been cut, or was not read at all.
  * - `unreadable`: a view could not read the mailbox.
  * - `absent`: the reading holds no such mailbox.
@@ -84,27 +85,47 @@ export type MailboxReachOf = (mailboxId: string) => 'complete' | 'bounded' | 'un
 
 type CoverageViews = Pick<InboxCoverage, 'unread' | 'read'>
 
-const resultIn = (coverage: CoverageViews, view: 'unread' | 'read', mailboxId: string) =>
-  coverage[view].mailboxes.find(({ id }) => id === mailboxId)?.result
+type ViewName = 'unread' | 'read'
+
+/** One view's result for one mailbox, with how many rows it held there. */
+const resultIn = (coverage: CoverageViews, view: ViewName, mailboxId: string) =>
+  coverage[view].mailboxes.find(({ id }) => id === mailboxId) ?? { result: 'unscanned', loaded: 0 }
+
+/** What the two views' scans prove about one mailbox the reading holds. */
+function coveredReach(
+  coverage: CoverageViews,
+  [shown, other]: readonly [ViewName, ViewName],
+  mailboxId: string,
+): ReturnType<MailboxReachOf> {
+  const here = resultIn(coverage, shown, mailboxId)
+  const there = resultIn(coverage, other, mailboxId)
+  if (here.result === 'failed' || there.result === 'failed') return 'unreadable'
+  const otherEmpty = there.result === 'complete' && there.loaded === 0
+  return here.result === 'complete' && otherEmpty ? 'complete' : 'bounded'
+}
 
 /**
- * What the Inbox Zero coverage and the current reading prove about each
- * mailbox. Only a complete result in both the unread and the read Inbox view
- * makes a copy's absence mean anything; a view never scanned is bounded, and
- * a failure in either view makes the mailbox unreadable for this purpose.
+ * What the Inbox Zero coverage and the shown reading prove about each
+ * mailbox.
+ *
+ * The page holds the shown view's rows only, so a copy's absence from them
+ * proves it left the Inbox only where the shown view read that mailbox to the
+ * end and the other view read it to the end and found nothing there: a copy
+ * in the other view would otherwise read as gone. A view never scanned is
+ * bounded, and a failure in either view makes the mailbox unreadable for this
+ * purpose. The two views are read one after the other, never at one instant.
  */
 export function mailboxReachIn(
-  scope: Pick<InboxScope, 'mailboxes' | 'failed'>,
+  scope: Pick<InboxScope, 'mailboxes' | 'failed' | 'view'>,
   coverage: CoverageViews | undefined,
 ): MailboxReachOf {
   const listed = new Set(scope.mailboxes.map(({ id }) => id))
   const failed = new Set(scope.failed.map(({ id }) => id))
+  const views =
+    scope.view === 'unread' ? (['unread', 'read'] as const) : (['read', 'unread'] as const)
   return (mailboxId) => {
     if (!listed.has(mailboxId)) return 'absent'
     if (failed.has(mailboxId)) return 'unreadable'
-    if (coverage === undefined) return 'bounded'
-    const results = [resultIn(coverage, 'unread', mailboxId), resultIn(coverage, 'read', mailboxId)]
-    if (results.includes('failed')) return 'unreadable'
-    return results.every((result) => result === 'complete') ? 'complete' : 'bounded'
+    return coverage === undefined ? 'bounded' : coveredReach(coverage, views, mailboxId)
   }
 }

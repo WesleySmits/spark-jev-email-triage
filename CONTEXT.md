@@ -91,10 +91,12 @@ copies this application saved a decision about. Neither is added to the
 other.
 
 Open work measures every saved copy against the current reading. A copy the
-reading lists is in the Spark Inbox; a copy whose mailbox both Inbox views
-read to the end without listing it is not; anything else is unknown, with the
-limit named (a bounded reading, a mailbox that failed, a mailbox the reading
-does not hold). Version drift, work still owed on mail that left the Inbox,
+reading lists is in the Spark Inbox; a copy is out of it only where the shown
+view read its mailbox to the end without listing it and the other Inbox view
+read that mailbox to the end and held nothing there; anything else is
+unknown, with the limit named (a bounded reading, a mailbox that failed, a
+mailbox the reading does not hold). While a search is shown, absence from its
+matches proves nothing. Version drift, work still owed on mail that left the Inbox,
 and a claimed closure Spark still lists are shown as conflicts and are never
 resolved by rewriting the record. A saved decision whose version this reading
 does not name reads as "not checked". A closure that still stands can be

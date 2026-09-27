@@ -117,8 +117,10 @@ overdue follow-up, open work, work that could not be checked against the
 current reading, and completed decisions, each counted per mailbox copy from
 this app's own record and never as a Spark Inbox count. Refresh reads the
 record again and checks each copy against the new reading: listed copies are
-in the Inbox, a copy is out of it only when both Inbox views read its mailbox
-to the end, and anything else says unknown. Version drift, work owed on mail
+in the Inbox, a copy is out of it only when the shown view read its mailbox
+to the end without it and the other Inbox view read that mailbox to the end
+and held nothing, and anything else (including absence from search matches)
+says unknown. Version drift, work owed on mail
 that left the Inbox, and a claimed closure Spark still lists are shown as
 conflicts. A completed claim can be reopened. Aliases and other mailbox
 copies stay separate items.
