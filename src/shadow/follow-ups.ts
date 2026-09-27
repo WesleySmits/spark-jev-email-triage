@@ -242,3 +242,76 @@ export const readFollowUps = (
     const decision = decisionIn(row)
     return decision === null ? [] : [decision]
   })
+
+/**
+ * Every copy anybody decided about, most recently decided first, with that
+ * copy's whole history latest first.
+ *
+ * `readFollowUps` answers for copies a caller already holds. This answers the
+ * other question: which copies owe anything at all, for a list that has to
+ * name copies no current reading of the mailbox lists. Nothing is filtered by
+ * version or by kind here — where the work stands is `followUpWork`'s call
+ * over what a reading observed, and a query that left rows out would decide
+ * it in the dark.
+ *
+ * It is bounded by copies rather than by rows, so a copy that is listed is
+ * listed with everything recorded for it: a truncated history would make an
+ * older decision look like the latest one. `bounded` says the limit was
+ * reached, so a caller can say the list may be cut instead of reading it as
+ * everything there is.
+ */
+const copiesQuery = `
+  SELECT d.mailbox_id, d.message_id, d.thread_id, d.latest_message_id,
+         d.kind, d.due_at, d.decided_by, d.decided_at
+  FROM follow_up_decisions d
+  JOIN (
+    SELECT mailbox_id, message_id, MAX(id) AS latest
+    FROM follow_up_decisions
+    GROUP BY mailbox_id, message_id
+    ORDER BY latest DESC
+    LIMIT :copies
+  ) c ON c.mailbox_id = d.mailbox_id AND c.message_id = d.message_id
+  ORDER BY c.latest DESC, d.id DESC`
+
+/** One copy's recorded decisions, latest first, as this database committed them. */
+export type DecidedCopy = Readonly<{
+  copy: MailboxCopyRef
+  decisions: readonly FollowUpDecision[]
+}>
+
+export type DecidedCopies = Readonly<{
+  /** Most recently decided copy first. A copy is present with its whole history. */
+  copies: readonly DecidedCopy[]
+  /** Whether the copy limit may have cut this list. */
+  bounded: boolean
+}>
+
+/** How many copies one read of the whole record may return. */
+export const decidedCopyLimit = 200
+
+/**
+ * Every copy with a recorded decision, bounded by `limit` copies. A row this
+ * build cannot read is skipped rather than guessed at, exactly as
+ * `readFollowUps` skips it, and a copy left with no readable row is left out.
+ */
+export function readDecidedCopies(db: DatabaseSync, limit = decidedCopyLimit): DecidedCopies {
+  const rows = rowsSchema.parse(db.prepare(copiesQuery).all({ copies: limit }))
+  const byCopy = new Map<string, FollowUpDecision[]>()
+  for (const row of rows) {
+    const decision = decisionIn(row)
+    if (decision === null) continue
+    const key = mailboxCopyId(decision.target.copy)
+    const found = byCopy.get(key)
+    if (found === undefined) byCopy.set(key, [decision])
+    else found.push(decision)
+  }
+  const copies = [...byCopy.values()].flatMap((decisions) =>
+    decisions[0] === undefined ? [] : [{ copy: decisions[0].target.copy, decisions }],
+  )
+  // Counted from the rows, so a copy whose every row was skipped never makes
+  // the list look cut when the limit was not reached.
+  return {
+    copies,
+    bounded: new Set(rows.map((row) => `${row.mailbox_id} ${row.message_id}`)).size >= limit,
+  }
+}
