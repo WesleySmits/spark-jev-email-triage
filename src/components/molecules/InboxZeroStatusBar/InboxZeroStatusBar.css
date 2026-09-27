@@ -9,6 +9,34 @@
   overflow-wrap: anywhere;
 }
 
+.inbox-zero-status--compact {
+  margin-top: var(--s2);
+  padding: var(--s2) 0 0;
+  border-top-width: 1px;
+  background: transparent;
+}
+
+.inbox-zero-status--compact summary {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s2);
+  cursor: pointer;
+  list-style: none;
+}
+
+.inbox-zero-status--compact summary::-webkit-details-marker {
+  display: none;
+}
+.inbox-zero-status--compact summary strong {
+  color: var(--ink);
+}
+.inbox-zero-status--compact summary span {
+  color: var(--accent);
+}
+.inbox-zero-status--compact > p {
+  margin: var(--s2) 0;
+}
+
 .inbox-zero-status--success {
   border-top-color: var(--success);
 }

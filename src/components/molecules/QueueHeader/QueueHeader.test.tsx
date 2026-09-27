@@ -17,7 +17,13 @@ function descendants(element: Element): Element[] {
   return ([] as ReactNode[])
     .concat(element.props['children'] as ReactNode)
     .filter(isElement)
-    .flatMap((child) => [child, ...descendants(child)])
+    .flatMap((child) => {
+      if (typeof child.type === 'function' && child.type !== Button && child.type !== Icon) {
+        const rendered = (child.type as (props: Record<string, unknown>) => Element)(child.props)
+        return [rendered, ...descendants(rendered)]
+      }
+      return [child, ...descendants(child)]
+    })
 }
 
 function render(props: Partial<Props> = {}) {
@@ -102,6 +108,40 @@ describe('QueueHeader', () => {
     expect(byClass('queue-header__scope')?.props['className']).toBe(
       'queue-header__scope queue-header__scope--bounded',
     )
+  })
+
+  it('keeps incomplete reach visible while placing the explanation in Details', () => {
+    const { all, byClass } = render({
+      compactScope: true,
+      scope: {
+        summary: 'Loaded: 53 recent messages',
+        detail: 'Older mail may remain in one mailbox.',
+        refreshed: { label: 'Last refreshed 09:42.', dateTime: '2026-09-24T07:42:00.000Z' },
+        bounded: true,
+      },
+    })
+    expect(all.some((element) => element.type === 'details')).toBe(true)
+    expect(byClass('queue-header__reach-label')?.props['children']).toContain(
+      'more mail may remain',
+    )
+    expect(byClass('queue-header__reach-detail')).toBeDefined()
+  })
+
+  it('names a mailbox failure and the remaining mail separately', () => {
+    const { byClass } = render({
+      compactScope: true,
+      scope: {
+        summary: 'Loaded: 4 recent messages',
+        detail: 'Older mail was left out.',
+        unread: 'One mailbox could not be read.',
+        refreshed: { label: 'Last refreshed 09:42.', dateTime: '2026-09-24T07:42:00.000Z' },
+        bounded: true,
+      },
+    })
+    expect(byClass('queue-header__reach-label')?.props['children']).toContain(
+      'mailbox unavailable · more mail may remain',
+    )
+    expect(byClass('queue-header__reach-label')?.props['role']).toBe('status')
   })
 
   it('shows what could not be read, announced, without disturbing the other lines', () => {

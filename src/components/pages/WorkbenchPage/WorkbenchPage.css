@@ -25,4 +25,29 @@
  * first. It sits under the scope line, above the other queue controls. */
 .workbench__worklist-setting {
   margin-top: var(--s2);
+  color: var(--muted);
+  font: var(--text-meta);
+}
+.workbench__worklist-setting summary {
+  cursor: pointer;
+}
+.workbench__worklist-setting .checkbox {
+  margin-top: var(--s2);
+}
+
+.workbench__jev-options {
+  margin-top: var(--s2);
+}
+.workbench__jev-options > summary {
+  display: inline-flex;
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  color: var(--accent-ink);
+  cursor: pointer;
+  font: var(--text-control);
+  list-style: none;
+}
+.workbench__jev-options > summary::-webkit-details-marker {
+  display: none;
 }

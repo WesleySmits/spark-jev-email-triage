@@ -184,6 +184,8 @@ type WorkbenchPageProps = Readonly<{
   scope?: QueueScope | undefined
   /** Optional controls inside the queue header, below the loaded scope. */
   queueControls?: ReactNode
+  /** Controls placed after the scrolling message rows. */
+  queueFooter?: ReactNode
   /** Explicit bounded Jev run control, inside the existing queue header. */
   triage?: ComponentProps<typeof TriageRunControl> | undefined
   /** Controlled sender/subject discovery beyond the rows initially loaded. */
@@ -867,6 +869,7 @@ type QueueProps = PaneProps &
     discovery: boolean
     worklist: Worklist | undefined
     controls?: ReactNode
+    footer?: ReactNode
   }>
 
 /**
@@ -887,19 +890,21 @@ function queueGroups(
     view: searchScopeFor(scope) ?? 'loaded messages',
   })
   const byId = new Map(rows.map((row) => [row.id, row]))
-  return groups.map(({ state: id, title, note, messages }) => ({
-    id,
-    title,
-    note,
-    messages: messages.flatMap((message) => byId.get(message.id) ?? []),
-  }))
+  return groups
+    .map(({ state: id, title, note, messages }) => ({
+      id,
+      title,
+      note,
+      messages: messages.flatMap((message) => byId.get(message.id) ?? []),
+    }))
+    .filter((group) => group.messages.length > 0)
 }
 
 /**
  * The queue, headed by the workflow, the applied mailbox filter and what the
  * reading holds. The count is of loaded rows the filter kept, never of a
- * mailbox, and the scope line under it says so. The queue header shows in
- * the mobile queue pane too, so that line is not desktop-only.
+ * mailbox. A compact reach line stays visible; its Details holds the full
+ * explanation in both desktop and mobile queue panes.
  */
 /** The rows the queue shows, and in a worklist the groups they sit in. */
 function queueContent(
@@ -914,6 +919,42 @@ function queueContent(
   return { rows, groups: queueGroups(state, worklist, scope, workflows, rows) }
 }
 
+function JevControls({ triage }: Readonly<{ triage: NonNullable<WorkbenchPageProps['triage']> }>) {
+  if (triage.state.run || !['idle', 'restoring'].includes(triage.state.phase)) {
+    return <TriageRunControl {...triage} />
+  }
+  return (
+    <details className="workbench__jev-options">
+      <summary>Run Jev</summary>
+      <TriageRunControl {...triage} />
+    </details>
+  )
+}
+
+function QueueEmptyState({
+  scope,
+  discovery,
+  onReset,
+}: Readonly<{
+  scope: QueueScope | undefined
+  discovery: boolean
+  onReset: () => void
+}>) {
+  return (
+    <EmptyState
+      icon="inbox"
+      {...(discovery && !scope
+        ? {
+            title: 'No search matches',
+            description:
+              'No listed sender or subject matched in the scanned mailbox copies. Search further when more pages are available.',
+          }
+        : emptyScopeText(scope))}
+      action={scope?.loaded === 0 ? undefined : { label: 'Reset filters', onClick: onReset }}
+    />
+  )
+}
+
 function Queue({
   state,
   title,
@@ -924,11 +965,13 @@ function Queue({
   discovery,
   worklist,
   controls,
+  footer,
 }: QueueProps) {
   const count = state.shown.length
   const { rows, groups } = queueContent(state, evidence, scope, worklist, workflows)
   const setting = worklist && (
-    <div className="workbench__worklist-setting">
+    <details className="workbench__worklist-setting">
+      <summary>Grouping</summary>
       <Checkbox
         label="Group by attention"
         checked={state.grouped}
@@ -936,11 +979,8 @@ function Queue({
           state.setGrouped(event.target.checked)
         }}
       />
-    </div>
+    </details>
   )
-  // Nothing loaded is not a filter that matched nothing, so Reset is offered
-  // only where resetting could bring a row back.
-  const nothingLoaded = scope?.loaded === 0
   return (
     <MessageQueue
       header={{
@@ -949,6 +989,8 @@ function Queue({
         count: `${String(count)} ${count === 1 ? 'result' : 'results'}`,
         context: mailboxLabel(state.filter.mailbox, mailboxes),
         ...(scope && { scope: scopeText(scope, discovery) }),
+        compactScope: scope !== undefined,
+        scopeCompactLabel: `${String(scope?.loaded ?? 0)} loaded`,
         controls: (
           <>
             {setting}
@@ -958,21 +1000,10 @@ function Queue({
       }}
       messages={rows}
       groups={groups}
+      footer={footer}
       currentId={state.open?.id}
       onOpen={state.openMessage}
-      empty={
-        <EmptyState
-          icon="inbox"
-          {...(discovery && !scope
-            ? {
-                title: 'No search matches',
-                description:
-                  'No listed sender or subject matched in the scanned mailbox copies. Search further when more pages are available.',
-              }
-            : emptyScopeText(scope))}
-          action={nothingLoaded ? undefined : { label: 'Reset filters', onClick: state.reset }}
-        />
-      }
+      empty={<QueueEmptyState scope={scope} discovery={discovery} onReset={state.reset} />}
     />
   )
 }
@@ -1467,9 +1498,10 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
                   />
                 )}
                 {props.queueControls}
-                {props.triage && <TriageRunControl {...props.triage} />}
+                {props.triage && <JevControls triage={props.triage} />}
               </>
             }
+            footer={props.queueFooter}
           />
         }
         reader={

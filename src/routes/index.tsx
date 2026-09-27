@@ -8,7 +8,7 @@ import { useReconnect } from '../components/pages/ConnectionPage/useReconnect'
 import { WorkbenchPage } from '../components/pages/WorkbenchPage/WorkbenchPage'
 import { syncScopeLabel } from '../components/pages/WorkbenchPage/scope'
 import { InboxZeroStatusBar } from '../components/molecules/InboxZeroStatusBar/InboxZeroStatusBar'
-import { InboxViewBar } from '../components/molecules/InboxViewBar/InboxViewBar'
+import { InboxLoadOlder, InboxViewBar } from '../components/molecules/InboxViewBar/InboxViewBar'
 import { useInboxReadFocus, type InboxReadFocus } from '../app/inbox-read-focus'
 import {
   coverageFromInboxScope,
@@ -192,7 +192,7 @@ function CoverageStatus({
   loading,
 }: Readonly<{ coverage: InboxCoverage | undefined; loading: boolean }>) {
   if (!coverage) return null
-  return <InboxZeroStatusBar coverage={coverage} refreshing={loading} />
+  return <InboxZeroStatusBar coverage={coverage} refreshing={loading} compact />
 }
 
 function LoadedPage({
@@ -264,9 +264,17 @@ function LoadedPage({
           }}
           queueControls={
             <>
-              <InboxViewBar scope={inbox.scope} loading={loading} onChange={change} />
+              <InboxViewBar scope={inbox.scope} loading={loading} onChange={change} compact />
               <CoverageStatus coverage={coverage} loading={loading} />
             </>
+          }
+          queueFooter={
+            <InboxLoadOlder
+              scope={inbox.scope}
+              loading={loading}
+              onChange={change}
+              searchActive={Boolean(found)}
+            />
           }
           triage={{
             worklistSize: inbox.messages.length,

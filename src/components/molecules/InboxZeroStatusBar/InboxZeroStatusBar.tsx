@@ -85,23 +85,11 @@ const timeLabel = (instant: string) =>
     hourCycle: 'h23',
   }).format(new Date(instant))
 
-export function InboxZeroStatusBar({
-  coverage,
-  refreshing = false,
-}: Readonly<{ coverage: InboxCoverage; refreshing?: boolean | undefined }>) {
-  const status = verdict(coverage, refreshing)
-  const views = [coverage.unread, coverage.read]
+function ScanDetails({ coverage }: Readonly<{ coverage: InboxCoverage }>) {
   return (
-    <section
-      className={`inbox-zero-status inbox-zero-status--${status.tone}`}
-      aria-label="Inbox Zero scan status"
-    >
-      <div className="inbox-zero-status__verdict" role="status">
-        <strong>{status.title}</strong>
-        <span>{status.detail}</span>
-      </div>
+    <>
       <dl className="inbox-zero-status__views">
-        {views.map((view) => (
+        {[coverage.unread, coverage.read].map((view) => (
           <div className="inbox-zero-status__view" key={view.view}>
             <dt>{viewName(view.view)}</dt>
             <dd
@@ -125,6 +113,45 @@ export function InboxZeroStatusBar({
         )}
         {' · mail may change between commands'}
       </p>
+    </>
+  )
+}
+
+export function InboxZeroStatusBar({
+  coverage,
+  refreshing = false,
+  compact = false,
+}: Readonly<{
+  coverage: InboxCoverage
+  refreshing?: boolean | undefined
+  compact?: boolean | undefined
+}>) {
+  const status = verdict(coverage, refreshing)
+  if (compact) {
+    return (
+      <details
+        className={`inbox-zero-status inbox-zero-status--compact inbox-zero-status--${status.tone}`}
+        aria-label="Inbox Zero scan status"
+      >
+        <summary>
+          <strong role="status">{status.title}</strong>
+          <span>Details</span>
+        </summary>
+        <p>{status.detail}</p>
+        <ScanDetails coverage={coverage} />
+      </details>
+    )
+  }
+  return (
+    <section
+      className={`inbox-zero-status inbox-zero-status--${status.tone}`}
+      aria-label="Inbox Zero scan status"
+    >
+      <div className="inbox-zero-status__verdict" role="status">
+        <strong>{status.title}</strong>
+        <span>{status.detail}</span>
+      </div>
+      <ScanDetails coverage={coverage} />
     </section>
   )
 }

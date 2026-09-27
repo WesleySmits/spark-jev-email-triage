@@ -228,7 +228,19 @@ describe('MessageQueue', () => {
     const { list, all } = render({ messages: [] })
     expect(list).toBeUndefined()
     const body = all.find((element) => element.props['className'] === 'message-queue__body')
-    expect(body?.props['children']).toBeUndefined()
+    expect((body?.props['children'] as ReactNode[]).every((child) => child === undefined)).toBe(
+      true,
+    )
+  })
+
+  it('places the next-page control after the loaded rows', () => {
+    const footer = <button type="button">Load older</button>
+    const { all, list } = render({ footer })
+    const body = all.find((element) => element.props['className'] === 'message-queue__body')
+    const children = body?.props['children'] as ReactNode[]
+    expect(list?.type).toBe('ul')
+    expect(children[0]).toBeDefined()
+    expect(children[1]).toBe(footer)
   })
 
   it('appends a caller class', () => {

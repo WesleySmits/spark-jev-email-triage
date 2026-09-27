@@ -32,9 +32,9 @@ distinct even when message ids, subjects or contents match.
 That reach is stated on the page rather than left to be inferred. Every
 reading carries a scope: its unread or read view, requested page count, the
 mailboxes it listed with their counts, how many readable mailboxes Spark
-offered, and when the refresh finished. The queue header shows it under the
-title in both the desktop and the mobile queue pane, marked when another page
-may exist. The figures are counted from the rows that were kept, never
+offered, and when the refresh finished. The queue header shows the loaded count
+and reach warning under the title in both the desktop and mobile queue pane;
+Details contains the full scope and refresh time. The figures are counted from the rows that were kept, never
 estimated: a mailbox whose last listing page came back full is reported as
 possibly cut, because a full page only proves more was never asked for. The
 mailbox filter is named "All readable mailboxes"; search states that it matches
@@ -67,6 +67,7 @@ own decision. The guarded Done panel
 can archive a selected message when explicitly enabled. The queue header has
 an explicit **Start Jev triage** control for the loaded worklist, with message
 and Jev-call limits, durable readback, cooperative Stop and idempotent Restart.
+When no run exists, Run Jev opens the limits form without starting a run.
 It is loopback-only, default-off behind `JEV_MANUAL_RUNS_ENABLED=1`, and also
 requires `TYPESAFE_API_KEY`. A run sends minimized thread content to Jev;
 loading, refreshing and reviewing in the app make no model calls. There is no
@@ -84,8 +85,8 @@ as not triaged and says why. Every row shows one line naming the labels that
 placed it and who decided each, with the model's advice beside a person's
 decision. Group counts are of loaded rows, of every message in the view only
 when the Inbox Zero scan proved the reading complete, or of the current
-filter, and say which. "Group by attention" in the queue header turns the
-grouping off, which lists the same rows newest first with their reason lines
+filter, and say which. Empty group headings are hidden. The Grouping control
+contains "Group by attention"; turning it off lists the same rows newest first with their reason lines
 and turns the `G` shortcut off with it. Grouping never moves mail. `G` opens
 the first message of the next group.
 
