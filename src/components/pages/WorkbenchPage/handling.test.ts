@@ -95,7 +95,7 @@ describe('handlingNote', () => {
     expect(note).toContain('another copy carrying it may change too')
     expect(note).toContain('Nothing is stored yet')
     // No link into Spark is offered, because none was ever proved.
-    expect(note).toContain('no link that opens this exact message in Spark has been proven')
+    expect(note).toContain('No link that opens this exact message in Spark has been proven')
   })
 
   it('says why nothing can be recorded when no version is named', () => {
@@ -104,12 +104,14 @@ describe('handlingNote', () => {
 })
 
 describe('recordedDecision', () => {
-  it('keeps a local outcome local, and says nothing was stored', () => {
+  it('distinguishes a transient decision from saved local work', () => {
     const view = recordedDecision('reply_needed', holds, null, null)
     expect(view).toMatchObject({ title: 'Reply needed', locked: false })
     expect(view.state.label).toBe('Local work status')
-    expect(view.detail).toContain('mail stays in your Spark Inbox')
-    expect(view.detail).toContain('nothing was stored')
+    expect(view.detail).toContain('kept while the message stays open')
+    expect(recordedDecision('reply_needed', holds, null, null, true).detail).toContain(
+      'saved as local work',
+    )
   })
 
   it('never reads as done while Spark has only been asked', () => {

@@ -103,9 +103,10 @@ only way to start the guarded Spark Done path, which keeps its separate
 approval, fresh preflight, durable receipt and Archive/Inbox readback. Spark
 acts on the provider message ID, so another copy carrying that ID may change
 too, and the panel says so. A blocked, lapsed or uncertain attempt leaves the
-work visibly open; only a confirmed readback reads as done. Decisions are not
-stored yet: one is kept while its message stays open. No link that opens one
-exact message in Spark is offered, because none has been proven.
+work visibly open; only a confirmed readback reads as done. Reply needed and
+Follow up later are saved in the local work record. Handle now and Read only
+stay transient. No link that opens one exact message in Spark is offered,
+because none has been proven.
 
 The web process needs the local Spark CLI to read mail. A successful build
 or `/health` response does not prove Spark readiness. See
@@ -417,9 +418,23 @@ pnpm readback:spark                      # whether Spark answers on this host
   loader. A late response for a message that is no longer open is dropped.
 - `src/app/demo.ts` keeps fictional sample data for tests; the app no
   longer shows it.
-- Classifications, reviews and manual-run control state persist in the local
-  shadow-triage SQLite file (Node's built-in `node:sqlite`, schema 5 via
-  `PRAGMA user_version`).
+- Classifications, reviews, manual-run control state and recorded work
+  decisions persist in the local shadow-triage SQLite file (Node's built-in
+  `node:sqlite`, schema 6 via `PRAGMA user_version`).
+- `src/domain/follow-up.ts` and `src/shadow/follow-ups.ts` are the local
+  record of the work a person decided one mailbox copy owes: a reply is
+  needed, they will follow it up later and optionally by when, they finished
+  it in Spark themselves, or work they closed is open again. Rows are
+  appended and the database refuses to change or drop one, so a copy's
+  history stays readable, ordered by the row ids the database assigns rather
+  than by the instant a caller stamped, so a corrected clock cannot let a
+  closure outrank the reopen that answered it. Each row names the exact
+  thread version decided against, and `followUpWork` reads a decision the
+  thread has moved past as lapsed with the work open, so a later message
+  never makes an old closure current. `handled_in_spark` records a person's claim and runs no Spark
+  command. The reader saves Reply needed and Follow up later here, and the
+  Open work and Completed decisions tabs read and extend this record. Handle
+  now and Read only stay transient.
   Evaluation snapshots are separate local JSON files under `.data/`.
 - A `current` or `unverified` classification offers a review of its category
   and its priority; stale, failed, absent or unreadable classifications do not. The save

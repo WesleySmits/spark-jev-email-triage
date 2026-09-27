@@ -490,7 +490,12 @@ describe('reviews stored before field decisions existed', () => {
       priority: "'low'",
       reviewedAt: '2026-09-22T11:00:00.000Z',
     })
-    db.exec('DROP TABLE review_fields; PRAGMA user_version = 4')
+    db.exec(
+      `DROP TABLE follow_up_requests;
+       DROP TABLE follow_up_decisions;
+       DROP TABLE review_fields;
+       PRAGMA user_version = 4`,
+    )
     return db
   }
 

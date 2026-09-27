@@ -50,6 +50,7 @@ import { projectClassification, type CurrentJudge } from '../domain/stored-class
 import { categorySchema, prioritySchema } from '../domain/triage'
 import { readByCopy } from './by-copy'
 import { transaction } from './database'
+import { requestOutcome } from './request-journal'
 import { readJudgments } from './judgments'
 
 export type RecordedReview =
@@ -125,15 +126,9 @@ export function readReviewRequest(db: DatabaseSync, request: ReviewRequest): Rev
        WHERE r.request_id = :requestId`,
     )
     .get({ requestId: request.requestId })
-  if (raw === undefined) return { status: 'absent' }
-  const row = requestRowSchema.parse(raw)
-  if (row.payload !== requestPayload(request)) {
-    return { status: 'refused', reason: 'request_conflict' }
-  }
-  if (row.status === 'refused') {
-    return { status: 'refused', reason: reviewRefusalSchema.parse(row.refusal_reason) }
-  }
-  const review = recordedReview(db, row)
+  const outcome = requestOutcome(raw, requestPayload(request), reviewRefusalSchema)
+  if (outcome.status !== 'recorded') return outcome
+  const review = recordedReview(db, requestRowSchema.parse(raw))
   if (review === undefined) throw new Error('A recorded review holds no readable decision')
   return { status: 'recorded', review }
 }
