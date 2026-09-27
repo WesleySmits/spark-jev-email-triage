@@ -20,13 +20,13 @@
   flex: none;
 }
 
-/* The source rail is 184px. minmax(0, 1fr) lets the main area give way
+/* The rail uses 15% of the dynamic viewport width. minmax(0, 1fr) lets the main area give way
  * instead of widening the page. */
 .workbench > .workbench__workspace {
   min-height: 0;
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: 184px minmax(0, 1fr);
+  grid-template-columns: 15dvw minmax(0, 1fr);
 }
 
 /* The queue is bounded: 280px, the narrowest it is built for, up to the
@@ -55,13 +55,6 @@
   border-right: 1px solid var(--line);
 }
 
-/* On narrower desktops the rail takes the source's narrowest width, 156px. */
-@media (max-width: 1024px) {
-  .workbench > .workbench__workspace {
-    grid-template-columns: 156px minmax(0, 1fr);
-  }
-}
-
 /* Above the compact width the rail is there, so the compact filter control is
  * not: it leaves the layout and the tab order, and the rail is the only way
  * to the filters. Two class names deep, so it also wins over a control that
@@ -72,8 +65,7 @@
   }
 }
 
-/* At 900px and below the rail would leave the reader too narrow: a 156px rail
- * and a 280px queue take more than half of a 768px tablet. The rail leaves the
+/* At 900px and below the rail would leave the reader too narrow. It leaves the
  * layout, the tab order and the accessibility tree; the same filters are
  * reached from the compact control the caller puts in the top bar. */
 @media (max-width: 900px) {
