@@ -276,7 +276,7 @@ describe('one save, asked for twice', () => {
 
 describe('reading every copy anybody decided about', () => {
   it('lists nothing where nobody has decided anything', () => {
-    expect(reopened((db) => readDecidedCopies(db))).toEqual({ copies: [], bounded: false })
+    expect(reopened((db) => readDecidedCopies(db))).toEqual({ copies: [], nextCursor: null })
   })
 
   it('survives the process that wrote it and keeps each copy’s whole history', () => {
@@ -286,7 +286,7 @@ describe('reading every copy anybody decided about', () => {
     expect(recordAndClose(reopen)).toEqual({ status: 'recorded' })
 
     const read = reopened((db) => readDecidedCopies(db))
-    expect(read.bounded).toBe(false)
+    expect(read.nextCursor).toBeNull()
     expect(read.copies).toEqual([{ copy: copy(studio), decisions: [reopen, closure] }])
   })
 
@@ -322,15 +322,31 @@ describe('reading every copy anybody decided about', () => {
     ])
   })
 
-  it('says the list may be cut when the copy limit was reached', () => {
+  it('pages every copy without truncating history or shifting older copies after a new save', () => {
     for (const index of [1, 2, 3]) {
       expect(
         recordAndClose(decide('reply_needed', { mailboxId: `box-${String(index)}@mail.example` })),
       ).toEqual({ status: 'recorded' })
     }
-    expect(reopened((db) => readDecidedCopies(db, 2))).toMatchObject({ bounded: true })
-    expect(reopened((db) => readDecidedCopies(db, 2)).copies).toHaveLength(2)
-    expect(reopened((db) => readDecidedCopies(db, 3))).toMatchObject({ bounded: true })
-    expect(reopened((db) => readDecidedCopies(db, 4))).toMatchObject({ bounded: false })
+    const first = reopened((db) => readDecidedCopies(db, null, 2))
+    expect(first.copies.map(({ copy: each }) => each.mailboxId)).toEqual([
+      'box-3@mail.example',
+      'box-2@mail.example',
+    ])
+    expect(first.nextCursor).toEqual({ snapshotId: 3, beforeId: 2 })
+
+    // A later decision moves box 1 to the top of a fresh read, but must not
+    // make its original copy disappear from this reading's older page.
+    expect(recordAndClose(decide('follow_up_later', { mailboxId: 'box-1@mail.example' }))).toEqual({
+      status: 'recorded',
+    })
+    const older = reopened((db) => readDecidedCopies(db, first.nextCursor, 2))
+    expect(older.nextCursor).toBeNull()
+    expect(older.copies.map(({ copy: each }) => each.mailboxId)).toEqual(['box-1@mail.example'])
+    expect(older.copies[0]?.decisions.map(({ kind }) => kind)).toEqual([
+      'follow_up_later',
+      'reply_needed',
+    ])
+    expect(reopened((db) => readDecidedCopies(db, null, 3)).nextCursor).toBeNull()
   })
 })

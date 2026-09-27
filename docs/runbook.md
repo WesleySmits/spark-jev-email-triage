@@ -142,6 +142,8 @@ The reader can also save Reply needed and Follow up later to that schema-6
 file. Open work and Completed decisions list those local records in separate
 tabs, apart from Spark Inbox and unread counts. They check recorded copies
 through bounded Spark reads; an
+older page can be loaded explicitly, and all displayed counts describe loaded
+copies only. Each request checks at most 50 local copies against Spark. An
 unknown result or a version conflict must be inspected, not treated as
 completed. Opening one recorded item reads its thread on demand and lets a
 person record a new decision against the version just shown; body text is not

@@ -86,6 +86,8 @@ recorded decisions across restarts and check each copy's Inbox presence and
 version through bounded Spark reads. They show overdue, open, unknown and
 completed decisions apart from Spark Inbox counts. A person can claim they handled recorded work
 in Spark or reopen a closed version; neither sends a Spark write command.
+The local record loads at most 50 copies per page. Counts cover loaded copies
+only, and Load older decisions reaches older records without an aggregate Spark scan.
 Selecting recorded work reads its current thread on demand and lets a person
 make a new decision against that version. An old decision is named as stale
 when the version changed; body text is never written to the work record.

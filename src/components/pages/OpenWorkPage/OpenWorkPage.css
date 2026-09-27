@@ -11,6 +11,7 @@
 .open-work__counts,
 .open-work__verification,
 .open-work__columns,
+.open-work__more,
 .open-work__empty {
   max-width: 1440px;
   margin-inline: auto;
@@ -165,6 +166,24 @@
   border: 1px dashed var(--line-strong);
   border-radius: var(--r2);
   background: var(--paper);
+}
+
+.open-work__more {
+  margin-block: var(--s5);
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--paper);
+}
+
+.open-work__more p {
+  margin: var(--s2) 0 0;
+  color: var(--muted);
+  font: var(--text-meta);
+}
+
+.open-work__more [role='alert'] {
+  color: var(--danger);
 }
 
 .open-work__reader {

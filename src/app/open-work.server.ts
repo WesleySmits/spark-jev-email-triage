@@ -9,6 +9,7 @@ import {
   openWorkTally,
   type InboxEvidence,
   type InboxPlace,
+  type DecidedCopyCursor,
 } from '../domain/open-work'
 import { readDatabasePath } from '../shadow/config'
 import { openForWriting, openReadOnly } from '../shadow/database'
@@ -131,6 +132,7 @@ export async function readOpenWork(
   reader: MailReader,
   env: Env = process.env,
   now: () => Date = () => new Date(),
+  cursor: DecidedCopyCursor | null = null,
 ): Promise<OpenWorkRead> {
   const path = readDatabasePath(env)
   if (!existsSync(path)) {
@@ -138,7 +140,7 @@ export async function readOpenWork(
       status: 'ready',
       items: [],
       tally: openWorkTally([]),
-      bounded: false,
+      nextCursor: null,
       checkedAt: now().toISOString(),
     }
   }
@@ -146,7 +148,7 @@ export async function readOpenWork(
     const db = openReadOnly(path)
     let recorded: ReturnType<typeof readDecidedCopies>
     try {
-      recorded = readDecidedCopies(db)
+      recorded = readDecidedCopies(db, cursor)
     } finally {
       db.close()
     }
@@ -170,7 +172,7 @@ export async function readOpenWork(
       status: 'ready',
       items,
       tally: openWorkTally(items),
-      bounded: recorded.bounded,
+      nextCursor: recorded.nextCursor,
       checkedAt,
     }
   } catch {

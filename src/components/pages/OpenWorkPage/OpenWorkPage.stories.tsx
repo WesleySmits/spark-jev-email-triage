@@ -70,6 +70,12 @@ const selectedMessage: WorkMessageRead = {
   ],
 }
 
+async function openCurrentThread(canvasElement: HTMLElement) {
+  const canvas = within(canvasElement)
+  await userEvent.click(canvas.getByRole('button', { name: 'Read current thread' }))
+  return canvas
+}
+
 const meta = {
   title: 'Pages/OpenWorkPage',
   component: OpenWorkPage,
@@ -79,11 +85,14 @@ const meta = {
       status: 'ready',
       items,
       tally: openWorkTally(items),
-      bounded: false,
+      nextCursor: null,
       checkedAt: now,
     },
     loading: false,
+    moreLoading: false,
+    moreError: false,
     onRefresh: fn(),
+    onLoadMore: fn(),
     onRecord: fn(() => Promise.resolve({ status: 'recorded' as const })),
     onRead: fn((): Promise<WorkMessageRead> => Promise.resolve({ status: 'unavailable' })),
   },
@@ -107,7 +116,7 @@ export const NoRecordedWork: Story = {
       status: 'ready',
       items: [],
       tally: openWorkTally([]),
-      bounded: false,
+      nextCursor: null,
       checkedAt: now,
     },
   },
@@ -120,7 +129,7 @@ export const Completed: Story = {
       status: 'ready',
       items: completedItems,
       tally: openWorkTally(completedItems),
-      bounded: false,
+      nextCursor: null,
       checkedAt: now,
     },
   },
@@ -139,8 +148,7 @@ export const SelectedReader: Story = {
     onRead: fn(() => Promise.resolve(selectedMessage)),
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: 'Read current thread' }))
+    const canvas = await openCurrentThread(canvasElement)
     await expect(
       await canvas.findByRole('heading', { name: 'Proposal for the autumn launch' }),
     ).toBeVisible()
@@ -149,6 +157,26 @@ export const SelectedReader: Story = {
       'aria-pressed',
       'true',
     )
+  },
+}
+
+export const OlderDecisionsAvailable: Story = {
+  args: {
+    reading: {
+      status: 'ready',
+      items: [],
+      tally: openWorkTally([]),
+      nextCursor: { snapshotId: 84, beforeId: 42 },
+      checkedAt: now,
+    },
+  },
+  play: async ({ canvasElement, args }) => {
+    const loadMore = within(canvasElement).getByRole('button', { name: 'Load older decisions' })
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText(/counts cover loaded copies only/i)).toBeVisible()
+    await expect(canvas.getByText(/older decisions are available below/i)).toBeVisible()
+    await userEvent.click(loadMore)
+    await expect(args.onLoadMore).toHaveBeenCalledOnce()
   },
 }
 
@@ -173,8 +201,7 @@ export const VersionChanged: Story = {
     ),
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: 'Read current thread' }))
+    const canvas = await openCurrentThread(canvasElement)
     await expect(await canvas.findByText('A new reply arrived')).toBeVisible()
     await expect(
       canvas.getByText(/previous decision belongs to an older thread version/),

@@ -39,6 +39,7 @@ import {
   type FollowUpRefusal,
 } from '../domain/follow-up'
 import { mailboxCopyId, type MailboxCopyRef } from '../domain/mailbox-copy'
+import type { DecidedCopyCursor } from '../domain/open-work'
 import { readByCopy } from './by-copy'
 import { transaction } from './database'
 import { requestOutcome } from './request-journal'
@@ -254,20 +255,22 @@ export const readFollowUps = (
  * over what a reading observed, and a query that left rows out would decide
  * it in the dark.
  *
- * It is bounded by copies rather than by rows, so a copy that is listed is
- * listed with everything recorded for it: a truncated history would make an
- * older decision look like the latest one. `bounded` says the limit was
- * reached, so a caller can say the list may be cut instead of reading it as
- * everything there is.
+ * It is paged by copies rather than by rows, so a copy that is listed has
+ * its whole history. A continuation freezes copy ordering at the first
+ * page's commit id, so a later decision cannot shift an older copy past the
+ * cursor. The rows shown for each selected copy still include its latest
+ * decisions at the time that page is read.
  */
 const copiesQuery = `
-  SELECT d.mailbox_id, d.message_id, d.thread_id, d.latest_message_id,
+  SELECT c.latest AS copy_latest, d.mailbox_id, d.message_id, d.thread_id, d.latest_message_id,
          d.kind, d.due_at, d.decided_by, d.decided_at
   FROM follow_up_decisions d
   JOIN (
     SELECT mailbox_id, message_id, MAX(id) AS latest
     FROM follow_up_decisions
+    WHERE (:snapshotId IS NULL OR id <= :snapshotId)
     GROUP BY mailbox_id, message_id
+    HAVING (:beforeId IS NULL OR MAX(id) < :beforeId)
     ORDER BY latest DESC
     LIMIT :copies
   ) c ON c.mailbox_id = d.mailbox_id AND c.message_id = d.message_id
@@ -282,25 +285,65 @@ export type DecidedCopy = Readonly<{
 export type DecidedCopies = Readonly<{
   /** Most recently decided copy first. A copy is present with its whole history. */
   copies: readonly DecidedCopy[]
-  /** Whether the copy limit may have cut this list. */
-  bounded: boolean
+  /** Frozen ordering plus the last included copy, when older copies remain. */
+  nextCursor: DecidedCopyCursor | null
 }>
 
-/** How many copies one read of the whole record may return. */
-const decidedCopyLimit = 200
+/** Each request checks at most this many locally recorded copies against Spark. */
+const decidedCopyPageSize = 50
+const decidedPageRows = z.array(
+  decisionColumns.extend({ copy_latest: z.number().int().positive() }),
+)
+const decidedPageRequest = z.strictObject({
+  cursor: z
+    .strictObject({
+      snapshotId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+      beforeId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    })
+    .nullable(),
+  limit: z.number().int().min(1).max(decidedCopyPageSize),
+})
+
+function readDecidedPageRows(db: DatabaseSync, cursor: DecidedCopyCursor | null, limit: number) {
+  const page = decidedPageRequest.parse({ cursor, limit })
+  if (page.cursor && page.cursor.snapshotId < page.cursor.beforeId)
+    throw new Error('Invalid decided-copy cursor')
+  return decidedPageRows.parse(
+    db.prepare(copiesQuery).all({
+      copies: page.limit + 1,
+      beforeId: page.cursor?.beforeId ?? null,
+      snapshotId: page.cursor?.snapshotId ?? null,
+    }),
+  )
+}
 
 /**
- * Every copy with a recorded decision, bounded by `limit` copies. A row this
+ * One page of copies with a recorded decision, bounded by `limit` copies. A row this
  * build cannot read is skipped rather than guessed at, exactly as
  * `readFollowUps` skips it, and a copy left with no readable row is left out.
+ * Pagination still advances past unreadable copies using the commit cursor.
  */
-export function readDecidedCopies(db: DatabaseSync, limit = decidedCopyLimit): DecidedCopies {
-  const rows = rowsSchema.parse(db.prepare(copiesQuery).all({ copies: limit }))
+export function readDecidedCopies(
+  db: DatabaseSync,
+  cursor: DecidedCopyCursor | null = null,
+  limit = decidedCopyPageSize,
+): DecidedCopies {
+  const rows = readDecidedPageRows(db, cursor, limit)
+  const copyOrder = [
+    ...new Map(
+      rows.map((row) => [
+        mailboxCopyId({ mailboxId: row.mailbox_id, messageId: row.message_id }),
+        row.copy_latest,
+      ]),
+    ).entries(),
+  ]
+  const included = new Set(copyOrder.slice(0, limit).map(([id]) => id))
   const byCopy = new Map<string, FollowUpDecision[]>()
   for (const row of rows) {
+    const key = mailboxCopyId({ mailboxId: row.mailbox_id, messageId: row.message_id })
+    if (!included.has(key)) continue
     const decision = decisionIn(row)
     if (decision === null) continue
-    const key = mailboxCopyId(decision.target.copy)
     const found = byCopy.get(key)
     if (found === undefined) byCopy.set(key, [decision])
     else found.push(decision)
@@ -308,13 +351,13 @@ export function readDecidedCopies(db: DatabaseSync, limit = decidedCopyLimit): D
   const copies = [...byCopy.values()].flatMap((decisions) =>
     decisions[0] === undefined ? [] : [{ copy: decisions[0].target.copy, decisions }],
   )
-  // Counted from the rows, so a copy whose every row was skipped never makes
-  // the list look cut when the limit was not reached.
+  const first = copyOrder[0]
+  const last = copyOrder[limit - 1]
   return {
     copies,
-    bounded:
-      new Set(
-        rows.map((row) => mailboxCopyId({ mailboxId: row.mailbox_id, messageId: row.message_id })),
-      ).size >= limit,
+    nextCursor:
+      copyOrder.length > limit && first && last
+        ? { snapshotId: cursor?.snapshotId ?? first[1], beforeId: last[1] }
+        : null,
   }
 }

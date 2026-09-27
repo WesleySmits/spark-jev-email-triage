@@ -41,6 +41,8 @@ import { mailboxCopyId, type MailboxCopyRef } from './mailbox-copy'
 
 /** The Inbox readings this application makes: unread mail, and read mail. */
 export type InboxPlace = 'unread' | 'read'
+/** Opaque pagination position for a stable local-decision reading. */
+export type DecidedCopyCursor = Readonly<{ snapshotId: number; beforeId: number }>
 
 /**
  * What one reading proves about where a copy sits in the Spark Inbox:
@@ -219,10 +221,12 @@ export function openWorkList(
   records: readonly WorkCopyRecord[],
   now: string,
 ): readonly OpenWorkItem[] {
-  return records
-    .flatMap((record) => openWorkItem(record, now) ?? [])
-    .sort((a, b) => groupOrder[a.group] - groupOrder[b.group] || byDue(a, b))
+  return sortOpenWorkItems(records.flatMap((record) => openWorkItem(record, now) ?? []))
 }
+
+/** Restores the same priority order after another page is loaded. */
+export const sortOpenWorkItems = (items: readonly OpenWorkItem[]): readonly OpenWorkItem[] =>
+  [...items].sort((a, b) => groupOrder[a.group] - groupOrder[b.group] || byDue(a, b))
 
 /**
  * How much work this application holds, counted from its own records. Every

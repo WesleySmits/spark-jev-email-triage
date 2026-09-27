@@ -133,4 +133,48 @@ describe('recorded work Spark evidence', () => {
       rmSync(directory, { recursive: true, force: true })
     }
   })
+
+  it('reaches a reply-needed copy older than the first 50 decisions', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'open-work-pages-'))
+    const path = join(directory, 'work.sqlite')
+    try {
+      const db = openDatabase(path)
+      for (let index = 0; index < 51; index++) {
+        const messageId = `message-${String(index)}`
+        recordFollowUp(
+          db,
+          decideFollowUp({
+            target: {
+              copy: { ...copy, messageId },
+              threadId: `thread-${messageId}`,
+              latestMessageId: messageId,
+            },
+            kind: 'reply_needed',
+            dueAt: null,
+            decidedBy: 'local',
+            decidedAt: '2026-09-27T09:00:00.000Z',
+          }),
+        )
+      }
+      db.close()
+      const provider = reader([])
+      const env = { SHADOW_DATABASE_PATH: path }
+      const first = await readOpenWork(provider, env)
+      expect(first.status).toBe('ready')
+      if (first.status !== 'ready') return
+      expect(first.items).toHaveLength(50)
+      expect(
+        first.tally.open + first.tally.unknown + first.tally.overdue + first.tally.completed,
+      ).toBe(50)
+      expect(first.nextCursor).not.toBeNull()
+      const older = await readOpenWork(provider, env, () => new Date(), first.nextCursor)
+      expect(older.status).toBe('ready')
+      if (older.status !== 'ready') return
+      expect(older.items.map((item) => item.copy.messageId)).toEqual(['message-0'])
+      expect(older.items[0]?.history[0]?.kind).toBe('reply_needed')
+      expect(older.nextCursor).toBeNull()
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
 })

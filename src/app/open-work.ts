@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { actionTargetSchema } from '../domain/mailbox-action'
 import { mailboxCopyRefSchema } from '../domain/mailbox-copy'
 import { followUpKinds } from '../domain/follow-up'
-import type { OpenWorkItem, OpenWorkTally } from '../domain/open-work'
+import type { DecidedCopyCursor, OpenWorkItem, OpenWorkTally } from '../domain/open-work'
 
 export const workDecisionRequestSchema = z.strictObject({
   target: actionTargetSchema,
@@ -24,8 +24,9 @@ export type OpenWorkRead =
   | Readonly<{
       status: 'ready'
       items: readonly OpenWorkItem[]
+      /** Counts describe only the copies loaded so far, never the whole record. */
       tally: OpenWorkTally
-      bounded: boolean
+      nextCursor: DecidedCopyCursor | null
       checkedAt: string
     }>
   | Readonly<{ status: 'unavailable' }>

@@ -42,6 +42,7 @@ import type { WorkDecisionRequest, WorkMessageRequest } from './open-work'
 import { approveDoneAction, executeDoneAction } from './done-action.functions'
 import type { DoneApprovalResult, DoneExecutionRequest, DoneExecutionResult } from './done-action'
 import type { MailboxActionProposal } from '../domain/mailbox-action'
+import type { DecidedCopyCursor } from '../domain/open-work'
 import type {
   TriageRunReadResult,
   TriageRunRestart,
@@ -76,7 +77,8 @@ const rowsOf = (view: DeskView | DeskDiscovery | DeskRefresh) =>
   view.status === 'ready' ? view.messages : []
 
 export const ReviewDesk = {
-  openWork: () => getOpenWork().catch(() => ({ status: 'unavailable' }) as const),
+  openWork: (cursor: DecidedCopyCursor | null = null) =>
+    getOpenWork({ data: { cursor } }).catch(() => ({ status: 'unavailable' }) as const),
   workMessage: (request: WorkMessageRequest) =>
     getWorkMessage({ data: request }).catch(() => ({ status: 'unavailable' }) as const),
   recordWork: (request: WorkDecisionRequest) =>

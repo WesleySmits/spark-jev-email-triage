@@ -8,13 +8,18 @@ import type {
 import type { OpenWorkItem } from '../../../domain/open-work'
 import { Button } from '../../atoms/Button/Button'
 import { OpenWorkReader } from './OpenWorkReader'
+import { OpenWorkPagination } from './OpenWorkPagination'
+import { OpenWorkSummary } from './OpenWorkSummary'
 import './OpenWorkPage.css'
 
 type Props = Readonly<{
   mode: 'work' | 'completed'
   reading: OpenWorkRead
   loading: boolean
+  moreLoading: boolean
+  moreError: boolean
   onRefresh: () => void
+  onLoadMore: () => void
   onRecord: (request: WorkDecisionRequest) => Promise<WorkDecisionResult>
   onRead: (copy: OpenWorkItem['copy']) => Promise<WorkMessageRead>
 }>
@@ -27,11 +32,6 @@ const labels = {
 } as const
 
 const headings = { work: 'Open work', completed: 'Completed decisions' } as const
-const emptyMessages = {
-  work: 'No open local work has been recorded. This says nothing about unread mail or an empty Inbox.',
-  completed: 'No completed local decisions have been recorded.',
-} as const
-
 const visibleIn = (items: readonly OpenWorkItem[], mode: Props['mode']) =>
   items.filter((item) => (item.group === 'completed') === (mode === 'completed'))
 
@@ -224,7 +224,17 @@ function SelectedReader({
 }
 
 /** Recorded work, deliberately counted apart from unread and Inbox totals. */
-export function OpenWorkPage({ mode, reading, loading, onRefresh, onRecord, onRead }: Props) {
+export function OpenWorkPage({
+  mode,
+  reading,
+  loading,
+  moreLoading,
+  moreError,
+  onRefresh,
+  onLoadMore,
+  onRecord,
+  onRead,
+}: Props) {
   const [selectedId, setSelectedId] = useState<string>()
   const [message, setMessage] = useState<WorkMessageRead>()
   const [readingMessage, setReadingMessage] = useState(false)
@@ -259,25 +269,13 @@ export function OpenWorkPage({ mode, reading, loading, onRefresh, onRecord, onRe
     )
   return (
     <section ref={page} className="open-work" aria-label={headings[mode]}>
-      <header>
-        <div>
-          <h1>{headings[mode]}</h1>
-          <p>Local decisions about mailbox copies. Spark Inbox and unread counts are separate.</p>
-        </div>
-        <Button type="button" variant="secondary" disabled={loading} onClick={onRefresh}>
-          {loading ? 'Checking…' : 'Check Spark again'}
-        </Button>
-      </header>
-      <p className="open-work__counts">
-        {reading.tally.open} open · {reading.tally.overdue} overdue · {reading.tally.completed}{' '}
-        completed · {reading.tally.unknown} unknown · {reading.tally.conflicts} conflicts
-      </p>
-      <p className="open-work__verification">
-        Checked {new Date(reading.checkedAt).toLocaleString()}
-        {reading.bounded ? ' · Record capped at 200 copies' : ''}. Each Spark check is bounded;
-        unknown means no current proof.
-      </p>
-      {visible.length === 0 && <p className="open-work__empty">{emptyMessages[mode]}</p>}
+      <OpenWorkSummary
+        mode={mode}
+        reading={reading}
+        visibleCount={visible.length}
+        loading={loading}
+        onRefresh={onRefresh}
+      />
       <div className="open-work__columns">
         <WorkGroups
           items={reading.items}
@@ -297,6 +295,13 @@ export function OpenWorkPage({ mode, reading, loading, onRefresh, onRecord, onRe
           onRecord={onRecord}
         />
       </div>
+      <OpenWorkPagination
+        hasOlder={reading.nextCursor !== null}
+        loading={loading}
+        moreLoading={moreLoading}
+        moreError={moreError}
+        onLoadMore={onLoadMore}
+      />
     </section>
   )
 }

@@ -17,6 +17,7 @@ import {
   openWorkList,
   openWorkTally,
   owedCount,
+  sortOpenWorkItems,
   type InboxEvidence,
   type WorkCopyRecord,
 } from './open-work'
@@ -217,6 +218,26 @@ describe('openWorkList', () => {
       record([decide('reply_needed', { dueAt: future })]),
     ]
     expect(openWorkList(dated, now).map((entry) => entry.dueAt)).toEqual([future, null])
+  })
+
+  it('restores priority order when an older page adds an earlier due date', () => {
+    const first = openWorkList([record([decide('follow_up_later', { dueAt: future })])], now)
+    const earlier = '2026-09-28T09:00:00.000Z'
+    const older = openWorkList(
+      [
+        record(
+          [decide('reply_needed', { mailboxId: alias, dueAt: earlier })],
+          listed,
+          observed(alias, '11'),
+          alias,
+        ),
+      ],
+      now,
+    )
+    expect(sortOpenWorkItems([...first, ...older]).map(({ dueAt }) => dueAt)).toEqual([
+      earlier,
+      future,
+    ])
   })
 
   it('keeps one delivery to an address and an alias as two items', () => {

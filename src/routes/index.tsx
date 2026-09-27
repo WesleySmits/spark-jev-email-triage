@@ -24,6 +24,7 @@ import { useTriageRunController } from '../app/triage-run-client'
 import { mailboxReachItems } from '../app/mailbox-reach'
 import { refreshNotice } from '../app/refresh-notice'
 import type { OpenWorkRead, WorkDecisionRequest } from '../app/open-work'
+import { openWorkTally, sortOpenWorkItems } from '../domain/open-work'
 import { OpenWorkPage } from '../components/pages/OpenWorkPage/OpenWorkPage'
 
 export const Route = createFileRoute('/')({
@@ -424,12 +425,51 @@ function useOpenWorkSection() {
   const [section, setSection] = useState<'inbox' | 'work' | 'completed'>('inbox')
   const [openWork, setOpenWork] = useState<OpenWorkRead>()
   const [workLoading, setWorkLoading] = useState(false)
+  const [moreLoading, setMoreLoading] = useState(false)
+  const [moreError, setMoreError] = useState(false)
+  const workSequence = useRef(0)
   const checkWork = async () => {
+    const current = ++workSequence.current
+    setMoreError(false)
+    setMoreLoading(false)
     setWorkLoading(true)
     try {
-      setOpenWork(await ReviewDesk.openWork())
+      const result = await ReviewDesk.openWork()
+      if (current === workSequence.current) setOpenWork(result)
     } finally {
-      setWorkLoading(false)
+      if (current === workSequence.current) setWorkLoading(false)
+    }
+  }
+  const loadMoreWork = async () => {
+    if (workLoading || moreLoading || openWork?.status !== 'ready' || openWork.nextCursor === null)
+      return
+    const current = workSequence.current
+    const cursor = openWork.nextCursor
+    setMoreLoading(true)
+    setMoreError(false)
+    try {
+      const result = await ReviewDesk.openWork(cursor)
+      if (current !== workSequence.current) return
+      if (result.status !== 'ready') {
+        setMoreError(true)
+        return
+      }
+      setOpenWork((previous) => {
+        if (
+          previous?.status !== 'ready' ||
+          previous.nextCursor?.beforeId !== cursor.beforeId ||
+          previous.nextCursor.snapshotId !== cursor.snapshotId
+        )
+          return previous
+        const seen = new Set(previous.items.map((item) => item.copyId))
+        const items = sortOpenWorkItems([
+          ...previous.items,
+          ...result.items.filter((item) => !seen.has(item.copyId)),
+        ])
+        return { ...result, items, tally: openWorkTally(items) }
+      })
+    } finally {
+      if (current === workSequence.current) setMoreLoading(false)
     }
   }
   const recordWork = async (request: WorkDecisionRequest) => {
@@ -437,7 +477,17 @@ function useOpenWorkSection() {
     if (result.status === 'recorded' && section !== 'inbox') void checkWork()
     return result
   }
-  return { section, setSection, openWork, workLoading, checkWork, recordWork } as const
+  return {
+    section,
+    setSection,
+    openWork,
+    workLoading,
+    moreLoading,
+    moreError,
+    checkWork,
+    loadMoreWork,
+    recordWork,
+  } as const
 }
 
 function SectionTabs({
@@ -478,12 +528,18 @@ function OpenWorkPane({
   reading,
   loading,
   onRefresh,
+  onLoadMore,
+  moreLoading,
+  moreError,
   onRecord,
   mode,
 }: Readonly<{
   reading: OpenWorkRead | undefined
   loading: boolean
   onRefresh: () => void
+  onLoadMore: () => void
+  moreLoading: boolean
+  moreError: boolean
   onRecord: (request: WorkDecisionRequest) => ReturnType<typeof ReviewDesk.recordWork>
   mode: 'work' | 'completed'
 }>) {
@@ -493,6 +549,9 @@ function OpenWorkPane({
       reading={reading}
       loading={loading}
       onRefresh={onRefresh}
+      onLoadMore={onLoadMore}
+      moreLoading={moreLoading}
+      moreError={moreError}
       onRecord={onRecord}
       onRead={(copy) => ReviewDesk.workMessage({ copy })}
       mode={mode}
@@ -565,7 +624,17 @@ function InboxHome({
 }
 
 function Home() {
-  const { section, setSection, openWork, workLoading, checkWork, recordWork } = useOpenWorkSection()
+  const {
+    section,
+    setSection,
+    openWork,
+    workLoading,
+    moreLoading,
+    moreError,
+    checkWork,
+    loadMoreWork,
+    recordWork,
+  } = useOpenWorkSection()
   return (
     <>
       <SectionTabs
@@ -593,6 +662,11 @@ function Home() {
           onRefresh={() => {
             void checkWork()
           }}
+          onLoadMore={() => {
+            void loadMoreWork()
+          }}
+          moreLoading={moreLoading}
+          moreError={moreError}
           onRecord={recordWork}
         />
       )}
