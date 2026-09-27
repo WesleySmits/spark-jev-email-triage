@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import {
   decideHandling,
   handlingRequest,
@@ -20,6 +20,8 @@ import {
   handlingTitle,
   recordedDecision,
 } from './handling'
+import { storedView } from './work-save'
+import { dueInstant, useWorkSave, type WorkSaving } from './useWorkSave'
 
 type HandlingActionProps = ProposalDependencies &
   Readonly<{
@@ -30,6 +32,8 @@ type HandlingActionProps = ProposalDependencies &
      * refused in words rather than hidden.
      */
     proposable: Proposable | undefined
+    /** Where work decisions are saved, and what was saved for this copy. Left out: none are. */
+    work?: WorkSaving | undefined
   }>
 
 /** The clock a decision, and the proposal it produces, are stamped with. */
@@ -44,8 +48,10 @@ const now = () => new Date().toISOString()
  * fourth, Handle now, is the only way into Spark Done here: it produces one
  * proposal through the domain's handling model, and that proposal still
  * needs the server's approval, a fresh preflight, a durable receipt and a
- * readback before anything is called done. Nothing is stored: a decision is
- * kept while the row stays open, and the copy says so.
+ * readback before anything is called done. Reply needed, Follow up later
+ * and Handled in Spark are saved to the local work record where `work` is
+ * given, and the panel follows the store's answer; what the record already
+ * held for this copy is shown above the chooser.
  *
  * A decision whose action was blocked, lapsed or left uncertain keeps saying
  * the work is open. An uncertain attempt also locks the decision, because
@@ -63,8 +69,10 @@ const now = () => new Date().toISOString()
  * Give it a new `key` per row, so one message's decision never carries to
  * the next.
  */
-export function HandlingAction({ proposable, ...dependencies }: HandlingActionProps) {
+export function HandlingAction({ proposable, work, ...dependencies }: HandlingActionProps) {
   const state = useProposal(dependencies)
+  const workSave = useWorkSave(work)
+  const [due, setDue] = useState('')
   const [chosen, setChosen] = useState<HandlingOutcome | null>(null)
   const [decided, setDecided] = useState<HandlingDecision | null>(null)
   const [cleared, setCleared] = useState(false)
@@ -77,6 +85,7 @@ export function HandlingAction({ proposable, ...dependencies }: HandlingActionPr
           targetStanding(decided.target, state.observations),
           state.standing,
           state.execution,
+          workSave.saved,
         )
   const record = () => {
     if (chosen === null || proposable === undefined) return
@@ -90,6 +99,7 @@ export function HandlingAction({ proposable, ...dependencies }: HandlingActionPr
     setCleared(false)
     setDecided(decision)
     if (request.proposal !== null) state.propose(request.proposal)
+    else workSave.save(chosen, proposable.target, dueInstant(due))
   }
   const announced = handlingStatus(view, cleared)
   const change = () => {
@@ -112,7 +122,14 @@ export function HandlingAction({ proposable, ...dependencies }: HandlingActionPr
         onChoose={(value) => {
           setChosen(asOutcome(value))
         }}
-        note={handlingNote(proposable?.target.copy.messageId)}
+        note={handlingNote(proposable?.target.copy.messageId, work !== undefined)}
+        field={
+          work !== undefined &&
+          (chosen === 'reply_needed' || chosen === 'follow_up_later') && (
+            <DueField value={due} onChange={setDue} />
+          )
+        }
+        saved={savedReadback(work)}
         recordLabel="Record decision"
         onRecord={record}
         recordDisabled={chosen === null || proposable === undefined}
@@ -137,5 +154,31 @@ export function HandlingAction({ proposable, ...dependencies }: HandlingActionPr
         <ActionProposalView state={state} labelOf={dependencies.labelOf} connected={connected} />
       )}
     </>
+  )
+}
+
+/** What the record already held for this copy, as the panel shows it. */
+function savedReadback(work: WorkSaving | undefined) {
+  const view = storedView(work?.stored)
+  return view === null ? undefined : { heading: 'Saved in Open work', ...view }
+}
+
+type DueFieldProps = Readonly<{ value: string; onChange: (value: string) => void }>
+
+/** An optional date the work is owed by. Left empty, it is owed by no date. */
+function DueField({ value, onChange }: DueFieldProps) {
+  const id = useId()
+  return (
+    <p className="handling-panel__field">
+      <label htmlFor={id}>Due date (optional)</label>
+      <input
+        id={id}
+        type="date"
+        value={value}
+        onChange={(event) => {
+          onChange(event.target.value)
+        }}
+      />
+    </p>
   )
 }

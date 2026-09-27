@@ -1,4 +1,4 @@
-import { useId, type ComponentProps } from 'react'
+import { useId, type ComponentProps, type ReactNode } from 'react'
 import { Badge } from '../../atoms/Badge/Badge'
 import { Button } from '../../atoms/Button/Button'
 import { CategoryOption } from '../../molecules/CategoryOption/CategoryOption'
@@ -31,6 +31,19 @@ type RecordedDecisionView = Readonly<{
   changeDisabled?: boolean | undefined
 }>
 
+/**
+ * What a durable record already holds for this message, read back when the
+ * page loaded: the latest saved decision and where it stands now. Shown
+ * above the chooser, so deciding again is visibly adding to what is kept.
+ */
+type SavedDecisionView = Readonly<{
+  /** Names the block, e.g. "Saved in Open work". */
+  heading: string
+  title: string
+  detail: string
+  state: Readonly<{ label: string; tone: BadgeTone }>
+}>
+
 type HandlingPanelProps = Readonly<{
   /** Level of the panel heading. Defaults to 2. */
   headingLevel?: HeadingLevel | undefined
@@ -45,6 +58,10 @@ type HandlingPanelProps = Readonly<{
   onChoose: (value: string) => void
   /** One line under the options, e.g. what this records and what it does not. */
   note: string
+  /** An optional field the chosen option needs, e.g. a due date, under the options. */
+  field?: ReactNode
+  /** What a durable record already holds, above the chooser. Left out: nothing is shown. */
+  saved?: SavedDecisionView | undefined
   recordLabel: string
   onRecord: () => void
   /** Recording is refused whenever the caller says there is nothing to record. */
@@ -95,6 +112,8 @@ export function HandlingPanel({
   chosen,
   onChoose,
   note,
+  field,
+  saved,
   recordLabel,
   onRecord,
   recordDisabled = false,
@@ -118,6 +137,7 @@ export function HandlingPanel({
           {summary}
         </p>
       </div>
+      {saved && !recorded && <SavedDecision saved={saved} />}
       {recorded ? (
         <RecordedDecision decision={recorded} />
       ) : (
@@ -127,6 +147,7 @@ export function HandlingPanel({
           chosen={chosen}
           onChoose={onChoose}
           note={note}
+          field={field}
           recordLabel={recordLabel}
           onRecord={onRecord}
           recordDisabled={recordDisabled}
@@ -140,7 +161,7 @@ export function HandlingPanel({
 
 type ChooserProps = Pick<
   HandlingPanelProps,
-  'options' | 'chosen' | 'onChoose' | 'note' | 'recordLabel' | 'onRecord' | 'result'
+  'options' | 'chosen' | 'onChoose' | 'note' | 'field' | 'recordLabel' | 'onRecord' | 'result'
 > &
   Readonly<{
     /** What names the radiogroup and what groups its radios. */
@@ -174,6 +195,7 @@ function OutcomeChooser({ group, options, chosen, onChoose, ...props }: ChooserP
           />
         ))}
       </div>
+      {props.field}
       <p className="handling-panel__note">{props.note}</p>
       <div className="handling-panel__actions">
         <Button disabled={props.recordDisabled} onClick={props.onRecord}>
@@ -221,6 +243,20 @@ function RecordedDecision({ decision }: Readonly<{ decision: RecordedDecisionVie
       >
         {decision.changeLabel}
       </Button>
+    </div>
+  )
+}
+
+/** What the durable record already holds, read back, with where it stands now. */
+function SavedDecision({ saved }: Readonly<{ saved: SavedDecisionView }>) {
+  return (
+    <div className="handling-panel__saved">
+      <p className="handling-panel__saved-heading">{saved.heading}</p>
+      <p className="handling-panel__decision">
+        <strong className="handling-panel__decision-title">{saved.title}</strong>
+        <Badge tone={saved.state.tone}>{saved.state.label}</Badge>
+      </p>
+      <p className="handling-panel__decision-detail">{saved.detail}</p>
     </div>
   )
 }

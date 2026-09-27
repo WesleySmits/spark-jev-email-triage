@@ -93,9 +93,16 @@ describe('handlingNote', () => {
     const note = handlingNote('11')
     expect(note).toContain('message ID 11')
     expect(note).toContain('another copy carrying it may change too')
-    expect(note).toContain('Nothing is stored yet')
+    expect(note).toContain('Nothing is stored here')
     // No link into Spark is offered, because none was ever proved.
     expect(note).toContain('no link that opens this exact message in Spark has been proven')
+  })
+
+  it('promises saving only where the page saves work', () => {
+    const note = handlingNote('11', true)
+    expect(note).toContain('saved to Open work in this app')
+    expect(note).toContain('stay after you close it')
+    expect(note).not.toContain('Nothing is stored here')
   })
 
   it('says why nothing can be recorded when no version is named', () => {
@@ -109,7 +116,44 @@ describe('recordedDecision', () => {
     expect(view).toMatchObject({ title: 'Reply needed', locked: false })
     expect(view.state.label).toBe('Local work status')
     expect(view.detail).toContain('mail stays in your Spark Inbox')
-    expect(view.detail).toContain('nothing was stored')
+    expect(view.detail).toContain('nothing was saved')
+  })
+
+  it('says saved only once the local work record said so', () => {
+    const saving = recordedDecision('reply_needed', holds, null, null, { status: 'saving' })
+    expect(saving).toMatchObject({ state: { label: 'Saving' }, locked: true })
+    const saved = recordedDecision('follow_up_later', holds, null, null, { status: 'saved' })
+    expect(saved.state.label).toBe('Saved here')
+    expect(saved.detail).toContain('stays after you close the app')
+    expect(saved.tags).toEqual(['Decision', 'Saved in Open work', 'Spark unchanged'])
+  })
+
+  it('never calls a lost or refused save saved', () => {
+    const lost = recordedDecision('reply_needed', holds, null, null, { status: 'unconfirmed' })
+    expect(lost.state).toEqual({ label: 'Save unconfirmed', tone: 'danger' })
+    expect(lost.detail).toContain('may or may not have reached')
+    const refused = recordedDecision('reply_needed', holds, null, null, { status: 'not_saved' })
+    expect(refused).toMatchObject({ state: { label: 'Not saved' }, locked: false })
+  })
+
+  it('saves handled in Spark as a claim, never as a confirmed Done', () => {
+    const view = recordedDecision('handled_in_spark', holds, null, null, { status: 'saved' })
+    expect(view.state.label).toBe('Your claim, saved')
+    expect(view.detail).toContain('not a confirmed Done')
+    expect(view.tags).toContain('Not a confirmed Done')
+    expect(view.tags.join(' ')).not.toContain('Done confirmed')
+  })
+
+  it('adds nothing to Open work for read only', () => {
+    const view = recordedDecision('read_only', holds, null, null, { status: 'not_kept' })
+    expect(view.state.label).toBe('No work owed')
+    expect(view.detail).toContain('nothing is added to Open work')
+  })
+
+  it('shows a saved decision the thread moved past as out of date, not current', () => {
+    const view = recordedDecision('handled_in_spark', moved, null, null, { status: 'saved' })
+    expect(view.state.label).toBe('Out of date')
+    expect(view.tags).toContain('Work still open')
   })
 
   it('never reads as done while Spark has only been asked', () => {

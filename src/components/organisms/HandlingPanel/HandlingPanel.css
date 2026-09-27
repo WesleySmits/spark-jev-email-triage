@@ -93,6 +93,41 @@
   margin: var(--s3) 0 0;
 }
 
+/* What the durable record already held when the page read it, above the
+ * chooser. A plain paper inset, so it reads as kept rather than chosen. */
+.handling-panel__saved {
+  margin: var(--s4) 0 0;
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+}
+
+.handling-panel__saved-heading {
+  margin: 0 0 var(--s2);
+  color: var(--muted);
+  font: var(--text-meta);
+}
+
+/* A field the chosen outcome needs, e.g. a due date, under the options. */
+.handling-panel__field {
+  display: grid;
+  gap: var(--s1);
+  justify-items: start;
+  margin: var(--s3) 0 0;
+  color: var(--ink-soft);
+}
+
+.handling-panel__field input {
+  min-height: 32px;
+  padding: 0 var(--s2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+  color: var(--ink);
+  font: var(--text-ui);
+}
+
 /* What this panel changes, as words. Colour carries nothing here. */
 .handling-panel__tags {
   display: flex;

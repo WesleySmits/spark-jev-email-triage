@@ -49,9 +49,10 @@
  * - Nothing here holds a subject, an address or a body: ids, versions,
  *   instants and content-free codes only.
  *
- * Not in this model yet: where a work status is kept. This module defines
- * the outcomes and what each one changes; no table, no store and no
- * migration exists for them, and nothing here writes one.
+ * Where a work status is kept is not this module's concern. The outcomes
+ * that owe work or close it have a durable record in `follow-up.ts`;
+ * `followUpKindOf` says which record one outcome makes, and nothing here
+ * writes it.
  */
 import { z } from 'zod'
 import {
@@ -60,16 +61,20 @@ import {
   type ActionTarget,
   type MailboxActionProposal,
 } from './mailbox-action'
+import type { FollowUpKind } from './follow-up'
 import { mailboxCopyId, type MailboxCopyRef } from './mailbox-copy'
 // One instant, written the same way every time, as reviews and proposals are kept.
 import { utcInstant } from './review'
 import { judgedSubjectSchema, type JudgedSubject } from './stored-classification'
 
 /**
- * The four outcomes a person may decide for one message:
+ * The outcomes a person may decide for one message:
  * - `handle_now`: they are dealing with it now and nothing will remain owed.
  * - `reply_needed`: a reply is owed, by them, and has not been written.
  * - `follow_up_later`: nothing is owed now and something is owed later.
+ * - `handled_in_spark`: they say they finished it in Spark themselves. It is
+ *   their claim: nothing asks Spark anything and nothing is read back, so it
+ *   is never a confirmed Done, which only the guarded path's readback is.
  * - `read_only`: reading it was all it asked; no work is owed at all.
  *
  * They are exclusive: one message, one decision about the version shown.
@@ -78,6 +83,7 @@ export const handlingOutcomes = [
   'handle_now',
   'reply_needed',
   'follow_up_later',
+  'handled_in_spark',
   'read_only',
 ] as const
 
@@ -111,6 +117,7 @@ const handlingEffects: Readonly<Record<HandlingOutcome, HandlingEffect>> = {
   handle_now: 'work_status_and_done_proposal',
   reply_needed: 'work_status',
   follow_up_later: 'work_status',
+  handled_in_spark: 'work_status',
   read_only: 'work_status',
 }
 
@@ -232,4 +239,19 @@ export function handlingRequest(decision: HandlingDecision): HandlingRequest {
           })
         : null,
   }
+}
+
+/**
+ * The durable record one outcome makes, or none.
+ *
+ * `reply_needed`, `follow_up_later` and `handled_in_spark` are statements
+ * about work owed or finished, so each is kept as the recorded decision of
+ * the same name. `read_only` says no work is owed at all, which the record
+ * of work does not hold. `handle_now` records nothing there either: whether
+ * it finished anything is for the guarded Done path's receipt and readback
+ * to say, and a local row claiming so first would say it before Spark did.
+ */
+export function followUpKindOf(outcome: HandlingOutcome): FollowUpKind | null {
+  if (outcome === 'reply_needed' || outcome === 'follow_up_later') return outcome
+  return outcome === 'handled_in_spark' ? outcome : null
 }

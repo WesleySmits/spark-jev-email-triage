@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   decideHandling,
   effectOf,
+  followUpKindOf,
   handlingOutcomes,
   handlingRequest,
   parseHandlingDecision,
@@ -46,13 +47,29 @@ const localOnly = handlingOutcomes.filter((outcome) => outcome !== 'handle_now')
 
 describe('handling outcomes', () => {
   it('states for every outcome what it changes', () => {
-    expect(handlingOutcomes).toEqual(['handle_now', 'reply_needed', 'follow_up_later', 'read_only'])
+    expect(handlingOutcomes).toEqual([
+      'handle_now',
+      'reply_needed',
+      'follow_up_later',
+      'handled_in_spark',
+      'read_only',
+    ])
     expect(effectOf('handle_now')).toBe('work_status_and_done_proposal')
     for (const outcome of localOnly) expect(effectOf(outcome)).toBe('work_status')
   })
 
   it('lets only handling a message now ask Spark for anything', () => {
     expect(handlingOutcomes.filter(proposesDone)).toEqual(['handle_now'])
+  })
+
+  it('keeps work owed or finished in the record, and neither Done nor read only', () => {
+    expect(handlingOutcomes.map(followUpKindOf)).toEqual([
+      null,
+      'reply_needed',
+      'follow_up_later',
+      'handled_in_spark',
+      null,
+    ])
   })
 })
 
