@@ -153,4 +153,30 @@ describe('HandlingPanel', () => {
     const tags = elements.filter((element) => element.type === Badge)
     expect(tags.map((tag) => tag.props['children'])).toEqual(['Decision', 'Spark unchanged'])
   })
+
+  it('reads back what the record already holds above the chooser', () => {
+    const elements = rendered({
+      ...base,
+      saved: {
+        heading: 'Saved in Open work',
+        title: 'Reply needed',
+        detail: 'Saved by you.',
+        state: { label: 'Open work', tone: 'review' },
+      },
+    })
+    const saved = withClass(elements, 'handling-panel__saved')
+    expect(saved).toHaveLength(1)
+    expect(
+      elements.filter((element) => element.type === Badge).map((badge) => badge.props['children']),
+    ).toContain('Open work')
+    // The chooser still shows: deciding again adds to what is kept.
+    expect(options(elements)).toHaveLength(2)
+  })
+
+  it('places the field a chosen outcome needs between the options and the note', () => {
+    const field = <input aria-label="Due date" />
+    const elements = rendered({ ...base, field })
+    const inputs = elements.filter((element) => element.type === 'input')
+    expect(inputs).toHaveLength(1)
+  })
 })

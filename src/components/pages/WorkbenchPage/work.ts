@@ -35,8 +35,12 @@ import {
   type WorkConflict,
   type WorkCopyRecord,
 } from '../../../domain/open-work'
-import type { TargetObservation } from '../../../domain/mailbox-action'
+import type { ActionTarget, TargetObservation } from '../../../domain/mailbox-action'
 import { mailboxCopyId, type MailboxCopyRef } from '../../../domain/mailbox-copy'
+import type {
+  OpenWorkItemView,
+  OpenWorkSectionView,
+} from '../../organisms/OpenWorkPanel/OpenWorkPanel'
 import type { SidebarItem } from '../../organisms/Sidebar/Sidebar'
 import { observationIn } from './action'
 import { judgedText } from './classification'
@@ -44,7 +48,7 @@ import type { ListedEvidence } from './classification'
 import { dueText, kindLabels } from './work-save'
 import type { WorkbenchMessage } from './workbench'
 
-type Tone = 'neutral' | 'review' | 'done' | 'danger'
+type Tone = OpenWorkItemView['standing']['tone']
 
 /** What the page's current reading can say about recorded copies. */
 export type WorkReading = Readonly<{
@@ -99,26 +103,8 @@ export const workRecordsIn = (
     observation: observationFor(copy, reading),
   }))
 
-/** One item as the Open work tab shows it. */
-export type WorkItemView = Readonly<{
-  id: string
-  /** The listed subject, or the provider message id where the reading lists none. */
-  title: string
-  /** The mailbox this copy is in, as the rail names it. Never merged with another. */
-  source: string
-  decision: Readonly<{ label: string; tone: Tone }>
-  standing: Readonly<{ label: string; tone: Tone }>
-  /** Who saved the latest decision, and when, with the due date where one was named. */
-  saved: string
-  /** Where the copy stands in the Spark Inbox, as evidence allows. */
-  inbox: string
-  /** Every disagreement between the record and the reading, in words. */
-  conflicts: readonly string[]
-  /** The listed row to open in the reader, where the reading lists this copy. */
-  rowId?: string | undefined
-  /** The copy and version a reopen is recorded against, where one may be. */
-  reopen?: Readonly<{ copy: MailboxCopyRef; threadId: string; latestMessageId: string }> | undefined
-}>
+/** One item as the Open work tab shows it, with the exact target a reopen names. */
+export type WorkItemView = OpenWorkItemView & Readonly<{ reopen?: ActionTarget | undefined }>
 
 const standings: Readonly<Record<OpenWorkGroup, Readonly<{ label: string; tone: Tone }>>> = {
   overdue: { label: 'Overdue', tone: 'danger' },
@@ -200,12 +186,7 @@ const sectionTitles = {
   completed: 'Completed here',
 } as const satisfies Record<OpenWorkGroup, string>
 
-export type WorkSectionView = Readonly<{
-  id: OpenWorkGroup
-  title: string
-  count: string
-  items: readonly WorkItemView[]
-}>
+export type WorkSectionView = OpenWorkSectionView & Readonly<{ items: readonly WorkItemView[] }>
 
 const sectionOrder: readonly OpenWorkGroup[] = ['overdue', 'open', 'unknown', 'completed']
 

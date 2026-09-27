@@ -1,0 +1,119 @@
+/* OpenWorkPanel organism: the work saved in this app, in the queue column
+ * beside the Inbox. It takes the queue's paper surface, header and sticky
+ * section titles, so switching tabs changes what is listed and not how a
+ * list reads. Token values live in src/styles/tokens.css; rules for their
+ * use in src/styles/README.md. */
+.open-work {
+  box-sizing: border-box;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--ink);
+  background: var(--paper);
+  font: var(--text-ui);
+}
+
+.open-work > * {
+  flex: none;
+}
+
+.open-work > .open-work__body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.open-work__note {
+  margin: var(--s2) 0 0;
+  color: var(--attention);
+  font: var(--text-meta);
+}
+
+/* The same sticky overline titles the grouped queue uses. */
+.open-work__section-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  background: var(--surface-2);
+  font: var(--text-overline);
+  letter-spacing: var(--tracking-overline);
+  text-transform: uppercase;
+}
+
+.open-work__section-count {
+  color: var(--ink-soft);
+}
+
+.open-work__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.open-work__item {
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--line);
+}
+
+.open-work__title {
+  margin: 0;
+  color: var(--ink);
+  font: var(--text-control);
+  overflow-wrap: anywhere;
+}
+
+.open-work__source,
+.open-work__meta {
+  margin: var(--s1) 0 0;
+  color: var(--muted);
+  font: var(--text-meta);
+  overflow-wrap: anywhere;
+}
+
+.open-work__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  margin: var(--s2) 0 0;
+}
+
+/* A disagreement is a sentence on the danger tint, never colour alone. */
+.open-work__conflicts {
+  display: grid;
+  gap: var(--s1);
+  margin: var(--s2) 0 0;
+  padding: var(--s2) var(--s3);
+  border-left: 3px solid var(--danger);
+  background: var(--danger-soft);
+  color: var(--ink-soft);
+  font: var(--text-meta);
+  list-style: none;
+}
+
+.open-work__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin: var(--s3) 0 0;
+}
+
+/* Announced, not shown: the result of a reopen reads in the item itself. */
+.open-work__status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

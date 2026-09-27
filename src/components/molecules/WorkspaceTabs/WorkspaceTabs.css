@@ -1,0 +1,75 @@
+/* WorkspaceTabs molecule: the switch between the Spark Inbox and the work
+ * saved in this app, at the top of the queue pane. It follows the Inbox view
+ * bar's plain buttons, with the current tab filled in ink, so the two
+ * controls read as one family without competing with the queue title.
+ * Token values live in src/styles/tokens.css. */
+.workspace-tabs {
+  padding: var(--s3) var(--s4) 0;
+  background: var(--paper);
+}
+
+.workspace-tabs__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workspace-tabs__tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 32px;
+  padding: 0 var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--ink);
+  font: var(--text-control);
+  cursor: pointer;
+}
+
+.workspace-tabs__tab:hover {
+  border-color: var(--line-strong);
+}
+
+.workspace-tabs__tab[aria-current='page'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* The count sits beside the name as a quiet pill, readable in both states. */
+.workspace-tabs__count {
+  min-width: 20px;
+  padding: 0 var(--s1);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  font: var(--text-meta);
+  text-align: center;
+}
+
+.workspace-tabs__tab[aria-current='page'] .workspace-tabs__count {
+  background: var(--ink-soft);
+  color: var(--paper);
+}
+
+/* Read with the tab's name only, so the count says where it comes from. */
+.workspace-tabs__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .workspace-tabs__tab {
+    transition: border-color var(--duration-state) var(--ease-state);
+  }
+}
