@@ -20,7 +20,7 @@ import type {
 
 /** What the page holds, what bounded it and what failed. The route counts these. */
 export type QueueScope = Readonly<{
-  view?: 'unread' | 'other'
+  view?: 'all' | 'unread' | 'other'
   pages?: number
   /** Every mailbox the reading listed, failed ones included. */
   mailboxes: readonly LiveMailboxScope[]
@@ -151,33 +151,51 @@ function cutBy(scope: QueueScope) {
  * shown was read then, so a reading that lost a mailbox still says when the
  * mail beside it arrived, and nothing older is shown as fresh.
  */
+function fullInboxScopeText(scope: QueueScope): ScopeText {
+  const errors = scope.failed.length + (scope.incomplete?.length ?? 0)
+  const detail = scope.bounded
+    ? 'The full Inbox scan is still in progress or incomplete.'
+    : errors > 0
+      ? 'Some mailboxes could not be completely read.'
+      : 'Every readable mailbox was scanned to its final page.'
+  const unread = unreadBy(scope)
+  return {
+    summary: `Loaded: ${plural(scope.loaded, 'Inbox message')} from ${mailboxCount(scope)}`,
+    detail: `${detail} Search and filters cover the loaded messages.`,
+    ...(unread && { unread }),
+    refreshed: { label: `Last read ${scope.readAt}.`, dateTime: scope.refreshedAt },
+    bounded: scope.bounded,
+  }
+}
+
+function filteredScopeText(scope: QueueScope, discovery: boolean): ScopeText {
+  const kind = scope.view === 'unread' ? 'unread' : 'other Inbox'
+  const unread = unreadBy(scope)
+  const incomplete = scope.incomplete?.length
+    ? `Older ${kind} messages could not be loaded from ${scope.incomplete.map((mailbox) => mailbox.label).join(', ')}. Earlier pages remain visible; retry loading older messages.`
+    : undefined
+  const notices = [unread, incomplete].filter((notice) => notice !== undefined)
+  const possible = scope.bounded
+    ? `Older ${kind} messages may remain; load more to continue.`
+    : `No further ${kind} messages were found in the pages read.`
+  const search = discovery
+    ? 'Filters cover only loaded messages; sender and subject search reports its own scanned reach.'
+    : `Search and filters cover only loaded ${kind} messages.`
+  return {
+    summary: `Loaded: ${plural(scope.loaded, `${kind} message`)} from ${mailboxCount(scope)}`,
+    detail: `${possible} ${search} Read messages still in the Inbox count toward Inbox Zero.`,
+    ...(notices.length > 0 && { unread: notices.join(' ') }),
+    refreshed: { label: `Last refreshed ${scope.readAt}.`, dateTime: scope.refreshedAt },
+    bounded: scope.bounded,
+  }
+}
+
 export function scopeText(scope: QueueScope, discovery = false): ScopeText {
+  if (scope.view === 'all') return fullInboxScopeText(scope)
+  if (scope.view) return filteredScopeText(scope, discovery)
   const searchReach = discovery
     ? 'Filters cover only loaded mail; sender and subject search reports its own scanned reach.'
     : 'Search and filters cover only loaded mail.'
-  if (scope.view) {
-    const kind = scope.view === 'unread' ? 'unread' : 'other Inbox'
-    const unread = unreadBy(scope)
-    const incomplete = scope.incomplete?.length
-      ? `Older ${kind} messages could not be loaded from ${scope.incomplete.map((mailbox) => mailbox.label).join(', ')}. Earlier pages remain visible; retry loading older messages.`
-      : undefined
-    const notices = [unread, incomplete].filter((notice) => notice !== undefined)
-    const possible = scope.bounded
-      ? `Older ${kind} messages may remain; load more to continue.`
-      : `No further ${kind} messages were found in the pages read.`
-    return {
-      summary: `Loaded: ${plural(scope.loaded, `${kind} message`)} from ${mailboxCount(scope)}`,
-      detail:
-        `${possible} ${
-          discovery
-            ? 'Filters cover only loaded messages; sender and subject search reports its own scanned reach.'
-            : `Search and filters cover only loaded ${kind} messages.`
-        } ` + 'Read messages still in the Inbox count toward Inbox Zero.',
-      ...(notices.length > 0 && { unread: notices.join(' ') }),
-      refreshed: { label: `Last refreshed ${scope.readAt}.`, dateTime: scope.refreshedAt },
-      bounded: scope.bounded,
-    }
-  }
   const loaded = plural(scope.loaded, 'recent message')
   const unread = unreadBy(scope)
   return {
@@ -199,7 +217,14 @@ export function syncScopeLabel(scope: QueueScope) {
   const failed = scope.failed.length
   const unread =
     failed === 0 ? '' : ` · ${plural(failed, 'mailbox', 'mailboxes')} could not be read`
-  const kind = scope.view === 'unread' ? 'unread' : scope.view === 'other' ? 'other Inbox' : 'mail'
+  const kind =
+    scope.view === 'unread'
+      ? 'unread'
+      : scope.view === 'other'
+        ? 'other Inbox'
+        : scope.view === 'all'
+          ? 'full Inbox'
+          : 'mail'
   return `Loaded ${kind} updated at ${scope.readAt}${unread} · read only`
 }
 
@@ -210,22 +235,27 @@ export function syncScopeLabel(scope: QueueScope) {
  * filter matched nothing, and a mailbox that is simply empty is never
  * claimed at all.
  */
+function emptyFullInbox(scope: QueueScope) {
+  const complete =
+    !scope.bounded &&
+    scope.failed.length === 0 &&
+    (scope.incomplete?.length ?? 0) === 0 &&
+    scope.mailboxes.length === scope.readable
+  return complete
+    ? {
+        title: 'Inbox is empty',
+        description: `All ${mailboxCount(scope)} were scanned to their final page.`,
+      }
+    : {
+        title: 'No Inbox messages loaded yet',
+        description: 'The full Inbox scan is incomplete. Refresh to retry failed mailboxes.',
+      }
+}
+
 export function emptyScopeText(scope: QueueScope | undefined) {
-  if (scope && readNothing(scope)) {
-    const none =
-      scope.mailboxes.length === 1
-        ? 'The one listed mailbox did not answer'
-        : `None of the ${plural(scope.mailboxes.length, 'listed mailbox', 'listed mailboxes')} ` +
-          'answered'
-    return {
-      title: 'No mailbox could be read',
-      description:
-        `${none}, so this reading holds no mail. Nothing here says ` +
-        `${scope.mailboxes.length === 1 ? 'that mailbox is' : 'those mailboxes are'} empty; ` +
-        'refresh to read them again.',
-    } as const
-  }
+  if (scope && readNothing(scope)) return failedEmptyScope(scope)
   if (scope?.loaded === 0) {
+    if (scope.view === 'all') return emptyFullInbox(scope)
     if (scope.view) {
       return {
         title:
@@ -246,5 +276,18 @@ export function emptyScopeText(scope: QueueScope | undefined) {
     title: 'No results in this filter',
     description:
       'Choose another workflow or mailbox, or clear the search. Only loaded mail is searched.',
+  } as const
+}
+
+function failedEmptyScope(scope: QueueScope) {
+  const one = scope.mailboxes.length === 1
+  const none = one
+    ? 'The one listed mailbox did not answer'
+    : `None of the ${plural(scope.mailboxes.length, 'listed mailbox', 'listed mailboxes')} answered`
+  return {
+    title: 'No mailbox could be read',
+    description:
+      `${none}, so this reading holds no mail. Nothing here says ` +
+      `${one ? 'that mailbox is' : 'those mailboxes are'} empty; refresh to read them again.`,
   } as const
 }

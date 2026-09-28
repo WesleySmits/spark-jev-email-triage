@@ -14,12 +14,14 @@ export const liveWorkflows: readonly SidebarItem[] = [
   { id: 'inbox', icon: 'inbox', label: 'Inbox' },
 ]
 
-export type InboxView = 'unread' | 'other'
+export type InboxView = 'all' | 'unread' | 'other'
 /** No cursor starts a fresh reading; its returned cursor advances it one page per mailbox. */
 export type InboxListRequest = Readonly<{ view: InboxView; cursor?: string | undefined }>
 
 /** Re-reads exactly the loaded window for one Inbox view. */
-export const inboxRefreshRequestSchema = z.strictObject({ view: z.enum(['unread', 'other']) })
+export const inboxRefreshRequestSchema = z.strictObject({
+  view: z.enum(['all', 'unread', 'other']),
+})
 export type InboxRefreshRequest = z.infer<typeof inboxRefreshRequestSchema>
 
 /**
@@ -28,7 +30,7 @@ export type InboxRefreshRequest = z.infer<typeof inboxRefreshRequestSchema>
  * must not become part of a request URL or a Spark log entry.
  */
 export const inboxDiscoveryRequestSchema = z.strictObject({
-  view: z.enum(['unread', 'other']),
+  view: z.enum(['all', 'unread', 'other']),
   query: z.string().trim().min(1).max(200),
   /** No cursor searches the pages already loaded for this view. */
   cursor: z.uuid().optional(),
@@ -292,7 +294,7 @@ export const bodyRequestSchema = z.strictObject({
   id: z.string().regex(/^[1-9][0-9]{0,18}$/),
   /** The one provider page to recheck if the server restarted before this body read. */
   selection: z
-    .strictObject({ view: z.enum(['unread', 'other']), page: z.int().positive() })
+    .strictObject({ view: z.enum(['all', 'unread', 'other']), page: z.int().positive() })
     .optional(),
 })
 
@@ -319,7 +321,12 @@ export function liveBodyLoader(
         id: messageId,
         ...(message.sourcePage && {
           selection: {
-            view: message.unread === false ? ('other' as const) : ('unread' as const),
+            view:
+              message.unread === undefined
+                ? ('all' as const)
+                : message.unread
+                  ? ('unread' as const)
+                  : ('other' as const),
             page: message.sourcePage,
           },
         }),

@@ -9,6 +9,7 @@ import {
 
 /** Browser-safe adapter: it only reshapes one read-only Inbox scope. */
 export function coverageFromInboxScope(scope: InboxScope, startedAt: string): InboxViewCoverage {
+  if (scope.view === 'all') throw new Error('Cross-view coverage requires a filtered view')
   return viewCoverage({
     view: scope.view,
     mailboxes: scope.mailboxes,

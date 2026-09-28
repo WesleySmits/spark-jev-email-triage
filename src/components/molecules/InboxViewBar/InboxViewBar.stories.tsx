@@ -8,7 +8,7 @@ import '../../../styles/app.css'
 import { InboxZeroStatusBar } from '../InboxZeroStatusBar/InboxZeroStatusBar'
 import { InboxViewBar } from './InboxViewBar'
 
-const scope = (view: InboxView, bounded = true): InboxScope => ({
+const scope = (view: Exclude<InboxView, 'all'>, bounded = true): InboxScope => ({
   view,
   pages: bounded ? 1 : 2,
   cursor: 'fictional-cursor',
@@ -26,9 +26,10 @@ const scope = (view: InboxView, bounded = true): InboxScope => ({
   refreshedAt: '2026-09-24T09:44:00.000Z',
 })
 
-const complete = (view: InboxView) =>
+const complete = (view: Exclude<InboxView, 'all'>) =>
   viewCoverage({
     ...scope(view, false),
+    view,
     loaded: 0,
     mailboxes: [{ id: 'studio@mail.example', label: 'Studio mailbox', loaded: 0, bounded: false }],
     startedAt: '2026-09-24T09:42:00.000Z',
@@ -37,10 +38,15 @@ const complete = (view: InboxView) =>
 const coverage = inboxCoverage(inboxCoverage(undefined, complete('unread')), complete('other'))
 
 function FocusAndStatusProof() {
-  const [state, setState] = useState({ view: 'unread' as InboxView, loading: false, bounded: true })
+  const [state, setState] = useState({
+    view: 'unread' as Exclude<InboxView, 'all'>,
+    loading: false,
+    bounded: true,
+  })
   const root = useRef<HTMLDivElement>(null)
   const rememberFocus = useInboxReadFocus(root, state.loading)
   const change = async (request: InboxListRequest, focus: InboxReadFocus) => {
+    if (request.view === 'all') return
     rememberFocus(focus)
     setState((current) => ({ ...current, loading: true }))
     await new Promise((resolve) => window.setTimeout(resolve, 120))

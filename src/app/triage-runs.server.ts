@@ -86,6 +86,10 @@ type PreparedRun = Readonly<{
   items: readonly ManualRunSelection[]
 }>
 
+type SelectedItems =
+  | { status: 'ready'; label: string; items: readonly ManualRunSelection[] }
+  | { status: 'blocked'; reason: 'stale_worklist' | 'empty_scope' | 'mailbox_unavailable' }
+
 export function createTriageRunService(deps: TriageRunDependencies) {
   const jobKey = (runId: string) => `${String(deps.processId)}:${runId}`
 
@@ -402,18 +406,34 @@ async function selectItems(
   deps: TriageRunDependencies,
   request: TriageRunStart,
   signal?: AbortSignal,
-): Promise<
-  | { status: 'ready'; label: string; items: readonly ManualRunSelection[] }
-  | { status: 'blocked'; reason: 'stale_worklist' | 'empty_scope' | 'mailbox_unavailable' }
-> {
+): Promise<SelectedItems> {
   if (request.scope.kind === 'worklist') {
-    const items = deps.worklist(request.scope.reading)
-    if (items === null) return { status: 'blocked', reason: 'stale_worklist' }
-    return items.length === 0
-      ? { status: 'blocked', reason: 'empty_scope' }
-      : { status: 'ready', label: 'Current worklist', items }
+    return selectWorklist(deps, request.scope, request.limits.maxMessages)
   }
-  const mailbox = request.scope.mailbox
+  return selectMailbox(deps, request.scope, request.limits.maxMessages, signal)
+}
+
+function selectWorklist(
+  deps: TriageRunDependencies,
+  scope: Extract<TriageRunStart['scope'], { kind: 'worklist' }>,
+  maxMessages: number,
+): SelectedItems {
+  const items = deps.worklist(scope.reading)
+  if (items === null) return { status: 'blocked', reason: 'stale_worklist' } as const
+  const offset = scope.offset ?? 0
+  const selected = uniqueSelection(items).slice(offset, offset + maxMessages)
+  return selected.length === 0
+    ? ({ status: 'blocked', reason: 'empty_scope' } as const)
+    : ({ status: 'ready', label: 'Current worklist', items: selected } as const)
+}
+
+async function selectMailbox(
+  deps: TriageRunDependencies,
+  scope: Extract<TriageRunStart['scope'], { kind: 'mailbox' }>,
+  maxMessages: number,
+  signal?: AbortSignal,
+): Promise<SelectedItems> {
+  const mailbox = scope.mailbox
   const options = signal === undefined ? undefined : { signal }
   try {
     const access = (await deps.reader.listMailboxes(options)).find(
@@ -421,7 +441,7 @@ async function selectItems(
     )
     if (access === undefined) return { status: 'blocked', reason: 'mailbox_unavailable' }
     const listed = await deps.reader.listRecentEmails(
-      { mailboxId: access.mailbox.id, limit: request.limits.maxMessages },
+      { mailboxId: access.mailbox.id, limit: maxMessages },
       options,
     )
     const items = listed.map((message) => ({

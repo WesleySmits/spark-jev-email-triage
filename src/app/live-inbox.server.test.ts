@@ -6,7 +6,13 @@ import { SparkError } from '../spark/errors'
 import { accountsOutput, emailsTable, threadText } from '../spark/fixtures'
 import type { SparkTransport } from '../spark/process'
 import { createSparkMailReader, type SparkLogEntry } from '../spark/reader'
-import { BodyUnavailableError, createLiveInbox, isLoopback, perMailbox } from './live-inbox.server'
+import {
+  BodyUnavailableError,
+  createLiveInbox,
+  fullInboxPageSize,
+  isLoopback,
+  perMailbox,
+} from './live-inbox.server'
 
 // Synthetic mail only: every address uses a reserved `.example` domain.
 type Listing = Awaited<ReturnType<MailReader['listRecentEmails']>>[number]
@@ -100,6 +106,38 @@ const two = 'two@mail.example'
 const copy = (mailboxId: string, messageId: string) => mailboxCopyId({ mailboxId, messageId })
 
 describe('createLiveInbox list', () => {
+  it('scans an unfiltered Inbox beyond 1000 rows and searches the complete loaded corpus', async () => {
+    const pages: number[] = []
+    const reader: MailReader = {
+      listMailboxes: () => Promise.resolve([access(one)]),
+      listRecentEmails: ({ page = 1, filter, limit }) => {
+        expect(filter).toBeUndefined()
+        expect(limit).toBe(fullInboxPageSize)
+        pages.push(page)
+        const count = page <= 21 ? fullInboxPageSize : 1
+        return Promise.resolve(
+          Array.from({ length: count }, (_, index) =>
+            listing(one, String(page * 100 + index + 1), null),
+          ),
+        )
+      },
+      readThread: () => Promise.resolve(thread([])),
+    }
+    const live = createLiveInbox({ reader, timeZone: 'Europe/Amsterdam', now })
+    let result = await live.list(undefined, { view: 'all' })
+    while (result.status === 'ready' && result.scope.bounded) {
+      result = await live.list(undefined, { view: 'all', cursor: result.scope.cursor })
+    }
+    if (result.status !== 'ready') throw new Error('Expected complete Inbox')
+    expect(result.messages).toHaveLength(21 * fullInboxPageSize + 1)
+    expect(result.scope.bounded).toBe(false)
+    expect(result.messages.every((message) => message.unread === undefined)).toBe(true)
+    expect(pages).toHaveLength(22)
+
+    const found = await live.search({ view: 'all', query: '2201' })
+    expect(found).toMatchObject({ status: 'ready', scope: { bounded: false, matched: 1 } })
+  })
+
   it('lists each readable mailbox in turn, a bounded number of messages each', async () => {
     const { live, calls } = inbox({
       mailboxes: [access(one), access('closed@mail.example', false), access(two)],
@@ -473,7 +511,7 @@ describe('createLiveInbox body', () => {
     await expect(live.body({ mailbox: one, id: '11' })).resolves.toMatchObject({
       id: copy(one, '11'),
     })
-    expect(calls).toEqual(['accounts', `emails ${one} ${String(perMailbox)}`, `thread ${one} 11`])
+    expect(calls).toEqual(['accounts', `emails ${one} 50`, `thread ${one} 11`])
   })
 
   it('reauthorizes a page-two row against its selected unread pages after a restart', async () => {

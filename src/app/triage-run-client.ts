@@ -19,6 +19,7 @@ import {
 } from './triage-run'
 
 const storageKey = 'spark:jev-manual-run:v1'
+const campaignKey = 'spark:jev-campaign:v1'
 const activeStatuses = new Set<TriageRunSnapshot['status']>(['queued', 'running', 'stopping'])
 
 const pendingSchema = z.discriminatedUnion('kind', [
@@ -109,10 +110,175 @@ export const isActiveTriageRun = (run: TriageRunSnapshot | undefined) =>
 
 type ControllerOptions = Readonly<{
   reading: string | undefined
+  worklistSize?: number | undefined
   gateway: TriageRunGateway
   newRequestId?: (() => string) | undefined
   pollMs?: number | undefined
 }>
+
+export type BatchProgress = Readonly<{
+  total: number
+  processed: number
+  calls: number
+  maxCalls: number
+  inputTokens: number
+  classified: number
+  alreadyCurrent: number
+  duplicate: number
+  readErrors: number
+  retryableReadErrors: number
+  otherErrors: number
+  status: 'running' | 'completed' | 'paused'
+}>
+
+const batchPlanSchema = z.strictObject({
+  reading: z.uuid(),
+  total: z.int().positive(),
+  offset: z.int().nonnegative(),
+  calls: z.int().nonnegative(),
+  maxCalls: z.int().positive(),
+  inputTokens: z.int().nonnegative(),
+  classified: z.int().nonnegative(),
+  alreadyCurrent: z.int().nonnegative(),
+  duplicate: z.int().nonnegative(),
+  readErrors: z.int().nonnegative(),
+  otherErrors: z.int().nonnegative(),
+  retryOffsets: z.array(z.int().nonnegative()),
+  retrying: z.boolean(),
+  lastRunId: z.uuid().optional(),
+})
+
+type BatchPlan = Readonly<z.infer<typeof batchPlanSchema>>
+
+export function restoreCampaign(storage: StorageLike | null): BatchPlan | null {
+  if (storage === null) return null
+  try {
+    const raw = storage.getItem(campaignKey)
+    if (raw === null) return null
+    const parsed = batchPlanSchema.safeParse(JSON.parse(raw) as unknown)
+    return parsed.success ? parsed.data : null
+  } catch {
+    return null
+  }
+}
+
+function saveCampaign(storage: StorageLike | null, plan: BatchPlan | null) {
+  if (storage === null) return
+  try {
+    if (plan === null) storage.removeItem(campaignKey)
+    else storage.setItem(campaignKey, JSON.stringify(plan))
+  } catch {
+    // The active page can still show progress if browser storage is unavailable.
+  }
+}
+
+/** Advance only once per completed durable run; uncertainty and failures pause the sequence. */
+export function nextTriageBatch(plan: BatchPlan, run: TriageRunSnapshot): BatchPlan | null {
+  if (plan.lastRunId === run.runId || run.status !== 'completed') return null
+  return {
+    ...plan,
+    offset: plan.offset + (plan.retrying ? 0 : run.counts.selected),
+    calls: plan.calls + run.cost.jevCalls,
+    inputTokens: plan.inputTokens + run.cost.inputTokens,
+    retryOffsets: plan.retrying ? plan.retryOffsets.slice(1) : plan.retryOffsets,
+    retrying: false,
+    lastRunId: run.runId,
+  }
+}
+
+const batchProgress = (plan: BatchPlan, status: BatchProgress['status']): BatchProgress => ({
+  total: plan.total,
+  processed: plan.offset,
+  calls: plan.calls,
+  maxCalls: plan.maxCalls,
+  inputTokens: plan.inputTokens,
+  classified: plan.classified,
+  alreadyCurrent: plan.alreadyCurrent,
+  duplicate: plan.duplicate,
+  readErrors: plan.readErrors,
+  retryableReadErrors: plan.retryOffsets.length,
+  otherErrors: plan.otherErrors,
+  status,
+})
+
+export function restoredCampaignProgress(plan: BatchPlan): BatchProgress {
+  return batchProgress(plan, 'paused')
+}
+
+export function skipFailedReads(plan: BatchPlan): BatchPlan {
+  return { ...plan, retryOffsets: [], retrying: false }
+}
+
+function countRunItems(plan: BatchPlan, run: TriageRunSnapshot): BatchPlan {
+  const readErrors = run.items.filter((item) => item.status === 'read_error')
+  const retryOffsets = plan.retrying
+    ? [...plan.retryOffsets.slice(1), ...(readErrors.length ? plan.retryOffsets.slice(0, 1) : [])]
+    : [
+        ...plan.retryOffsets,
+        ...run.items.flatMap((item, index) =>
+          item.status === 'read_error' ? [plan.offset + index] : [],
+        ),
+      ]
+  const otherErrors = run.items.filter((item) =>
+    ['provider_failure', 'store_error', 'deferred'].includes(item.status),
+  ).length
+  return {
+    ...plan,
+    offset: plan.offset + (plan.retrying ? 0 : run.counts.selected),
+    calls: plan.calls + run.cost.jevCalls,
+    inputTokens: plan.inputTokens + run.cost.inputTokens,
+    classified: plan.classified + run.items.filter((item) => item.status === 'classified').length,
+    alreadyCurrent:
+      plan.alreadyCurrent + run.items.filter((item) => item.status === 'already_current').length,
+    duplicate: plan.duplicate + run.items.filter((item) => item.status === 'duplicate').length,
+    readErrors:
+      plan.readErrors + (plan.retrying ? (readErrors.length === 0 ? -1 : 0) : readErrors.length),
+    otherErrors: plan.otherErrors + otherErrors,
+    retryOffsets,
+    retrying: plan.retrying && retryOffsets.length > 0,
+    lastRunId: run.runId,
+  }
+}
+
+export function batchOutcome(plan: BatchPlan, run: TriageRunSnapshot) {
+  if (plan.lastRunId === run.runId) return null
+  if (!['completed', 'partial'].includes(run.status)) {
+    return { plan, progress: batchProgress(plan, 'paused'), continueAutomatically: false }
+  }
+  const next = countRunItems(plan, run)
+  const remaining =
+    (next.offset < next.total || next.retryOffsets.length > 0) && next.calls < next.maxCalls
+  const continueAutomatically = run.status === 'completed' && next.otherErrors === 0
+  return {
+    plan: next,
+    progress: batchProgress(
+      next,
+      remaining
+        ? continueAutomatically
+          ? 'running'
+          : 'paused'
+        : next.offset === next.total && next.readErrors === 0 && next.otherErrors === 0
+          ? 'completed'
+          : 'paused',
+    ),
+    continueAutomatically: remaining && continueAutomatically,
+  }
+}
+
+function batchRequest(plan: BatchPlan, requestId: string): TriageRunStart {
+  return {
+    requestId,
+    scope: {
+      kind: 'worklist',
+      reading: plan.reading,
+      offset: plan.retrying ? plan.retryOffsets[0] : plan.offset,
+    },
+    limits: {
+      maxMessages: plan.retrying ? 1 : Math.min(100, plan.total - plan.offset),
+      maxJevCalls: Math.min(100, plan.maxCalls - plan.calls),
+    },
+  }
+}
 
 type StateSetter = Dispatch<SetStateAction<TriageClientState>>
 type StateReference = RefObject<TriageClientState>
@@ -286,21 +452,37 @@ type PendingExecutor = ReturnType<typeof usePendingExecutor>
 
 function useRunCommands(
   reading: string | undefined,
+  worklistSize: number,
+  batchRef: RefObject<BatchPlan | null>,
   newRequestId: () => string,
   stateRef: StateReference,
   execute: PendingExecutor,
 ) {
   const start = (limits: TriageRunStart['limits']) => {
     if (reading === undefined) return Promise.resolve()
+    const current = stateRef.current
+    const plan: BatchPlan = {
+      reading,
+      total: Math.min(worklistSize, limits.maxMessages),
+      offset: 0,
+      calls: 0,
+      maxCalls: Math.min(worklistSize, limits.maxJevCalls),
+      inputTokens: 0,
+      classified: 0,
+      alreadyCurrent: 0,
+      duplicate: 0,
+      readErrors: 0,
+      otherErrors: 0,
+      retryOffsets: [],
+      retrying: false,
+      ...(current.run && { lastRunId: current.run.runId }),
+    }
+    if (plan.total < 1 || plan.maxCalls < 1) return Promise.resolve()
+    batchRef.current = plan
     const pending: TriagePendingAction = {
       kind: 'start',
-      request: {
-        requestId: newRequestId(),
-        scope: { kind: 'worklist', reading },
-        limits,
-      },
+      request: batchRequest(plan, newRequestId()),
     }
-    const current = stateRef.current
     return execute(pending, current.run, current.run?.runId ?? current.runId)
   }
 
@@ -355,6 +537,175 @@ function useStopCommand(
   }
 }
 
+function continueBatchAfterReadback(
+  plan: BatchPlan,
+  run: TriageRunSnapshot,
+  actions: Readonly<{
+    batchRef: RefObject<BatchPlan | null>
+    autoAdvanceRef: RefObject<boolean>
+    storageRef: RefObject<StorageLike | null>
+    setBatch: Dispatch<SetStateAction<BatchProgress | undefined>>
+    execute: PendingExecutor
+    newRequestId: () => string
+  }>,
+) {
+  const { batchRef, autoAdvanceRef, storageRef, setBatch, execute, newRequestId } = actions
+  const outcome = batchOutcome(plan, run)
+  if (outcome === null) return
+  batchRef.current = outcome.plan
+  saveCampaign(storageRef.current, outcome.plan)
+  setBatch(autoAdvanceRef.current ? outcome.progress : batchProgress(outcome.plan, 'paused'))
+  if (autoAdvanceRef.current && outcome.continueAutomatically) {
+    void execute({ kind: 'start', request: batchRequest(outcome.plan, newRequestId()) }, run)
+  } else {
+    autoAdvanceRef.current = false
+  }
+}
+
+function useBatchContinuation(
+  state: TriageClientState,
+  batchRef: RefObject<BatchPlan | null>,
+  autoAdvanceRef: RefObject<boolean>,
+  storageRef: RefObject<StorageLike | null>,
+  setBatch: Dispatch<SetStateAction<BatchProgress | undefined>>,
+  execute: PendingExecutor,
+  newRequestId: () => string,
+) {
+  useEffect(() => {
+    const plan = batchRef.current
+    if (plan === null) return
+    if (['uncertain', 'unavailable', 'blocked', 'absent'].includes(state.phase)) {
+      autoAdvanceRef.current = false
+      setBatch(batchProgress(plan, 'paused'))
+      return
+    }
+    const run = state.run
+    if (run === undefined) return
+    if (state.phase !== 'run' || isActiveTriageRun(run)) return
+    continueBatchAfterReadback(plan, run, {
+      batchRef,
+      autoAdvanceRef,
+      storageRef,
+      setBatch,
+      execute,
+      newRequestId,
+    })
+  }, [
+    autoAdvanceRef,
+    batchRef,
+    execute,
+    newRequestId,
+    setBatch,
+    state.phase,
+    state.run,
+    storageRef,
+  ])
+}
+
+function useBatchActions(
+  batchRef: RefObject<BatchPlan | null>,
+  autoAdvanceRef: RefObject<boolean>,
+  setBatch: Dispatch<SetStateAction<BatchProgress | undefined>>,
+  worklistSize: number,
+  start: (limits: TriageRunStart['limits']) => Promise<void>,
+  stop: () => Promise<void>,
+  restart: () => Promise<void>,
+  execute: PendingExecutor,
+  newRequestId: () => string,
+  stateRef: StateReference,
+  storageRef: RefObject<StorageLike | null>,
+  setState: StateSetter,
+) {
+  const startBatch = (limits: TriageRunStart['limits']) => {
+    setBatch({
+      total: Math.min(worklistSize, limits.maxMessages),
+      processed: 0,
+      calls: 0,
+      maxCalls: Math.min(worklistSize, limits.maxJevCalls),
+      inputTokens: 0,
+      classified: 0,
+      alreadyCurrent: 0,
+      duplicate: 0,
+      readErrors: 0,
+      retryableReadErrors: 0,
+      otherErrors: 0,
+      status: 'running',
+    })
+    autoAdvanceRef.current = true
+    // The start command installs the immutable worklist plan before sending.
+    const operation = start(limits)
+    saveCampaign(storageRef.current, batchRef.current)
+    return operation
+  }
+  const pause = () => {
+    autoAdvanceRef.current = false
+    setBatch((previous) => previous && { ...previous, status: 'paused' })
+  }
+  const continueBatch = () => {
+    const plan = batchRef.current
+    const current = stateRef.current
+    if (
+      plan === null ||
+      current.phase !== 'run' ||
+      !current.run ||
+      !['completed', 'partial'].includes(current.run.status)
+    )
+      return
+    if (plan.calls >= plan.maxCalls || (plan.offset >= plan.total && !plan.retryOffsets.length))
+      return
+    // A failed Spark read never reached Jev. Other failures stay visible and
+    // are never placed in this retry queue.
+    const next = { ...plan, retrying: plan.retryOffsets.length > 0 }
+    batchRef.current = next
+    saveCampaign(storageRef.current, next)
+    autoAdvanceRef.current = true
+    setBatch(batchProgress(next, 'running'))
+    void execute({ kind: 'start', request: batchRequest(next, newRequestId()) }, current.run)
+  }
+  const skipFailedAndContinue = () => {
+    const plan = batchRef.current
+    const run = stateRef.current.run
+    if (
+      plan === null ||
+      plan.retryOffsets.length === 0 ||
+      !run ||
+      !['completed', 'partial'].includes(run.status)
+    )
+      return
+    batchRef.current = skipFailedReads(plan)
+    saveCampaign(storageRef.current, batchRef.current)
+    continueBatch()
+  }
+  const resetCampaign = () => {
+    batchRef.current = null
+    autoAdvanceRef.current = false
+    setBatch(undefined)
+    saveCampaign(storageRef.current, null)
+  }
+  return {
+    startBatch,
+    continueBatch,
+    skipFailedAndContinue,
+    resetCampaign,
+    stopBatch: () => {
+      pause()
+      return stop()
+    },
+    restartBatch: () => {
+      pause()
+      return restart()
+    },
+    forget: () => {
+      batchRef.current = null
+      autoAdvanceRef.current = false
+      setBatch(undefined)
+      saveCampaign(storageRef.current, null)
+      saveTriageSession(storageRef.current, null)
+      setState({ phase: 'idle' })
+    },
+  }
+}
+
 /**
  * Browser controller for one explicit manual run.
  *
@@ -362,27 +713,115 @@ function useStopCommand(
  * deliberately never resumed by an effect: after a lost response, the person
  * must press Resume, which replays the exact persisted request id.
  */
-export function useTriageRunController({
+function useTriageRunCore({
   reading,
+  worklistSize = 0,
   gateway,
   newRequestId = () => crypto.randomUUID(),
-  pollMs = 1_000,
 }: ControllerOptions) {
   const [state, setState] = useState<TriageClientState>({ phase: 'restoring' })
   const storageRef = useRef<StorageLike | null>(null)
   const stateRef = useCurrentState(state)
+  const batchRef = useRef<BatchPlan | null>(null)
+  const autoAdvanceRef = useRef(false)
+  const [batch, setBatch] = useState<BatchProgress>()
   const keep = useSessionKeeper(storageRef)
   const read = useRunReader(gateway, stateRef, keep, setState)
   const execute = usePendingExecutor(gateway, keep, setState)
-  const { start, restart, resume } = useRunCommands(reading, newRequestId, stateRef, execute)
+  const { start, restart, resume } = useRunCommands(
+    reading,
+    worklistSize,
+    batchRef,
+    newRequestId,
+    stateRef,
+    execute,
+  )
   const stop = useStopCommand(gateway, stateRef, keep, setState)
-  useInitialReadback(gateway, storageRef, setState)
-  useActiveRunPolling(state, read, pollMs)
-
-  const forget = () => {
-    saveTriageSession(storageRef.current, null)
-    setState({ phase: 'idle' })
+  return {
+    state,
+    setState,
+    storageRef,
+    stateRef,
+    batchRef,
+    autoAdvanceRef,
+    batch,
+    setBatch,
+    read,
+    execute,
+    start,
+    restart,
+    resume,
+    stop,
+    newRequestId,
+    gateway,
+    worklistSize,
   }
+}
 
-  return { state, start, restart, resume, read: () => read(false), stop, forget } as const
+export function useTriageRunController(options: ControllerOptions) {
+  const {
+    state,
+    setState,
+    storageRef,
+    stateRef,
+    batchRef,
+    autoAdvanceRef,
+    batch,
+    setBatch,
+    read,
+    execute,
+    start,
+    restart,
+    resume,
+    stop,
+    newRequestId,
+    gateway,
+    worklistSize,
+  } = useTriageRunCore(options)
+  const pollMs = options.pollMs ?? 1_000
+  useInitialReadback(gateway, storageRef, setState)
+  useEffect(() => {
+    const restored = restoreCampaign(storageRef.current)
+    if (restored === null) return
+    batchRef.current = restored
+    setBatch(restoredCampaignProgress(restored))
+  }, [batchRef, setBatch, storageRef])
+  useActiveRunPolling(state, read, pollMs)
+  useBatchContinuation(state, batchRef, autoAdvanceRef, storageRef, setBatch, execute, newRequestId)
+
+  const {
+    startBatch,
+    continueBatch,
+    skipFailedAndContinue,
+    resetCampaign,
+    stopBatch,
+    restartBatch,
+    forget,
+  } = useBatchActions(
+    batchRef,
+    autoAdvanceRef,
+    setBatch,
+    worklistSize,
+    start,
+    stop,
+    restart,
+    execute,
+    newRequestId,
+    stateRef,
+    storageRef,
+    setState,
+  )
+  return {
+    state,
+    batch,
+    start: startBatch,
+    continue: continueBatch,
+    skipFailedAndContinue,
+    resetCampaign,
+    restart: restartBatch,
+    resume,
+    read: () => read(false),
+    stop: stopBatch,
+    forget,
+  } as const
 }

@@ -44,6 +44,16 @@ const ofThree = (failing: readonly string[]): QueueScope => {
 }
 
 describe('scopeText', () => {
+  it('describes complete and incomplete full Inbox scans without unread guesses', () => {
+    const complete = scope({ view: 'all', loaded: 0, mailboxes: [mailbox('one@mail.example', 0)] })
+    expect(scopeText(complete).detail).toContain('Every readable mailbox was scanned')
+    expect(emptyScopeText(complete).title).toBe('Inbox is empty')
+
+    const partial = scope({ ...complete, bounded: true })
+    expect(scopeText(partial).detail).toContain('still in progress or incomplete')
+    expect(emptyScopeText(partial).title).toBe('No Inbox messages loaded yet')
+  })
+
   it('separates loaded-row filters from controlled sender/subject discovery', () => {
     expect(scopeText(scope(), true).detail).toContain(
       'Filters cover only loaded mail; sender and subject search reports its own scanned reach.',

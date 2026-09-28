@@ -920,15 +920,7 @@ function queueContent(
 }
 
 function JevControls({ triage }: Readonly<{ triage: NonNullable<WorkbenchPageProps['triage']> }>) {
-  if (triage.state.run || !['idle', 'restoring'].includes(triage.state.phase)) {
-    return <TriageRunControl {...triage} />
-  }
-  return (
-    <details className="workbench__jev-options">
-      <summary>Run Jev</summary>
-      <TriageRunControl {...triage} />
-    </details>
-  )
+  return <TriageRunControl {...triage} />
 }
 
 function QueueEmptyState({

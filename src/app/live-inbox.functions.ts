@@ -33,7 +33,9 @@ function mailRequest() {
  * called, so refreshing the page classifies nothing.
  */
 export const getLiveInbox = createServerFn({ method: 'GET' })
-  .validator(z.strictObject({ view: z.enum(['unread', 'other']), cursor: z.uuid().optional() }))
+  .validator(
+    z.strictObject({ view: z.enum(['all', 'unread', 'other']), cursor: z.uuid().optional() }),
+  )
   .handler(async ({ data }): Promise<ClassifiedInbox> => {
     const { allowed, signal } = mailRequest()
     if (!allowed) return { status: 'unavailable', reason: 'local-only' }

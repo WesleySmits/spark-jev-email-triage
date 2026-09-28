@@ -61,7 +61,7 @@ import {
 export type DeskReason = ConnectionReason
 
 /**
- * What one `open` found: the readable mailboxes, their recent rows without
+ * What one `open` found: the readable mailboxes, their loaded rows without
  * bodies, and what is stored about each row, or why there are none. Plain
  * data, so the route may hand it to the browser, and `unavailable` never
  * comes with messages.
@@ -87,8 +87,9 @@ export const ReviewDesk = {
   workflows: liveWorkflows,
 
   /**
-   * Reads the desk once: the mailboxes this computer may read, a few recent
-   * messages in each, newest first and without bodies, and the judgment
+   * Reads the desk once: the mailboxes this computer may read, one more page
+   * per mailbox plus rows loaded earlier, newest first and without bodies,
+   * and the judgment
    * shadow triage last stored about each of those rows. Reading judges
    * nothing: no classifier is called, here or on opening again, which is all
    * Refresh does. No thread is read either, so a stored judgment is at most
@@ -98,7 +99,7 @@ export const ReviewDesk = {
    * stored judgment is unclassified, and judgments that cannot be read are
    * reported as unavailable rather than as absent.
    */
-  open: (request: InboxListRequest = { view: 'unread' }): Promise<DeskView> =>
+  open: (request: InboxListRequest = { view: 'all' }): Promise<DeskView> =>
     getLiveInbox({ data: request }).catch(
       () => ({ status: 'unavailable', reason: 'unreachable' }) as const,
     ),
