@@ -6,8 +6,8 @@
  * the decisions behind them: src/styles/README.md.
  *
  * A consumer imports this file once, before its own styles, e.g. from the app
- * entry: `import './styles/tokens.css'`. The app does not import it yet;
- * Storybook does, in .storybook/preview.ts. No package or build step is needed.
+ * entry: `import './styles/tokens.css'`. The app and Storybook load it before
+ * dark.css. No package or build step is needed.
  */
 :root {
   /* Type families. System fonts only; nothing is downloaded. */
@@ -26,6 +26,10 @@
   --paper: #ffffff;
   --surface: #f7f8fa;
   --surface-2: #f0f2f5;
+  --topbar-surface: var(--surface);
+  --rail-surface: var(--surface);
+  --queue-surface: var(--paper);
+  --reader-surface: var(--paper);
 
   /* Borders. Lines are decorative dividers; controls use --border-control. */
   --line: #d8dce3;
@@ -37,6 +41,9 @@
   --accent-dark: #293b76;
   --accent-soft: #e9ecf6;
   --accent-ink: #25366f;
+  --on-accent: var(--paper);
+  --avatar-background: var(--ink-soft);
+  --avatar-foreground: var(--paper);
 
   /* States: review, completed, disconnected or failed */
   --attention: #815b18;
@@ -85,6 +92,8 @@
   /* Elevation: the outer shell and transient feedback only */
   --shadow-shell: 0 18px 48px rgb(24 29 38 / 12%);
   --shadow-toast: 0 14px 32px rgb(24 46 35 / 18%);
+  --shadow-modal: 0 20px 60px rgb(0 0 0 / 20%);
+  --modal-backdrop: rgb(13 21 32 / 55%);
 
   /* Focus */
   --focus: #174ec4;

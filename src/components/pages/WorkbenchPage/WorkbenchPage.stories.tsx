@@ -436,6 +436,41 @@ export const ManualJevRun: Story = {
   },
 }
 
+/** The approved Graphite tokens on the real workbench, with a reversible choice. */
+async function graphiteAppearance(canvasElement: HTMLElement) {
+  const canvas = within(canvasElement)
+  const toggle = canvas.getByRole('button', { name: 'Dark mode' })
+  try {
+    if (toggle.getAttribute('aria-pressed') !== 'true') await userEvent.click(toggle)
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
+    const queue = canvasElement.querySelector('.message-queue')
+    if (!queue) throw new Error('Missing message queue')
+    await expect(getComputedStyle(queue).backgroundColor).toBe('rgb(28, 32, 41)')
+    await userEvent.click(canvas.getByRole('button', { name: 'Run Jev' }))
+    await expect(canvas.getByRole('dialog', { name: 'Jev-triage voortgang' })).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: 'Sluit Jev-triage' }))
+    await expect(canvas.queryByRole('dialog', { name: 'Jev-triage voortgang' })).toBeNull()
+    await userEvent.click(toggle)
+    await expect(document.documentElement).toHaveAttribute('data-theme', 'light')
+  } finally {
+    window.localStorage.removeItem('spark-triage-theme')
+    delete document.documentElement.dataset['theme']
+  }
+}
+
+export const GraphiteDesktop: Story = {
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: { triage: completedTriageControl() },
+  play: async ({ canvasElement }) => graphiteAppearance(canvasElement),
+}
+
+export const GraphiteMobile: Story = {
+  globals: { viewport: { value: 'phone390', isRotated: false } },
+  args: { triage: completedTriageControl() },
+  play: async ({ canvasElement }) => graphiteAppearance(canvasElement),
+}
+
 const discoveryScope = {
   view: 'unread',
   query: 'cedar',

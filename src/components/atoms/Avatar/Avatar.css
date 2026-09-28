@@ -4,8 +4,8 @@
   place-items: center;
   flex: none;
   border-radius: 50%;
-  color: var(--paper);
-  background: var(--ink-soft);
+  color: var(--avatar-foreground);
+  background: var(--avatar-background);
   font: 800 11px / 1 var(--font-body);
 }
 

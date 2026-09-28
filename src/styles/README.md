@@ -1,16 +1,18 @@
 # Design foundations
 
-`tokens.css` is the only token source. It declares custom properties on
-`:root` and nothing else. Storybook shows every token under **Foundations**.
+`tokens.css` holds the light tokens on `:root`. `dark.css` overrides their
+colors for Graphite when `data-theme="dark"` is set on `<html>`. Storybook
+shows the shared tokens under **Foundations**.
 
 ## Using the tokens
 
-- Import `tokens.css` once, before any other styles, at the consumer's entry
-  point: `import './styles/tokens.css'`. Nothing else is needed.
+- Import `tokens.css` and then `dark.css` once, before component styles.
 - The app imports it in `src/routes/__root.tsx`, followed by its base
-  styles in `src/styles/app.css`.
+  styles in `src/styles/app.css`. The root document reads the saved theme
+  before paint; the TopBar switch persists an explicit light or dark choice.
+  Without a choice, the system color preference applies.
 - Base styles are the consumer's job, not the token file's. They should set
-  `color-scheme: light`, use `var(--text-ui)` and `var(--ink)` on the body, and
+  the matching `color-scheme`, use `var(--text-ui)` and `var(--ink)` on the body, and
   include the focus and reduced-motion rules below.
 
 ## Rules
@@ -62,7 +64,7 @@
 - Under `prefers-reduced-motion: reduce`, transition and animation durations
   collapse to near zero and smooth scrolling is off.
 
-Contrast limits for the maintained token pairs are enforced by
+Contrast limits for the maintained token pairs in both themes are enforced by
 `src/foundations/contrast-pairs.test.ts`.
 
 ## Decisions (2026-09-21)

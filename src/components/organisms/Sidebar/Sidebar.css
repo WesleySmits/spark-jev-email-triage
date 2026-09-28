@@ -10,7 +10,7 @@
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   border-right: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--rail-surface);
   container-type: inline-size;
 }
 

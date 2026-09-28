@@ -5,19 +5,19 @@
 
 .triage-run {
   box-sizing: border-box;
-  width: min(100% - 32px, 570px);
+  width: min(100% - 32px, 430px);
   max-height: min(88dvh, 760px);
   padding: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
   background: var(--paper);
-  box-shadow: 0 20px 60px rgb(0 0 0 / 20%);
+  box-shadow: var(--shadow-modal);
   color: var(--ink-soft);
   font: var(--text-ui);
 }
 
 .triage-run::backdrop {
-  background: rgb(13 21 32 / 55%);
+  background: var(--modal-backdrop);
 }
 
 .triage-run__body {

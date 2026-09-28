@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Avatar } from '../../atoms/Avatar/Avatar'
 import { Brand } from '../../molecules/Brand/Brand'
+import { ThemeToggle } from '../../molecules/ThemeToggle/ThemeToggle'
 import { SearchField } from '../../molecules/SearchField/SearchField'
 import {
   SyncStatusButton,
@@ -190,6 +191,7 @@ export function TopBar({ profileLabel, profileInitials, className, ...props }: T
       {leadElement(props)}
       {searchElement(props)}
       {syncElement(props)}
+      <ThemeToggle />
       <Avatar initials={profileInitials} label={profileLabel} size="sm" />
     </header>
   )

@@ -5,7 +5,7 @@
   box-sizing: border-box;
 }
 
-html {
+html:not([data-theme='dark']) {
   color-scheme: light;
 }
 

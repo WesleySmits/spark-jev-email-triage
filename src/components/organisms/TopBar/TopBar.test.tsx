@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Avatar } from '../../atoms/Avatar/Avatar'
 import { Brand } from '../../molecules/Brand/Brand'
 import { SearchField } from '../../molecules/SearchField/SearchField'
+import { ThemeToggle } from '../../molecules/ThemeToggle/ThemeToggle'
 import { SyncStatusButton, SyncStatusText } from '../../molecules/SyncStatusButton/SyncStatusButton'
 import { TopBar } from './TopBar'
 
@@ -29,12 +30,12 @@ const base: Props = {
 function render(overrides: Partial<Props> = {}) {
   const props = { ...base, ...overrides }
   const root = TopBar(props) as Element
-  const [lead, form, sync, avatar] = root.props['children'] as Element[]
-  if (!lead || !form || !sync || !avatar) throw new Error('Missing top bar part')
+  const [lead, form, sync, theme, avatar] = root.props['children'] as Element[]
+  if (!lead || !form || !sync || !theme || !avatar) throw new Error('Missing top bar part')
   const [filters, brand] = lead.props['children'] as Element[]
   if (!brand) throw new Error('Missing brand')
   const search = form.props['children'] as Element
-  return { props, root, lead, filters, brand, form, search, sync, avatar }
+  return { props, root, lead, filters, brand, form, search, sync, theme, avatar }
 }
 
 function css() {
@@ -42,8 +43,8 @@ function css() {
 }
 
 describe('TopBar', () => {
-  it('is a header with brand, search landmark, sync status and avatar in order', () => {
-    const { root, lead, filters, brand, form, search, sync, avatar } = render()
+  it('is a header with brand, search landmark, sync status, theme and avatar in order', () => {
+    const { root, lead, filters, brand, form, search, sync, theme, avatar } = render()
     expect(root.type).toBe('header')
     expect(root.props['className']).toBe('top-bar')
     expect(lead.props['className']).toBe('top-bar__lead')
@@ -53,6 +54,7 @@ describe('TopBar', () => {
     expect(form).toMatchObject({ type: 'form', props: { role: 'search' } })
     expect(search.type).toBe(SearchField)
     expect(sync.type).toBe(SyncStatusButton)
+    expect(theme.type).toBe(ThemeToggle)
     expect(avatar.type).toBe(Avatar)
   })
 

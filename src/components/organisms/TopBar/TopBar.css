@@ -12,7 +12,7 @@
   padding: var(--s1) var(--s4);
   border-bottom: 1px solid var(--line);
   color: var(--ink);
-  background: var(--surface);
+  background: var(--topbar-surface);
   font: var(--text-ui);
 }
 
@@ -70,5 +70,9 @@
   .top-bar .top-bar__sync {
     min-height: 44px;
     justify-self: end;
+  }
+
+  .top-bar > .avatar {
+    display: none;
   }
 }

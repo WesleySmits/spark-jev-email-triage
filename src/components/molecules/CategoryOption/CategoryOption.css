@@ -91,7 +91,7 @@
 }
 
 .category-option__input:checked + .icon {
-  color: var(--paper);
+  color: var(--on-accent);
 }
 
 .category-option:has(.category-option__input:disabled) {
