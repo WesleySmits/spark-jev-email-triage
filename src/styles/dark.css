@@ -1,0 +1,47 @@
+/* Graphite, the approved dark direction. Light values remain in tokens.css. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --ink: #f5f6f8;
+  --ink-soft: #d8dce4;
+  --muted: #a4adba;
+  --faint: #818b9b;
+
+  --canvas: #101218;
+  --paper: #20242e;
+  --surface: #252a35;
+  --surface-2: #2c3240;
+  --topbar-surface: #171a22;
+  --rail-surface: #14171e;
+  --queue-surface: #1c2029;
+  --reader-surface: #20242e;
+
+  --line: #363c48;
+  --line-strong: #535d6e;
+  --border-control: #758092;
+
+  --accent: #8199eb;
+  --accent-dark: #a9b9f2;
+  --accent-soft: #29334c;
+  --accent-ink: #c0ccff;
+  --on-accent: #0a173b;
+
+  --attention: #e9bb71;
+  --attention-soft: #3b3026;
+  --attention-line: #aa8050;
+  --success: #9dd8bb;
+  --success-soft: #223a32;
+  --success-line: #6f9a83;
+  --danger: #f1a5a5;
+  --danger-soft: #422b31;
+
+  --account-studio: #829ee0;
+  --account-atelier: #d3a272;
+  --account-personal: #b4a0d5;
+  --avatar-background: #39445d;
+  --avatar-foreground: #f5f6f8;
+  --focus: #c0ccff;
+  --shadow-shell: 0 18px 48px rgb(0 0 0 / 35%);
+  --shadow-toast: 0 14px 32px rgb(0 0 0 / 40%);
+  --shadow-modal: 0 20px 60px rgb(0 0 0 / 55%);
+}

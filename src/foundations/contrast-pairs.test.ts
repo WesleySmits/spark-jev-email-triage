@@ -11,19 +11,32 @@ stylesheet.walkDecls(/^--/, (declaration) => {
   tokens.set(declaration.prop, declaration.value)
 })
 
-function token(name: string): string {
-  const value = tokens.get(name)
+const darkStylesheet = parse(readFileSync(new URL('../styles/dark.css', import.meta.url), 'utf8'))
+const darkTokens = new Map(tokens)
+darkStylesheet.walkDecls(/^--/, (declaration) => {
+  darkTokens.set(declaration.prop, declaration.value)
+})
+
+function token(name: string, values: ReadonlyMap<string, string>): string {
+  const value = values.get(name)
   if (value === undefined) throw new Error(`${name} is not defined in tokens.css`)
+  const alias = /^var\((--[^)]+)\)$/.exec(value)
+  if (alias?.[1]) return token(alias[1], values)
   return value
 }
 
 describe('maintained token pairs', () => {
-  it.each(contrastPairs)(
-    '$foreground on $background reaches $minimum:1 ($use)',
-    ({ foreground, background, minimum }) => {
-      expect(contrastRatio(token(foreground), token(background))).toBeGreaterThanOrEqual(minimum)
-    },
-  )
+  it.each(['light', 'dark'] as const)('%s theme meets contrast limits', (theme) => {
+    const values = theme === 'dark' ? darkTokens : tokens
+    for (const { foreground, background, minimum, use } of contrastPairs) {
+      expect
+        .soft(
+          contrastRatio(token(foreground, values), token(background, values)),
+          `${theme}: ${foreground} on ${background} (${use})`,
+        )
+        .toBeGreaterThanOrEqual(minimum)
+    }
+  })
 })
 
 describe('tokens.css', () => {

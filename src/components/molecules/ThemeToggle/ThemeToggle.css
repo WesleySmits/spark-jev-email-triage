@@ -1,0 +1,17 @@
+.theme-toggle {
+  flex: none;
+  min-height: 36px;
+  padding: 0 var(--s2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+  color: var(--ink);
+  font: var(--text-meta);
+  cursor: pointer;
+}
+
+@media (max-width: 600px) {
+  .theme-toggle {
+    min-height: 44px;
+  }
+}

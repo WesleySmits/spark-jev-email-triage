@@ -9,7 +9,7 @@
   grid-template-columns: minmax(0, 1fr);
   border-bottom: 1px solid var(--line);
   color: var(--ink-soft);
-  background: var(--paper);
+  background: var(--queue-surface);
   transition:
     background-color var(--duration-state) var(--ease-state),
     box-shadow var(--duration-state) var(--ease-state);

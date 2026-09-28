@@ -86,7 +86,7 @@ export const Waiting: Story = {
   },
 }
 
-/** Keyboard: Tab reaches the status, then Check now; J, K and / do nothing without mail. */
+/** Keyboard: Tab reaches status, theme, navigation, then Check now. */
 export const Keyboard: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
@@ -94,6 +94,8 @@ export const Keyboard: Story = {
     await expect(canvas.getByRole('searchbox')).not.toHaveFocus()
     await userEvent.tab()
     await expect(canvas.getByRole('button', { name: 'Waiting for Spark · 09:41' })).toHaveFocus()
+    await userEvent.tab()
+    await expect(canvas.getByRole('button', { name: 'Dark mode' })).toHaveFocus()
     await userEvent.tab()
     await userEvent.tab()
     await expect(canvas.getByRole('button', { name: 'Check now' })).toHaveFocus()

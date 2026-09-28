@@ -1,6 +1,7 @@
 import type { Preview } from '@storybook/react-vite'
 import { MINIMAL_VIEWPORTS } from 'storybook/viewport'
 import '../src/styles/tokens.css'
+import '../src/styles/dark.css'
 
 /**
  * Storybook's own sizes plus the widths the workbench is checked at. 390 is a
