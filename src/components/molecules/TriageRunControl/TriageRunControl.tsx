@@ -1,5 +1,5 @@
 import { useState, type SyntheticEvent } from 'react'
-import type { TriageClientState } from '../../../app/triage-run-client'
+import type { BatchProgress, TriageClientState } from '../../../app/triage-run-client'
 import type { TriageRunItemStatus, TriageRunSnapshot } from '../../../app/triage-run'
 import { Badge } from '../../atoms/Badge/Badge'
 import { Button } from '../../atoms/Button/Button'
@@ -8,6 +8,7 @@ import './TriageRunControl.css'
 type TriageRunControlProps = Readonly<{
   worklistSize: number
   state: TriageClientState
+  batch?: BatchProgress | undefined
   onStart: (limits: { maxMessages: number; maxJevCalls: number }) => void
   onResume: () => void
   onRead: () => void
@@ -80,16 +81,18 @@ const blockedLabels: Record<NonNullable<TriageClientState['blockedReason']>, str
   request_mismatch: 'The saved request does not match the server record.',
 }
 
-const boundedDefault = (worklistSize: number) => Math.max(1, Math.min(25, worklistSize))
-
 function RunForm({
   worklistSize,
   disabled,
   onStart,
 }: Pick<TriageRunControlProps, 'worklistSize' | 'onStart'> & Readonly<{ disabled: boolean }>) {
-  const initial = boundedDefault(worklistSize)
-  const [maxMessages, setMaxMessages] = useState(initial)
-  const [maxJevCalls, setMaxJevCalls] = useState(initial)
+  const [maxMessages, setMaxMessages] = useState(Math.max(1, worklistSize))
+  const [maxJevCalls, setMaxJevCalls] = useState(Math.max(1, worklistSize))
+  if (worklistSize === 0) {
+    return (
+      <p className="triage-run__detail">Jev starts after a complete Inbox scan with messages.</p>
+    )
+  }
   const submit = (event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
     event.preventDefault()
     onStart({ maxMessages, maxJevCalls })
@@ -102,7 +105,7 @@ function RunForm({
           aria-label="Maximum messages"
           type="number"
           min={1}
-          max={100}
+          max={Math.max(1, worklistSize)}
           value={maxMessages}
           disabled={disabled}
           onChange={(event) => {
@@ -116,7 +119,7 @@ function RunForm({
           aria-label="Maximum Jev calls"
           type="number"
           min={1}
-          max={100}
+          max={Math.max(1, worklistSize)}
           value={maxJevCalls}
           disabled={disabled}
           onChange={(event) => {
@@ -124,6 +127,12 @@ function RunForm({
           }}
         />
       </label>
+      <p className="triage-run__detail">
+        One explicit start selects up to {String(maxMessages)} scanned messages and permits at most{' '}
+        {String(maxJevCalls)} Jev calls. Work runs in batches of at most 100. A smaller call budget
+        leaves messages unclassified. Token cost is shown after each batch; a price estimate is
+        unavailable.
+      </p>
       <Button type="submit" disabled={disabled || worklistSize === 0}>
         Start Jev triage
       </Button>
@@ -313,6 +322,7 @@ function RunActions({ state, onResume, onRead, onStop, onRestart, onForget }: Ru
 export function TriageRunControl({
   worklistSize,
   state,
+  batch,
   onStart,
   onResume,
   onRead,
@@ -325,6 +335,13 @@ export function TriageRunControl({
     <section className="triage-run" aria-label="Jev triage run">
       {state.run ? <RunEvidence run={state.run} /> : <EmptyRunHeading state={state} />}
       <RunFeedback state={state} />
+      {batch && (
+        <p className="triage-run__detail" role="status">
+          Full Inbox triage: {String(batch.processed)}/{String(batch.total)} selected messages
+          processed · {String(batch.calls)}/{String(batch.maxCalls)} Jev calls · {batch.status}.
+          Batch continuation runs only while this page remains open.
+        </p>
+      )}
       <RunActions
         state={state}
         onResume={onResume}
@@ -334,7 +351,12 @@ export function TriageRunControl({
         onForget={onForget}
       />
       {showForm && (
-        <RunForm worklistSize={worklistSize} disabled={isBusy(state)} onStart={onStart} />
+        <RunForm
+          key={worklistSize}
+          worklistSize={worklistSize}
+          disabled={isBusy(state)}
+          onStart={onStart}
+        />
       )}
     </section>
   )

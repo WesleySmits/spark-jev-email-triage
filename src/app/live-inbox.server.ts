@@ -1,7 +1,8 @@
 /**
  * The live inbox over any `MailReader`, strictly read-only: it discovers the
- * readable mailboxes, lists a few recent messages in each, one call at a
- * time, and reads one message's body on request. Nothing here writes, and
+ * readable mailboxes, lists one page per mailbox at a time, and reads one
+ * message's body on request. The app continues these pages to the end of
+ * the Inbox. Nothing here writes, and
  * provider errors never reach the browser as more than a coarse reason.
  *
  * A failure is as small as what it cost. Discovering the mailboxes is the
@@ -48,6 +49,8 @@ type Marker = InboxSummary['account']['marker']
 
 /** Recent messages listed per mailbox. */
 export const perMailbox = 10
+export const fullInboxPageSize = 50
+const pageSizeFor = (view: InboxView) => (view === 'all' ? fullInboxPageSize : perMailbox)
 
 // Only colors: a mailbox's identity is its id, never its marker.
 const markers: readonly Marker[] = ['studio', 'atelier', 'personal']
@@ -128,7 +131,7 @@ export function createLiveInbox({
   const format = timeFormats(timeZone)
   /** The mailbox copies the last list offered, by copy id. Bodies are read only for these. */
   let offered = new Set<string>()
-  let reading: ReadingProgress | undefined
+  const readings = new Map<InboxView, ReadingProgress>()
   let discovery: (ReadingProgress & { query: string }) | undefined
   /** Serializes cursor claims before any discovery provider I/O begins. */
   let searches: Promise<void> = Promise.resolve()
@@ -145,7 +148,7 @@ export function createLiveInbox({
     offered = new Set()
     discovery = undefined
     try {
-      const selected = await selectReading(reader, reading, request, options)
+      const selected = await selectReading(reader, readings.get(request.view), request, options)
       const { current } = selected
       // A stale/replayed cursor returns the current honest snapshot. It never
       // skips pages or turns one request into an unbounded provider loop.
@@ -157,7 +160,7 @@ export function createLiveInbox({
       const at = now()
       current.cursor = randomUUID()
       current.lastReadAt = at
-      reading = current
+      if (read === reads) readings.set(request.view, current)
       const listed = listedFrom(current)
       const messages = summariesOf(unique(listed), current.view, at, format)
       if (read === reads) offered = new Set(messages.map((message) => message.id))
@@ -184,7 +187,7 @@ export function createLiveInbox({
         if (selection) {
           if (await selectedPageOffers(reader, ref, selection, options)) offered.add(copyId)
         } else {
-          await list(options)
+          await list(options, { view: 'all' })
         }
       }
       if (!offered.has(copyId)) throw new BodyUnavailableError()
@@ -207,6 +210,7 @@ export function createLiveInbox({
     const read = ++reads
     offered = new Set()
     try {
+      const reading = readings.get(request.view)
       const selected = await selectDiscovery(reader, reading, discovery, request, options)
       const { current, advance } = selected
       if (advance) await advanceReading(reader, current, options)
@@ -224,7 +228,10 @@ export function createLiveInbox({
         // so the next discovery begins at the reached depth. Keep a list's
         // cursor valid, and never replace a reading of another view.
         if (reading === undefined || reading.view === current.view) {
-          reading = { ...cloneReading(current), cursor: reading?.cursor ?? current.cursor }
+          readings.set(request.view, {
+            ...cloneReading(current),
+            cursor: reading?.cursor ?? current.cursor,
+          })
         }
         offered = new Set(messages.map((message) => message.id))
       }
@@ -257,7 +264,8 @@ export function createLiveInbox({
     offered = new Set()
     discovery = undefined
     try {
-      const before = reading?.view === request.view ? cloneReading(reading) : undefined
+      const existing = readings.get(request.view)
+      const before = existing ? cloneReading(existing) : undefined
       const current = await refreshReading(reader, request.view, before, options)
       current.pages = completedPages(current)
       const at = now()
@@ -267,7 +275,7 @@ export function createLiveInbox({
       const messages = summariesOf(listed, current.view, at, format)
       const scope = readingScope(current, messages, at, format)
       if (read === reads) {
-        reading = current
+        readings.set(request.view, current)
         offered = new Set(messages.map((message) => message.id))
       }
       return {
@@ -499,7 +507,7 @@ function discoveryScopeOf(
     query: reading.query,
     fields: ['sender', 'subject'],
     valuesMayBeTruncated: true,
-    pageSize: perMailbox,
+    pageSize: pageSizeFor(reading.view),
     cursor: reading.cursor,
     mailboxes,
     failed: failuresOf(reading, 'failed'),
@@ -539,14 +547,19 @@ async function selectedPageOffers(
   const rows = await reader.listRecentEmails(
     {
       mailboxId: ref.mailboxId,
-      limit: perMailbox,
+      limit: pageSizeFor(selection.view),
       page: selection.page,
-      filter: selection.view === 'unread' ? 'is:unread' : 'is:read',
+      ...filterFor(selection.view),
     },
     options,
   )
   return rows.some((row) => row.messageId === ref.messageId)
 }
+
+const filterFor = (view: InboxView) =>
+  view === 'all'
+    ? {}
+    : { filter: view === 'unread' ? ('is:unread' as const) : ('is:read' as const) }
 
 async function startReading(
   reader: MailReader,
@@ -605,15 +618,15 @@ async function advanceMailbox(
     const rows = await reader.listRecentEmails(
       {
         mailboxId,
-        limit: perMailbox,
+        limit: pageSizeFor(view),
         page,
-        filter: view === 'unread' ? 'is:unread' : 'is:read',
+        ...filterFor(view),
       },
       options,
     )
     progress.listings.push(...rows.map((listing) => ({ listing, page })))
     progress.nextPage = page + 1
-    progress.bounded = rows.length >= perMailbox
+    progress.bounded = rows.length >= pageSizeFor(view)
     progress.incomplete = undefined
   } catch (error) {
     if (options?.signal?.aborted) throw error
@@ -779,7 +792,7 @@ function scopeOf({
     incomplete,
     readable,
     mailboxLimit: mailboxes.length,
-    messageLimit: perMailbox * pages,
+    messageLimit: pageSizeFor(view) * pages,
     loaded: messages.length,
     bounded: scoped.some((mailbox) => mailbox.bounded),
     readAt: format.clock(at),
@@ -815,7 +828,7 @@ function summarize(
     snippet: '',
     account: { marker: mailbox.account, label: mailbox.label },
     status,
-    unread: view === 'unread',
+    ...(view !== 'all' && { unread: view === 'unread' }),
   })
 }
 

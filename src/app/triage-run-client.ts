@@ -109,10 +109,72 @@ export const isActiveTriageRun = (run: TriageRunSnapshot | undefined) =>
 
 type ControllerOptions = Readonly<{
   reading: string | undefined
+  worklistSize?: number | undefined
   gateway: TriageRunGateway
   newRequestId?: (() => string) | undefined
   pollMs?: number | undefined
 }>
+
+export type BatchProgress = Readonly<{
+  total: number
+  processed: number
+  calls: number
+  maxCalls: number
+  status: 'running' | 'completed' | 'paused'
+}>
+
+type BatchPlan = Readonly<{
+  reading: string
+  total: number
+  offset: number
+  calls: number
+  maxCalls: number
+  lastRunId?: string
+}>
+
+/** Advance only once per completed durable run; uncertainty and failures pause the sequence. */
+export function nextTriageBatch(plan: BatchPlan, run: TriageRunSnapshot): BatchPlan | null {
+  if (plan.lastRunId === run.runId || run.status !== 'completed') return null
+  return {
+    ...plan,
+    offset: plan.offset + run.counts.selected,
+    calls: plan.calls + run.cost.jevCalls,
+    lastRunId: run.runId,
+  }
+}
+
+const batchProgress = (plan: BatchPlan, status: BatchProgress['status']): BatchProgress => ({
+  total: plan.total,
+  processed: plan.offset,
+  calls: plan.calls,
+  maxCalls: plan.maxCalls,
+  status,
+})
+
+function batchOutcome(plan: BatchPlan, run: TriageRunSnapshot) {
+  if (plan.lastRunId === run.runId) return null
+  const next = nextTriageBatch(plan, run)
+  if (next === null) return { plan: null, progress: batchProgress(plan, 'paused') }
+  const remaining = next.offset < next.total && next.calls < next.maxCalls
+  return {
+    plan: remaining ? next : null,
+    progress: batchProgress(
+      next,
+      remaining ? 'running' : next.offset === next.total ? 'completed' : 'paused',
+    ),
+  }
+}
+
+function batchRequest(plan: BatchPlan, requestId: string): TriageRunStart {
+  return {
+    requestId,
+    scope: { kind: 'worklist', reading: plan.reading, offset: plan.offset },
+    limits: {
+      maxMessages: Math.min(100, plan.total - plan.offset),
+      maxJevCalls: Math.min(100, plan.maxCalls - plan.calls),
+    },
+  }
+}
 
 type StateSetter = Dispatch<SetStateAction<TriageClientState>>
 type StateReference = RefObject<TriageClientState>
@@ -286,21 +348,29 @@ type PendingExecutor = ReturnType<typeof usePendingExecutor>
 
 function useRunCommands(
   reading: string | undefined,
+  worklistSize: number,
+  batchRef: RefObject<BatchPlan | null>,
   newRequestId: () => string,
   stateRef: StateReference,
   execute: PendingExecutor,
 ) {
   const start = (limits: TriageRunStart['limits']) => {
     if (reading === undefined) return Promise.resolve()
+    const current = stateRef.current
+    const plan: BatchPlan = {
+      reading,
+      total: Math.min(worklistSize, limits.maxMessages),
+      offset: 0,
+      calls: 0,
+      maxCalls: Math.min(worklistSize, limits.maxJevCalls),
+      ...(current.run && { lastRunId: current.run.runId }),
+    }
+    if (plan.total < 1 || plan.maxCalls < 1) return Promise.resolve()
+    batchRef.current = plan
     const pending: TriagePendingAction = {
       kind: 'start',
-      request: {
-        requestId: newRequestId(),
-        scope: { kind: 'worklist', reading },
-        limits,
-      },
+      request: batchRequest(plan, newRequestId()),
     }
-    const current = stateRef.current
     return execute(pending, current.run, current.run?.runId ?? current.runId)
   }
 
@@ -355,6 +425,75 @@ function useStopCommand(
   }
 }
 
+function useBatchContinuation(
+  state: TriageClientState,
+  batchRef: RefObject<BatchPlan | null>,
+  setBatch: Dispatch<SetStateAction<BatchProgress | undefined>>,
+  execute: PendingExecutor,
+  newRequestId: () => string,
+) {
+  useEffect(() => {
+    const plan = batchRef.current
+    const run = state.run
+    if (plan === null || run === undefined) return
+    if (['uncertain', 'unavailable', 'blocked', 'absent'].includes(state.phase)) {
+      setBatch(batchProgress(plan, 'paused'))
+      return
+    }
+    if (state.phase !== 'run' || isActiveTriageRun(run)) return
+    const outcome = batchOutcome(plan, run)
+    if (outcome === null) return
+    batchRef.current = outcome.plan
+    setBatch(outcome.progress)
+    if (outcome.plan !== null) {
+      void execute({ kind: 'start', request: batchRequest(outcome.plan, newRequestId()) }, run)
+    }
+  }, [batchRef, execute, newRequestId, setBatch, state.phase, state.run])
+}
+
+function useBatchActions(
+  batchRef: RefObject<BatchPlan | null>,
+  setBatch: Dispatch<SetStateAction<BatchProgress | undefined>>,
+  worklistSize: number,
+  start: (limits: TriageRunStart['limits']) => Promise<void>,
+  stop: () => Promise<void>,
+  restart: () => Promise<void>,
+  storageRef: RefObject<StorageLike | null>,
+  setState: StateSetter,
+) {
+  const startBatch = (limits: TriageRunStart['limits']) => {
+    setBatch({
+      total: Math.min(worklistSize, limits.maxMessages),
+      processed: 0,
+      calls: 0,
+      maxCalls: Math.min(worklistSize, limits.maxJevCalls),
+      status: 'running',
+    })
+    return start(limits)
+  }
+  const pause = () => {
+    batchRef.current = null
+    setBatch((previous) => previous && { ...previous, status: 'paused' })
+  }
+  return {
+    startBatch,
+    stopBatch: () => {
+      pause()
+      return stop()
+    },
+    restartBatch: () => {
+      pause()
+      return restart()
+    },
+    forget: () => {
+      batchRef.current = null
+      setBatch(undefined)
+      saveTriageSession(storageRef.current, null)
+      setState({ phase: 'idle' })
+    },
+  }
+}
+
 /**
  * Browser controller for one explicit manual run.
  *
@@ -362,27 +501,89 @@ function useStopCommand(
  * deliberately never resumed by an effect: after a lost response, the person
  * must press Resume, which replays the exact persisted request id.
  */
-export function useTriageRunController({
+function useTriageRunCore({
   reading,
+  worklistSize = 0,
   gateway,
   newRequestId = () => crypto.randomUUID(),
-  pollMs = 1_000,
 }: ControllerOptions) {
   const [state, setState] = useState<TriageClientState>({ phase: 'restoring' })
   const storageRef = useRef<StorageLike | null>(null)
   const stateRef = useCurrentState(state)
+  const batchRef = useRef<BatchPlan | null>(null)
+  const [batch, setBatch] = useState<BatchProgress>()
   const keep = useSessionKeeper(storageRef)
   const read = useRunReader(gateway, stateRef, keep, setState)
   const execute = usePendingExecutor(gateway, keep, setState)
-  const { start, restart, resume } = useRunCommands(reading, newRequestId, stateRef, execute)
+  const { start, restart, resume } = useRunCommands(
+    reading,
+    worklistSize,
+    batchRef,
+    newRequestId,
+    stateRef,
+    execute,
+  )
   const stop = useStopCommand(gateway, stateRef, keep, setState)
+  return {
+    state,
+    setState,
+    storageRef,
+    batchRef,
+    batch,
+    setBatch,
+    read,
+    execute,
+    start,
+    restart,
+    resume,
+    stop,
+    newRequestId,
+    gateway,
+    worklistSize,
+  }
+}
+
+export function useTriageRunController(options: ControllerOptions) {
+  const {
+    state,
+    setState,
+    storageRef,
+    batchRef,
+    batch,
+    setBatch,
+    read,
+    execute,
+    start,
+    restart,
+    resume,
+    stop,
+    newRequestId,
+    gateway,
+    worklistSize,
+  } = useTriageRunCore(options)
+  const pollMs = options.pollMs ?? 1_000
   useInitialReadback(gateway, storageRef, setState)
   useActiveRunPolling(state, read, pollMs)
+  useBatchContinuation(state, batchRef, setBatch, execute, newRequestId)
 
-  const forget = () => {
-    saveTriageSession(storageRef.current, null)
-    setState({ phase: 'idle' })
-  }
-
-  return { state, start, restart, resume, read: () => read(false), stop, forget } as const
+  const { startBatch, stopBatch, restartBatch, forget } = useBatchActions(
+    batchRef,
+    setBatch,
+    worklistSize,
+    start,
+    stop,
+    restart,
+    storageRef,
+    setState,
+  )
+  return {
+    state,
+    batch,
+    start: startBatch,
+    restart: restartBatch,
+    resume,
+    read: () => read(false),
+    stop: stopBatch,
+    forget,
+  } as const
 }

@@ -47,13 +47,16 @@ describe('inboxDiscoveryRequestSchema', () => {
     expect(
       inboxDiscoveryRequestSchema.parse({ view: 'unread', query: '  invoice  ', cursor }),
     ).toEqual({ view: 'unread', query: 'invoice', cursor })
+    expect(inboxDiscoveryRequestSchema.parse({ view: 'all', query: 'invoice' })).toEqual({
+      view: 'all',
+      query: 'invoice',
+    })
   })
 
   it.each([
     { view: 'unread', query: '' },
     { view: 'unread', query: ' '.repeat(4) },
     { view: 'unread', query: 'x'.repeat(201) },
-    { view: 'all', query: 'invoice' },
     { view: 'unread', query: 'invoice', extra: 'private' },
   ])('rejects %j', (request) => {
     expect(inboxDiscoveryRequestSchema.safeParse(request).success).toBe(false)
@@ -63,7 +66,7 @@ describe('inboxDiscoveryRequestSchema', () => {
 describe('inboxRefreshRequestSchema', () => {
   it('accepts one known view and nothing else', () => {
     expect(inboxRefreshRequestSchema.parse({ view: 'unread' })).toEqual({ view: 'unread' })
-    expect(inboxRefreshRequestSchema.safeParse({ view: 'all' }).success).toBe(false)
+    expect(inboxRefreshRequestSchema.parse({ view: 'all' })).toEqual({ view: 'all' })
     expect(inboxRefreshRequestSchema.safeParse({ view: 'unread', pages: 99 }).success).toBe(false)
   })
 })

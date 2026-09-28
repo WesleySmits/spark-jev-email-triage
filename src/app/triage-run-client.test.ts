@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   isActiveTriageRun,
+  nextTriageBatch,
   restoreTriageSession,
   saveTriageSession,
   triageStateAfterReadback,
@@ -98,6 +99,36 @@ describe('active manual run status', () => {
     'treats %s as finished',
     (status) => {
       expect(isActiveTriageRun(run(status))).toBe(false)
+    },
+  )
+})
+
+describe('explicit full Inbox batch progression', () => {
+  const plan = {
+    reading: request.scope.reading,
+    total: 205,
+    offset: 0,
+    calls: 0,
+    maxCalls: 205,
+  }
+  const run = {
+    runId: '58c6210a-76d3-4ae2-8910-a36a87005794',
+    status: 'completed',
+    counts: { selected: 100 },
+    cost: { jevCalls: 96 },
+  } as TriageRunSnapshot
+
+  it('advances the immutable worklist offset once per completed run', () => {
+    const next = nextTriageBatch(plan, run)
+    expect(next).toMatchObject({ offset: 100, calls: 96, lastRunId: run.runId })
+    if (next === null) throw new Error('Expected next batch')
+    expect(nextTriageBatch(next, run)).toBeNull()
+  })
+
+  it.each(['queued', 'running', 'stopped', 'partial', 'failed', 'interrupted'] as const)(
+    'does not advance after %s',
+    (status) => {
+      expect(nextTriageBatch(plan, { ...run, status })).toBeNull()
     },
   )
 })

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useRef, useState, type ComponentProps, type RefObject } from 'react'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { EmptyState } from '../components/molecules/EmptyState/EmptyState'
 import { LocalStatusToast } from '../components/molecules/LocalStatusToast/LocalStatusToast'
@@ -7,19 +7,11 @@ import { connectionView } from '../components/pages/ConnectionPage/connection'
 import { useReconnect } from '../components/pages/ConnectionPage/useReconnect'
 import { WorkbenchPage } from '../components/pages/WorkbenchPage/WorkbenchPage'
 import { syncScopeLabel } from '../components/pages/WorkbenchPage/scope'
-import { InboxZeroStatusBar } from '../components/molecules/InboxZeroStatusBar/InboxZeroStatusBar'
-import { InboxLoadOlder, InboxViewBar } from '../components/molecules/InboxViewBar/InboxViewBar'
-import { useInboxReadFocus, type InboxReadFocus } from '../app/inbox-read-focus'
-import {
-  coverageFromInboxScope,
-  readWithCoverage,
-  readWithStart,
-  startedAtForRequest,
-} from '../app/inbox-coverage-adapter'
-import { failedCoverage, inboxCoverage, type InboxCoverage } from '../app/inbox-coverage'
+import { useInboxReadFocus } from '../app/inbox-read-focus'
+import { readWithStart } from '../app/inbox-coverage-adapter'
 import { ReviewDesk, type DeskReason, type DeskView } from '../app/review-desk'
 import type { DeskDiscovery, DeskRefresh } from '../app/review-desk'
-import type { InboxDiscoveryRequest, InboxListRequest } from '../app/live-inbox'
+import type { InboxDiscoveryRequest, InboxScope } from '../app/live-inbox'
 import { useTriageRunController } from '../app/triage-run-client'
 import { mailboxReachItems } from '../app/mailbox-reach'
 import { refreshNotice } from '../app/refresh-notice'
@@ -132,11 +124,11 @@ type PageProps = Readonly<{
   root: RefObject<HTMLDivElement | null>
   onReady: () => Promise<void>
   onRefresh: () => Promise<void>
-  onChange: (request: InboxListRequest) => Promise<void>
   discovery: DeskDiscovery | undefined
   onSearch: (request: InboxDiscoveryRequest) => Promise<void>
   onClearSearch: () => void
-  coverage: InboxCoverage | undefined
+  scanning: boolean
+  scanError: boolean
   loading: boolean
   triage: ReturnType<typeof useTriageRunController>
   onRecordWork: (request: WorkDecisionRequest) => ReturnType<typeof ReviewDesk.recordWork>
@@ -165,14 +157,19 @@ function EmptyInbox({ onRefresh, loading }: Pick<PageProps, 'onRefresh' | 'loadi
  * What the Inbox Zero scan proved about the selected view, for the worklist's
  * counts. Without a scan nothing is proved, so counts are of loaded rows.
  */
-function worklistCoverage(coverage: InboxCoverage | undefined, view: InboxListRequest['view']) {
-  if (coverage === undefined) return undefined
-  return { result: coverage[view === 'unread' ? 'unread' : 'read'].result }
+function scanComplete(scope: InboxScope, scanError = false) {
+  return (
+    !scanError &&
+    !scope.bounded &&
+    scope.failed.length === 0 &&
+    (scope.incomplete?.length ?? 0) === 0 &&
+    scope.mailboxes.length === scope.readable
+  )
 }
 
 function continueDiscovery(
   found: Extract<DeskDiscovery, { status: 'ready' }> | undefined,
-  view: InboxListRequest['view'],
+  view: InboxDiscoveryRequest['view'],
   onSearch: PageProps['onSearch'],
 ) {
   if (found) void onSearch({ view, query: found.scope.query, cursor: found.scope.cursor })
@@ -187,45 +184,134 @@ async function checkReviewAndRefresh(
   return result
 }
 
-function CoverageStatus({
-  coverage,
-  loading,
-}: Readonly<{ coverage: InboxCoverage | undefined; loading: boolean }>) {
-  if (!coverage) return null
-  return <InboxZeroStatusBar coverage={coverage} refreshing={loading} compact />
+function ScanStatus({
+  scope,
+  scanning,
+  scanError,
+}: Readonly<{ scope: InboxScope; scanning: boolean; scanError: boolean }>) {
+  const failed = scope.failed.length + (scope.incomplete?.length ?? 0)
+  const complete = scope.mailboxes.filter(
+    (mailbox) =>
+      !mailbox.bounded &&
+      !scope.failed.some(({ id }) => id === mailbox.id) &&
+      !scope.incomplete?.some(({ id }) => id === mailbox.id),
+  ).length
+  const label = scanning
+    ? 'Scanning full Inbox'
+    : scanComplete(scope, scanError)
+      ? 'Full Inbox scanned'
+      : 'Inbox scan incomplete'
+  return (
+    <p className="inbox-view__note" role="status">
+      {label} · {String(scope.loaded)} loaded · {String(complete)}/{String(scope.readable)}{' '}
+      mailboxes complete
+      {failed > 0 ? ` · ${String(failed)} failed or incomplete` : ''}
+      {scanning ? ' · Search covers the loaded rows until scanning finishes' : ''}
+    </p>
+  )
+}
+
+function discoveryFor(
+  inbox: ReadyDesk,
+  discovery: DeskDiscovery | undefined,
+  loading: boolean,
+  onSearch: PageProps['onSearch'],
+  onClearSearch: PageProps['onClearSearch'],
+): NonNullable<ComponentProps<typeof WorkbenchPage>['discovery']> {
+  const found = discovery?.status === 'ready' ? discovery : undefined
+  const view = inbox.scope.view
+  return {
+    scope: found?.scope,
+    ...(discovery?.status === 'unavailable' && {
+      error: 'Search unavailable. The loaded selection is still shown.',
+    }),
+    loading,
+    resetKey: inbox.reading,
+    onSearch: (query) => void onSearch({ view, query }),
+    onContinue: () => {
+      continueDiscovery(found, view, onSearch)
+    },
+    onClear: onClearSearch,
+  }
+}
+
+function triageFor(
+  inbox: ReadyDesk,
+  scanError: boolean,
+  triage: PageProps['triage'],
+): NonNullable<ComponentProps<typeof WorkbenchPage>['triage']> {
+  return {
+    worklistSize: scanComplete(inbox.scope, scanError) ? inbox.messages.length : 0,
+    state: triage.state,
+    batch: triage.batch,
+    onStart: (limits) => void triage.start(limits),
+    onResume: () => void triage.resume(),
+    onRead: () => void triage.read(),
+    onStop: () => void triage.stop(),
+    onRestart: () => void triage.restart(),
+    onForget: triage.forget,
+  }
+}
+
+function actionProps(
+  reread: () => void,
+  refresh: () => void,
+  syncLabel: string,
+  loading: boolean,
+  batchRunning: boolean,
+  onRecordWork: PageProps['onRecordWork'],
+): Pick<
+  ComponentProps<typeof WorkbenchPage>,
+  'completion' | 'review' | 'proposals' | 'recordedWork' | 'topBar'
+> {
+  return {
+    completion: { mode: 'read-only' },
+    review: {
+      mode: 'enabled',
+      onSaveReview: ReviewDesk.review,
+      onCheckReview: (subject) => checkReviewAndRefresh(subject, reread),
+    },
+    proposals: {
+      mode: 'enabled',
+      approver: 'you, at this computer',
+      onApprove: ReviewDesk.approveDone,
+      onExecute: ReviewDesk.executeDone,
+      onConfirmed: reread,
+    },
+    recordedWork: { onRecord: onRecordWork },
+    topBar: {
+      syncStatus: 'connected',
+      syncLabel,
+      syncActionLabel: `Refresh mail · ${syncLabel}`,
+      onSyncClick: refresh,
+      syncDisabled: loading || batchRunning,
+      ...profile,
+    },
+  }
 }
 
 function LoadedPage({
   inbox,
   root,
   onRefresh,
-  onChange,
   discovery,
   onSearch,
   onClearSearch,
-  coverage,
+  scanning,
+  scanError,
   loading,
   triage,
   onRecordWork,
 }: LoadedPageProps) {
   const rememberReadFocus = useInboxReadFocus(root, loading)
   const reread = () => {
-    if (!loading) void onRefresh()
+    if (!loading && triage.batch?.status !== 'running') void onRefresh()
   }
   const refresh = () => {
     rememberReadFocus('refresh')
     reread()
   }
-  const change = (request: InboxListRequest, focus: InboxReadFocus) => {
-    rememberReadFocus(focus)
-    return onChange(request)
-  }
-  // It names what was refreshed: the loaded selection, not a whole mailbox,
-  // and whether a mailbox could not be read, because Refresh is what reads
-  // them all again. A reading that lost a mailbox keeps the rest, so the
-  // retry is global but costs no mail that did arrive.
   const syncLabel = syncScopeLabel(inbox.scope)
-  const { view } = inbox.scope
   const found = discovery?.status === 'ready' ? discovery : undefined
   const shown = found ?? inbox
   const refreshSummary = 'refresh' in inbox ? inbox.refresh : undefined
@@ -234,7 +320,7 @@ function LoadedPage({
     <div ref={root} className="app-root app-root--inbox">
       <div className="inbox-view__workbench">
         <WorkbenchPage
-          key={view}
+          key={inbox.scope.view}
           messages={shown.messages}
           classifications={{
             reading: shown.reading,
@@ -246,78 +332,22 @@ function LoadedPage({
           mailboxes={shown.mailboxes}
           mailboxReach={{ items: reach, onRetry: reread }}
           scope={inbox.scope}
-          worklist={{ coverage: worklistCoverage(coverage, view) }}
-          discovery={{
-            scope: found?.scope,
-            ...(discovery?.status === 'unavailable' && {
-              error: 'Search unavailable. The loaded selection is still shown.',
-            }),
-            loading,
-            resetKey: inbox.reading,
-            onSearch: (query) => {
-              void onSearch({ view, query })
-            },
-            onContinue: () => {
-              continueDiscovery(found, view, onSearch)
-            },
-            onClear: onClearSearch,
+          worklist={{
+            coverage: { result: scanComplete(inbox.scope, scanError) ? 'complete' : 'incomplete' },
           }}
+          discovery={discoveryFor(inbox, discovery, loading, onSearch, onClearSearch)}
           queueControls={
-            <>
-              <InboxViewBar scope={inbox.scope} loading={loading} onChange={change} compact />
-              <CoverageStatus coverage={coverage} loading={loading} />
-            </>
+            <ScanStatus scope={inbox.scope} scanning={scanning} scanError={scanError} />
           }
-          queueFooter={
-            <InboxLoadOlder
-              scope={inbox.scope}
-              loading={loading}
-              onChange={change}
-              searchActive={Boolean(found)}
-            />
-          }
-          triage={{
-            worklistSize: inbox.messages.length,
-            state: triage.state,
-            onStart: (limits) => {
-              void triage.start(limits)
-            },
-            onResume: () => {
-              void triage.resume()
-            },
-            onRead: () => {
-              void triage.read()
-            },
-            onStop: () => {
-              void triage.stop()
-            },
-            onRestart: () => {
-              void triage.restart()
-            },
-            onForget: triage.forget,
-          }}
-          completion={{ mode: 'read-only' }}
-          review={{
-            mode: 'enabled',
-            onSaveReview: ReviewDesk.review,
-            onCheckReview: (subject) => checkReviewAndRefresh(subject, reread),
-          }}
-          proposals={{
-            mode: 'enabled',
-            approver: 'you, at this computer',
-            onApprove: ReviewDesk.approveDone,
-            onExecute: ReviewDesk.executeDone,
-            onConfirmed: reread,
-          }}
-          recordedWork={{ onRecord: onRecordWork }}
-          topBar={{
-            syncStatus: 'connected',
+          triage={triageFor(inbox, scanError, triage)}
+          {...actionProps(
+            reread,
+            refresh,
             syncLabel,
-            syncActionLabel: `Refresh mail · ${syncLabel}`,
-            onSyncClick: refresh,
-            syncDisabled: loading,
-            ...profile,
-          }}
+            loading,
+            triage.batch?.status === 'running',
+            onRecordWork,
+          )}
         />
       </div>
     </div>
@@ -337,66 +367,50 @@ function Page(props: PageProps) {
 // store. The separate Done panel may approve and execute one guarded Spark
 // message-ID action when the server kill switch is enabled. Inbox refresh and
 // body reads remain read-only and never start an action.
-const initialCoverage = (initial: DeskView, startedAt: string) =>
-  initial.status === 'ready'
-    ? inboxCoverage(undefined, coverageFromInboxScope(initial.scope, startedAt))
-    : undefined
-
-function coverageUpdate(
-  result: DeskView | DeskRefresh,
-  view: InboxListRequest['view'],
-  startedAt: string,
-  finishedAt: string,
-) {
-  return result.status === 'ready'
-    ? coverageFromInboxScope(result.scope, startedAt)
-    : failedCoverage(view, startedAt, finishedAt)
-}
-
-function useDeskReading(initial: DeskView, initialStartedAt: string) {
+function useDeskReading(initial: DeskView) {
   const [inbox, setInbox] = useState<DeskView | DeskRefresh>(initial)
   const [discovery, setDiscovery] = useState<DeskDiscovery>()
-  const [coverage, setCoverage] = useState<InboxCoverage | undefined>(() =>
-    initialCoverage(initial, initialStartedAt),
-  )
   const [loading, setLoading] = useState(false)
-  const request = useRef<InboxListRequest>({ view: 'unread' })
+  const [scanning, setScanning] = useState(false)
+  const scanningRef = useRef(false)
+  const [scanError, setScanError] = useState(false)
   const sequence = useRef(0)
-  const read = async (next: InboxListRequest) => {
+  const scan = async (seed?: DeskView) => {
     const current = ++sequence.current
-    const startedAt = startedAtForRequest(coverage, next, new Date().toISOString())
-    request.current = next
     setDiscovery(undefined)
     setLoading(true)
-    const result = await readWithCoverage(
-      next.view,
-      startedAt,
-      () => ReviewDesk.open(next),
-      (value, finishedAt) => coverageUpdate(value, next.view, startedAt, finishedAt),
-    )
-    if (current === sequence.current) {
-      if (result.status === 'ready') setInbox(result.value)
-      setCoverage((previous) => inboxCoverage(previous, result.update))
-      setLoading(false)
+    setScanning(true)
+    scanningRef.current = true
+    setScanError(false)
+    try {
+      let value = seed ?? (await ReviewDesk.open({ view: 'all' }))
+      while (current === sequence.current && value.status === 'ready') {
+        setInbox(value)
+        if (scanInterrupted(value.scope)) break
+        value = await ReviewDesk.open({ view: 'all', cursor: value.scope.cursor })
+      }
+      if (current === sequence.current) setScanError(value.status === 'unavailable')
+    } catch {
+      if (current === sequence.current) setScanError(true)
+    } finally {
+      if (current === sequence.current) {
+        scanningRef.current = false
+        setScanning(false)
+        setLoading(false)
+      }
     }
   }
-  const refresh = async () => {
-    const current = ++sequence.current
-    const view = inbox.status === 'ready' ? inbox.scope.view : request.current.view
-    const startedAt = new Date().toISOString()
-    setDiscovery(undefined)
-    setLoading(true)
-    const value = await ReviewDesk.refresh({ view })
-    const finishedAt = new Date().toISOString()
-    if (current === sequence.current) {
-      if (value.status === 'ready') setInbox(value)
-      setCoverage((previous) =>
-        inboxCoverage(previous, coverageUpdate(value, view, startedAt, finishedAt)),
-      )
-      setLoading(false)
+  useEffect(() => {
+    const scheduled = sequence.current
+    queueMicrotask(() => {
+      if (initial.status === 'ready' && scheduled === sequence.current) void scan(initial)
+    })
+    return () => {
+      sequence.current += 1
     }
-  }
+  }, [initial])
   const search = async (next: InboxDiscoveryRequest) => {
+    if (scanningRef.current) return
     const current = ++sequence.current
     setLoading(true)
     const value = await ReviewDesk.search(next)
@@ -408,24 +422,27 @@ function useDeskReading(initial: DeskView, initialStartedAt: string) {
   return {
     inbox,
     discovery,
-    coverage,
+    scanning,
+    scanError,
     loading,
-    read,
-    refresh,
+    read: () => scan(),
+    refresh: () => scan(),
     search,
     clearSearch: () => {
       setDiscovery(undefined)
     },
-    request,
   } as const
+}
+
+function scanInterrupted(scope: Extract<DeskView, { status: 'ready' }>['scope']) {
+  return !scope.bounded || Boolean(scope.failed.length || scope.incomplete?.length)
 }
 
 function loadedMessageSummary(inbox: DeskView | DeskRefresh) {
   const count = inbox.status === 'ready' ? inbox.messages.length : 0
-  const kind = inbox.status === 'ready' && inbox.scope.view === 'other' ? 'read' : 'unread'
   return {
     count,
-    label: `${String(count)} ${kind} ${count === 1 ? 'message' : 'messages'}`,
+    label: `${String(count)} Inbox ${count === 1 ? 'message' : 'messages'}`,
   } as const
 }
 
@@ -567,15 +584,23 @@ function OpenWorkPane({
   )
 }
 
+function useReadyTriage(inbox: DeskView | DeskRefresh, scanError: boolean) {
+  const ready = inbox.status === 'ready' && scanComplete(inbox.scope, scanError)
+  return useTriageRunController({
+    reading: ready ? inbox.reading : undefined,
+    worklistSize: ready ? inbox.messages.length : 0,
+    gateway: triageGateway,
+  })
+}
+
 function InboxHome({
   onRecordWork,
 }: Readonly<{
   onRecordWork: (request: WorkDecisionRequest) => ReturnType<typeof ReviewDesk.recordWork>
 }>) {
-  const initialRead = Route.useLoaderData()
-  const initial = initialRead.value
-  const { inbox, discovery, coverage, loading, read, refresh, search, clearSearch, request } =
-    useDeskReading(initial, initialRead.startedAt)
+  const initial = Route.useLoaderData().value
+  const { inbox, discovery, scanning, scanError, loading, read, refresh, search, clearSearch } =
+    useDeskReading(initial)
   const root = useRef<HTMLDivElement>(null)
   // Set once Spark answered after the page waited, so the inbox says so.
   const [waited, setWaited] = useState(false)
@@ -584,29 +609,31 @@ function InboxHome({
   const refreshed = inbox.status === 'ready' && 'refresh' in inbox ? inbox.refresh : undefined
   const [dismissedRefresh, setDismissedRefresh] = useState<string>()
   const refreshedNotice = refreshed && refreshNotice(refreshed)
-  const triage = useTriageRunController({
-    reading: inbox.status === 'ready' ? inbox.reading : undefined,
-    gateway: triageGateway,
-  })
+  const triage = useReadyTriage(inbox, scanError)
+  const onReady = () => {
+    setWaited(true)
+    notice.reset()
+    return read()
+  }
+  const onRefresh = () => {
+    notice.hide()
+    return refresh()
+  }
+  const onDismissRefresh = () => {
+    if (refreshed) setDismissedRefresh(refreshed.refreshedAt)
+  }
   return (
     <>
       <Page
         inbox={inbox}
         root={root}
-        onReady={() => {
-          setWaited(true)
-          notice.reset()
-          return read({ view: request.current.view })
-        }}
-        onRefresh={() => {
-          notice.hide()
-          return refresh()
-        }}
-        onChange={read}
+        onReady={onReady}
+        onRefresh={onRefresh}
         discovery={discovery}
         onSearch={search}
         onClearSearch={clearSearch}
-        coverage={coverage}
+        scanning={scanning}
+        scanError={scanError}
         loading={loading}
         triage={triage}
         onRecordWork={onRecordWork}
@@ -623,9 +650,7 @@ function InboxHome({
         title={refreshedNotice?.title}
         detail={refreshedNotice?.detail}
         dismissLabel="Dismiss"
-        onDismiss={() => {
-          if (refreshed) setDismissedRefresh(refreshed.refreshedAt)
-        }}
+        onDismiss={onDismissRefresh}
       />
     </>
   )

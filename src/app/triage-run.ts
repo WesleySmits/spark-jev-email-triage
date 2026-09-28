@@ -16,7 +16,11 @@ const limitsSchema = z.strictObject({
 export const triageRunStartSchema = z.strictObject({
   requestId: z.uuid(),
   scope: z.discriminatedUnion('kind', [
-    z.strictObject({ kind: z.literal('worklist'), reading: z.uuid() }),
+    z.strictObject({
+      kind: z.literal('worklist'),
+      reading: z.uuid(),
+      offset: z.int().nonnegative().optional(),
+    }),
     z.strictObject({ kind: z.literal('mailbox'), mailbox: z.email() }),
   ]),
   limits: limitsSchema,

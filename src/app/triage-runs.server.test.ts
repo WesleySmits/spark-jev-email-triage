@@ -109,6 +109,19 @@ const worklistStart = {
 }
 
 describe('manual Jev run server', () => {
+  it('starts a later worklist batch at its exact offset without selecting earlier copies', async () => {
+    const { service, calls } = harness()
+    const started = await service.start({
+      ...worklistStart,
+      scope: { kind: 'worklist', reading, offset: 2 },
+      limits: { maxMessages: 100, maxJevCalls: 100 },
+    })
+    if (started.status !== 'accepted') throw new Error('Expected accepted later batch')
+    await service.settled(started.run.runId)
+    expect(started.run.items.map(({ messageId }) => messageId)).toEqual(['4003'])
+    expect(calls).toEqual(['thread-4003'])
+  })
+
   it('does nothing until an explicit bounded start and reports price as unavailable', async () => {
     const { service, calls } = harness()
 
