@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
+import type { BatchProgress } from '../../../app/triage-run-client'
 import type { TriageRunSnapshot } from '../../../app/triage-run'
 import { TriageRunControl } from './TriageRunControl'
 
@@ -133,7 +134,7 @@ export const RestoringReadback: Story = {
     const canvas = await openModal(canvasElement)
     await expect(canvas.getByText(/No Jev work is started/)).toBeVisible()
     await expect(args.onStart).not.toHaveBeenCalled()
-    await expect(canvas.queryByRole('button', { name: 'Start Jev triage' })).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'Start Jev-triage' })).not.toBeInTheDocument()
   },
 }
 
@@ -144,7 +145,7 @@ export const Running: Story = {
     await expect(canvas.getByRole('progressbar', { name: 'Jev triage progress' })).toHaveValue(5)
     await userEvent.click(canvas.getByRole('button', { name: 'Veilig stoppen' }))
     await expect(args.onStop).toHaveBeenCalledOnce()
-    await expect(canvas.queryByRole('button', { name: 'Start Jev triage' })).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'Start Jev-triage' })).not.toBeInTheDocument()
   },
 }
 
@@ -187,6 +188,21 @@ export const PartialProviderFailure: Story = {
   },
 }
 
+const exampleCampaign: BatchProgress = {
+  total: 1_254,
+  processed: 400,
+  calls: 303,
+  maxCalls: 1_254,
+  inputTokens: 657_609,
+  classified: 303,
+  alreadyCurrent: 45,
+  duplicate: 51,
+  readErrors: 1,
+  retryableReadErrors: 1,
+  otherErrors: 0,
+  status: 'paused',
+}
+
 /** Fictional campaign evidence for the selected recovery modal. */
 export const PausedCampaign: Story = {
   args: {
@@ -203,20 +219,7 @@ export const PausedCampaign: Story = {
         ],
       },
     },
-    batch: {
-      total: 1_254,
-      processed: 400,
-      calls: 303,
-      maxCalls: 1_254,
-      inputTokens: 657_609,
-      classified: 303,
-      alreadyCurrent: 45,
-      duplicate: 51,
-      readErrors: 1,
-      retryableReadErrors: 1,
-      otherErrors: 0,
-      status: 'paused',
-    },
+    batch: exampleCampaign,
   },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
@@ -227,6 +230,30 @@ export const PausedCampaign: Story = {
       canvas.getByRole('button', { name: 'Probeer leesfout opnieuw en ga verder' }),
     )
     await expect(args.onContinue).toHaveBeenCalledOnce()
+  },
+}
+
+export const StoppedCampaign: Story = {
+  args: {
+    state: { phase: 'run', run: { ...completed, status: 'stopped' } },
+    batch: exampleCampaign,
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: /Jev-triage · 400\/1\.254/ }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Nieuwe triage voorbereiden' }))
+    await expect(args.onResetCampaign).toHaveBeenCalledOnce()
+  },
+}
+
+export const AbsentCampaign: Story = {
+  args: { state: { phase: 'absent', runId }, batch: exampleCampaign },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: /Jev-triage · 400\/1\.254/ }))
+    await expect(canvas.getByRole('button', { name: 'Lees run opnieuw' })).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: 'Nieuwe triage voorbereiden' }))
+    await expect(args.onResetCampaign).toHaveBeenCalledOnce()
   },
 }
 
@@ -247,7 +274,7 @@ export const UncertainStart: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = await openModal(canvasElement)
     await expect(canvas.getByRole('status')).toHaveTextContent(/same request/)
-    await expect(canvas.queryByRole('button', { name: 'Start Jev triage' })).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'Start Jev-triage' })).not.toBeInTheDocument()
     await userEvent.click(canvas.getByRole('button', { name: 'Controleer dezelfde aanvraag' }))
     await expect(args.onResume).toHaveBeenCalledOnce()
   },
@@ -259,8 +286,8 @@ export const ReadbackUnavailable: Story = {
     const canvas = await openModal(canvasElement)
     await expect(canvas.getByRole('status')).toHaveTextContent(/saved run ID is kept/)
     await expect(canvas.getByRole('button', { name: 'Lees run opnieuw' })).toBeVisible()
-    await expect(canvas.queryByRole('button', { name: 'Stop safely' })).not.toBeInTheDocument()
-    await expect(canvas.queryByRole('button', { name: 'Start Jev triage' })).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'Veilig stoppen' })).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'Start Jev-triage' })).not.toBeInTheDocument()
   },
 }
 

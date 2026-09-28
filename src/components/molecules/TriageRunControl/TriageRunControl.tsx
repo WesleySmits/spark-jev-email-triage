@@ -380,16 +380,31 @@ function ReadbackButton({ onRead, busy }: Readonly<{ onRead: () => void; busy: b
 
 function SafetyAction({
   state,
+  batch,
   onResume,
   onRead,
   onStop,
-}: Pick<RunActionsProps, 'state' | 'onResume' | 'onRead' | 'onStop'>) {
+  onResetCampaign,
+}: Pick<
+  RunActionsProps,
+  'state' | 'batch' | 'onResume' | 'onRead' | 'onStop' | 'onResetCampaign'
+>) {
   const busy = isBusy(state)
   if (isUncertain(state)) {
     return (
       <div className="triage-run__actions">
         <Button onClick={onResume} disabled={busy}>
           Controleer dezelfde aanvraag
+        </Button>
+      </div>
+    )
+  }
+  if (state.phase === 'absent' && batch) {
+    return (
+      <div className="triage-run__actions">
+        <ReadbackButton onRead={onRead} busy={busy} />
+        <Button variant="secondary" onClick={onResetCampaign}>
+          Nieuwe triage voorbereiden
         </Button>
       </div>
     )
@@ -478,14 +493,26 @@ function canResetCampaign(state: TriageClientState, batch: BatchProgress | undef
   if (!batch || state.phase !== 'run') return false
   const exhausted = batch.calls >= batch.maxCalls
   const done = batch.processed >= batch.total && batch.retryableReadErrors === 0
-  return batch.status === 'completed' || exhausted || done
+  const endedWithoutContinuation = ['stopped', 'failed', 'interrupted'].includes(
+    state.run?.status ?? '',
+  )
+  return batch.status === 'completed' || exhausted || done || endedWithoutContinuation
 }
 
 function RunActions(props: RunActionsProps) {
   const { state, batch, onContinue, onSkipFailed, onResetCampaign, onResume, onRead, onStop } =
     props
   if (hasSafetyAction(state)) {
-    return <SafetyAction state={state} onResume={onResume} onRead={onRead} onStop={onStop} />
+    return (
+      <SafetyAction
+        state={state}
+        batch={batch}
+        onResume={onResume}
+        onRead={onRead}
+        onStop={onStop}
+        onResetCampaign={onResetCampaign}
+      />
+    )
   }
   if (batch && canContinueCampaign(state, batch)) {
     return (
