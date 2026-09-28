@@ -86,6 +86,9 @@ const completedTriageControl = () => ({
   worklistSize: messages.length,
   state: { phase: 'run' as const, run: completedTriageRun },
   onStart: fn(),
+  onContinue: fn(),
+  onSkipFailed: fn(),
+  onResetCampaign: fn(),
   onResume: fn(),
   onRead: fn(),
   onStop: fn(),
@@ -417,7 +420,7 @@ export const Desktop: Story = {
   },
 }
 
-/** The selected Compact workbench with durable Jev result evidence in its queue header. */
+/** The selected Compact workbench keeps one Jev trigger above the queue. */
 export const ManualJevRun: Story = {
   globals: { viewport: { value: 'desktop', isRotated: false } },
   args: {
@@ -426,9 +429,10 @@ export const ManualJevRun: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const queue = canvas.getByRole('region', { name: 'Needs review' })
-    await expect(within(queue).getByRole('region', { name: 'Jev triage run' })).toBeVisible()
-    await expect(within(queue).getByText('Completed')).toBeVisible()
     await expect(canvas.getByRole('main')).toBeVisible()
+    await userEvent.click(within(queue).getByRole('button', { name: 'Run Jev' }))
+    await userEvent.click(canvas.getByText('Verbruik en technische details'))
+    await expect(canvas.getByText('Completed')).toBeVisible()
   },
 }
 
@@ -516,7 +520,7 @@ export const MailboxReachDiscovery: Story = {
     )
     await expect(canvas.getByRole('heading', { name: 'Mailbox reach' })).toBeVisible()
     await expect(canvas.queryByRole('navigation', { name: 'Mailboxes' })).toBeNull()
-    await expect(canvas.getByRole('region', { name: 'Jev triage run' })).toBeVisible()
+    await expect(canvas.getByRole('button', { name: 'Run Jev' })).toBeVisible()
 
     const search = canvas.getByRole('searchbox', { name: 'Search sender and subject' })
     await userEvent.type(search, 'cedar')
@@ -846,7 +850,7 @@ export const IncrementalRefreshKeepsSelection: Story = {
 
     await expect(subject(canvasElement)).toHaveTextContent('Move Friday dinner?')
     await expect(canvas.getByRole('searchbox')).toHaveValue('')
-    await expect(canvas.getByRole('region', { name: 'Jev triage run' })).toBeVisible()
+    await expect(canvas.getByRole('button', { name: 'Run Jev' })).toBeVisible()
     await userEvent.click(canvas.getByText('Details', { exact: true }))
     await expect(canvas.getByText('Last refreshed 09:47.')).toBeVisible()
   },

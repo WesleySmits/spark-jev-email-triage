@@ -1,13 +1,106 @@
-/* Manual Jev run evidence inside the Compact workbench queue header. It uses
- * the existing strip, badge, token and control patterns; it is not a card or
- * a second navigation surface. */
+/* The queue keeps one trigger; campaign progress and run evidence live in a modal. */
+.triage-run-trigger {
+  margin-top: var(--s2);
+}
+
 .triage-run {
-  min-width: 0;
-  margin-top: var(--s3);
-  padding-top: var(--s3);
-  border-top: 1px solid var(--line);
+  box-sizing: border-box;
+  width: min(100% - 32px, 570px);
+  max-height: min(88dvh, 760px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 20%);
   color: var(--ink-soft);
   font: var(--text-ui);
+}
+
+.triage-run::backdrop {
+  background: rgb(13 21 32 / 55%);
+}
+
+.triage-run__body {
+  overflow: auto;
+  max-height: calc(88dvh - 130px);
+  padding: var(--s4);
+}
+
+.triage-run > .triage-run__head,
+.triage-run__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--line);
+}
+
+.triage-run__footer {
+  justify-content: flex-end;
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+}
+
+.triage-run > .triage-run__head h2 {
+  margin: 0;
+  color: var(--ink);
+  font: var(--text-control);
+}
+
+.triage-run__close {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: var(--text-control);
+  cursor: pointer;
+}
+
+.triage-run__eyebrow {
+  color: var(--attention);
+  font: var(--text-overline);
+  text-transform: uppercase;
+}
+
+.triage-run__campaign h3 {
+  margin: var(--s2) 0;
+  color: var(--ink);
+  font: var(--text-reader-title);
+}
+
+.triage-run__issue {
+  margin-top: var(--s3);
+  padding: var(--s3);
+  border-left: 3px solid var(--attention-line);
+  background: var(--attention-soft);
+}
+
+.triage-run__issue p {
+  margin: var(--s1) 0 0;
+}
+
+.triage-run__stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s2);
+  margin: var(--s4) 0;
+}
+
+.triage-run__stats div {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--s1);
+}
+
+.triage-run__stats dt {
+  color: var(--muted);
+  font: var(--text-meta);
+}
+
+.triage-run__stats dd {
+  margin: 0;
+  color: var(--ink);
+  font: var(--text-control);
+  font-variant-numeric: tabular-nums;
 }
 
 .triage-run__head,
@@ -182,7 +275,8 @@
 }
 
 @media (max-width: 360px) {
-  .triage-run__facts {
+  .triage-run__facts,
+  .triage-run__stats {
     grid-template-columns: minmax(0, 1fr);
   }
 }

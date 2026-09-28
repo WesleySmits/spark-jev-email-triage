@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  batchOutcome,
   isActiveTriageRun,
   nextTriageBatch,
+  restoreCampaign,
+  restoredCampaignProgress,
   restoreTriageSession,
   saveTriageSession,
+  skipFailedReads,
   triageStateAfterReadback,
 } from './triage-run-client'
 import type { TriageRunSnapshot } from './triage-run'
@@ -110,12 +114,20 @@ describe('explicit full Inbox batch progression', () => {
     offset: 0,
     calls: 0,
     maxCalls: 205,
+    inputTokens: 0,
+    classified: 0,
+    alreadyCurrent: 0,
+    duplicate: 0,
+    readErrors: 0,
+    otherErrors: 0,
+    retryOffsets: [],
+    retrying: false,
   }
   const run = {
     runId: '58c6210a-76d3-4ae2-8910-a36a87005794',
     status: 'completed',
     counts: { selected: 100 },
-    cost: { jevCalls: 96 },
+    cost: { jevCalls: 96, inputTokens: 10_000 },
   } as TriageRunSnapshot
 
   it('advances the immutable worklist offset once per completed run', () => {
@@ -131,4 +143,81 @@ describe('explicit full Inbox batch progression', () => {
       expect(nextTriageBatch(plan, { ...run, status })).toBeNull()
     },
   )
+
+  it('counts a partial fourth batch and retries only its Spark read error', () => {
+    const statuses = [
+      ...Array.from({ length: 87 }, () => ({ status: 'classified' as const })),
+      ...Array.from({ length: 10 }, () => ({ status: 'already_current' as const })),
+      ...Array.from({ length: 2 }, () => ({ status: 'duplicate' as const })),
+      { status: 'read_error' as const },
+    ]
+    const items = statuses.map((item, index) => ({
+      ...item,
+      mailbox: 'mailbox-1',
+      messageId: String(index),
+    }))
+    const partial = {
+      ...run,
+      status: 'partial',
+      counts: { ...run.counts, selected: 100 },
+      cost: { ...run.cost, jevCalls: 87, inputTokens: 20_000 },
+      items,
+    } as TriageRunSnapshot
+    const previous = { ...plan, total: 1_254, offset: 300, calls: 216 }
+    const outcome = batchOutcome(previous, partial)
+    expect(outcome).toMatchObject({
+      progress: {
+        processed: 400,
+        calls: 303,
+        classified: 87,
+        alreadyCurrent: 10,
+        duplicate: 2,
+        readErrors: 1,
+        status: 'paused',
+      },
+      plan: { offset: 400, retryOffsets: [399] },
+      continueAutomatically: false,
+    })
+    if (outcome === null) throw new Error('Expected partial outcome')
+    expect(batchOutcome(outcome.plan, partial)).toBeNull()
+    const retry = {
+      ...partial,
+      runId: '0aa681c5-c3b3-430d-b93c-a5413341a091',
+      status: 'completed',
+      counts: { ...partial.counts, selected: 1 },
+      cost: { ...partial.cost, jevCalls: 1, inputTokens: 300 },
+      items: [{ mailbox: 'mailbox-1', messageId: '99', status: 'classified' }],
+    } as TriageRunSnapshot
+    const recovered = batchOutcome({ ...outcome.plan, retrying: true }, retry)
+    expect(recovered).toMatchObject({
+      plan: { offset: 400, retryOffsets: [], readErrors: 0 },
+      progress: { processed: 400, readErrors: 0 },
+    })
+    const failedRetry = batchOutcome(
+      { ...outcome.plan, retrying: true },
+      {
+        ...retry,
+        status: 'partial',
+        items: [{ mailbox: 'mailbox-1', messageId: '99', status: 'read_error' }],
+      },
+    )
+    expect(failedRetry).toMatchObject({
+      plan: { offset: 400, retryOffsets: [399], readErrors: 1 },
+      progress: { processed: 400, readErrors: 1, status: 'paused' },
+    })
+    expect(skipFailedReads(outcome.plan)).toMatchObject({
+      offset: 400,
+      readErrors: 1,
+      retryOffsets: [],
+    })
+  })
+
+  it('restores campaign progress paused without a new start request', () => {
+    const saved = restoreCampaign(
+      memoryStorage(JSON.stringify({ ...plan, offset: 400, readErrors: 1, retryOffsets: [399] })),
+    )
+    expect(saved).not.toBeNull()
+    if (saved === null) throw new Error('Expected saved campaign')
+    expect(restoredCampaignProgress(saved)).toMatchObject({ processed: 400, status: 'paused' })
+  })
 })
