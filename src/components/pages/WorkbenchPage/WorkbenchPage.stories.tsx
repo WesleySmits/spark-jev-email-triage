@@ -787,11 +787,14 @@ function WithIncrementalRefresh(args: Props) {
   )
 }
 
-// The scope line under the queue title, whatever it says.
-const queueScope = (root: HTMLElement) => root.querySelector('.queue-header__scope')
+// The scope details under the queue title, whatever they say.
+const queueScope = (root: HTMLElement) =>
+  root.querySelector('.queue-header__reach, .queue-header__scope')
+const queueScopeSummary = (root: HTMLElement) =>
+  queueScope(root)?.querySelector('summary') ?? queueScope(root)
 
 /**
- * A bounded reading: the queue counts loaded rows, and the scope line under
+ * A bounded reading: the queue counts loaded rows, and the scope details under
  * the title says which mailboxes were loaded, that the bounds may have cut
  * them, that search covers only loaded mail, and when it was last refreshed.
  */
@@ -811,7 +814,7 @@ export const BoundedScope: Story = {
     await expect(line).toHaveTextContent('Older mail was left out of 2 loaded mailboxes')
     await expect(line).toHaveTextContent('Search and filters cover only loaded mail')
     await expect(line).toHaveTextContent('Last refreshed 09:42')
-    await expect(line).toHaveClass('queue-header__scope--bounded')
+    await expect(line).toHaveTextContent('more mail may remain')
     // The search says what it searches, so the field claims no whole mailbox.
     await expect(within(canvasElement).getByRole('searchbox')).toHaveAccessibleName(
       'Search loaded mail',
@@ -844,6 +847,7 @@ export const IncrementalRefreshKeepsSelection: Story = {
     await expect(subject(canvasElement)).toHaveTextContent('Move Friday dinner?')
     await expect(canvas.getByRole('searchbox')).toHaveValue('')
     await expect(canvas.getByRole('region', { name: 'Jev triage run' })).toBeVisible()
+    await userEvent.click(canvas.getByText('Details', { exact: true }))
     await expect(canvas.getByText('Last refreshed 09:47.')).toBeVisible()
   },
 }
@@ -858,7 +862,7 @@ export const BoundedScopeOnMobile: Story = {
   globals: { viewport: { value: 'mobile1', isRotated: false } },
   play: async ({ canvasElement }) => {
     const line = queueScope(canvasElement)
-    await expect(line).toBeVisible()
+    await expect(queueScopeSummary(canvasElement)).toBeVisible()
     await expect(line).toHaveTextContent(
       'Loaded: 24 recent messages from 3 of 5 readable mailboxes',
     )
@@ -904,7 +908,7 @@ export const PartialMailboxFailure: Story = {
     const canvas = within(canvasElement)
     // Scoped to the scope line: the page has other status regions, e.g. the
     // notice toast, and this is the one the reading owns.
-    const announced = canvasElement.querySelector('.queue-header__scope-unread')
+    const announced = canvasElement.querySelector('.queue-header__reach-detail [role="status"]')
     await expect(announced).toHaveAttribute('role', 'status')
     await expect(announced).toHaveTextContent('1 mailbox could not be read')
     // No mail is in the failure: it names the mailbox and nothing it holds.
@@ -1587,8 +1591,8 @@ const rowOrder = (root: HTMLElement) =>
   Array.from(root.querySelectorAll('.message-row__subject')).map((row) => row.textContent)
 
 /**
- * The queue as a worklist: one group per attention state in worklist order,
- * every group counting its rows and saying the count is of loaded rows, and
+ * The queue as a worklist: populated groups in attention order,
+ * each counting its rows and saying the count is of loaded rows, and
  * every row saying who placed it there and on what. G opens the first row of
  * the next group; the reader's evidence strip leads with the same answer.
  * Nothing here classifies, and grouping moves no mail.
@@ -1602,7 +1606,6 @@ export const AttentionWorklist: Story = {
     await expect(groupTitles(canvasElement)).toEqual([
       'Needs review1 of 4 loaded',
       'High priority1 of 4 loaded',
-      'Attention0 of 4 loaded',
       'Not triaged1 of 4 loaded',
       'Informational1 of 4 loaded',
     ])
@@ -1639,6 +1642,7 @@ export const AttentionWorklist: Story = {
 
     // Ungrouped, the rows fall back to newest first, keep their reason lines,
     // and G does nothing; grouping again restores the worklist.
+    await userEvent.click(canvas.getByText('Grouping'))
     const grouping = canvas.getByRole('checkbox', { name: 'Group by attention' })
     await userEvent.click(grouping)
     await expect(groupTitles(canvasElement)).toEqual([])
@@ -1653,17 +1657,11 @@ export const AttentionWorklist: Story = {
     await userEvent.click(row(/Can delivery move/))
     await keysChangeNothing(canvasElement, 'g', row(/Can delivery move/))
     await userEvent.click(grouping)
-    await expect(groupTitles(canvasElement)).toHaveLength(5)
+    await expect(groupTitles(canvasElement)).toHaveLength(4)
 
     // A mailbox filter narrows the rows, and the counts say so.
     await rail(canvasElement, 'Atelier Linden')
-    await expect(groupTitles(canvasElement)).toEqual([
-      'Needs review1 of 1 in this filter',
-      'High priority0 of 1 in this filter',
-      'Attention0 of 1 in this filter',
-      'Not triaged0 of 1 in this filter',
-      'Informational0 of 1 in this filter',
-    ])
+    await expect(groupTitles(canvasElement)).toEqual(['Needs review1 of 1 in this filter'])
     await expect(canvas.queryByRole('button', { name: 'Complete' })).not.toBeInTheDocument()
   },
 }
@@ -1685,11 +1683,8 @@ export const AttentionWorklistWorkflows: Story = {
   },
   play: async ({ canvasElement }) => {
     await expect(groupTitles(canvasElement)).toEqual([
-      'Needs review0 of 2 in this filter',
       'High priority1 of 2 in this filter',
-      'Attention0 of 2 in this filter',
       'Not triaged1 of 2 in this filter',
-      'Informational0 of 2 in this filter',
     ])
   },
 }
@@ -1710,7 +1705,6 @@ export const AttentionWorklistReviewed: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(groupTitles(canvasElement)).toEqual([
-      'Needs review0 of 4 loaded',
       'High priority1 of 4 loaded',
       'Attention1 of 4 loaded',
       'Not triaged1 of 4 loaded',
@@ -1734,7 +1728,7 @@ export const AttentionWorklistMobile: Story = {
   args: { ...worklist, loadBody: fn(provingBodies({})) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(groupTitles(canvasElement)).toHaveLength(5)
+    await expect(groupTitles(canvasElement)).toHaveLength(4)
     await userEvent.click(canvas.getByRole('button', { name: /Move Friday dinner\?/ }))
     await expect(content(canvasElement)).toHaveFocus()
     await expect(canvas.getByText('3 of 4 in Recent mail · Not triaged')).toBeVisible()
@@ -3431,7 +3425,7 @@ export const CompactTabletFilters: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.queryByRole('complementary')).not.toBeInTheDocument()
     // Both panes: the queue's scope line and the reader's body are there.
-    await expect(queueScope(canvasElement)).toBeVisible()
+    await expect(queueScopeSummary(canvasElement)).toBeVisible()
     await bodyShows(canvasElement, 'Hi Wesley,')
 
     // The button opens the sheet from the keyboard, and Tab stays inside it.

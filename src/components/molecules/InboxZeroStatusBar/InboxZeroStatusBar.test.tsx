@@ -13,7 +13,13 @@ function descendants(element: Element): Element[] {
   return ([] as ReactNode[])
     .concat(element.props['children'] as ReactNode)
     .filter(isElement)
-    .flatMap((child) => [child, ...descendants(child)])
+    .flatMap((child) => {
+      if (typeof child.type === 'function') {
+        const rendered = (child.type as (props: Record<string, unknown>) => Element)(child.props)
+        return [rendered, ...descendants(rendered)]
+      }
+      return [child, ...descendants(child)]
+    })
 }
 
 const view = (kind: 'unread' | 'other', loaded = 0) =>
@@ -32,10 +38,21 @@ const view = (kind: 'unread' | 'other', loaded = 0) =>
 function textContent(node: ReactNode): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node)
   if (!isElement(node)) return Array.isArray(node) ? node.map(textContent).join('') : ''
+  if (typeof node.type === 'function') {
+    return textContent((node.type as (props: Record<string, unknown>) => ReactNode)(node.props))
+  }
   return textContent(node.props['children'] as ReactNode)
 }
 
 describe('InboxZeroStatusBar', () => {
+  it('keeps an unknown scan visible in the compact summary', () => {
+    const coverage = inboxCoverage(undefined, view('unread'))
+    const root = InboxZeroStatusBar({ coverage, compact: true }) as Element
+    expect(root.type).toBe('details')
+    expect(textContent(root)).toContain('Inbox Zero unknown')
+    expect(textContent(root)).toContain('Other Inbox is not fully scanned')
+    expect(textContent(root)).not.toContain('Inbox Zero confirmed')
+  })
   it('shows a confirmed zero only for the contract-confirmed state', () => {
     const unread = inboxCoverage(undefined, view('unread'))
     const coverage = inboxCoverage(unread, view('other'))

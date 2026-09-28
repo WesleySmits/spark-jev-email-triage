@@ -52,6 +52,8 @@ type MessageQueueProps = Readonly<{
   selection?: QueueSelection | undefined
   /** Shown instead of the list when `messages` is empty, e.g. an empty state. */
   empty?: ReactNode
+  /** Shown after the rows inside the scrolling region. */
+  footer?: ReactNode
   className?: string | undefined
 }>
 
@@ -86,6 +88,7 @@ export function MessageQueue({
   onOpen,
   selection,
   empty,
+  footer,
   className,
 }: MessageQueueProps) {
   const titleId = useId()
@@ -119,6 +122,7 @@ export function MessageQueue({
             selection={selection}
           />
         )}
+        {footer}
       </div>
     </section>
   )

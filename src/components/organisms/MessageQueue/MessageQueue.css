@@ -33,6 +33,13 @@
   list-style: none;
 }
 
+.message-queue__footer {
+  padding: var(--s2) var(--s3);
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font: var(--text-meta);
+}
+
 /* A grouped worklist: each group is a labelled section with a sticky title,
  * so the group a row is in stays readable while the list scrolls. */
 .message-queue__group-title {

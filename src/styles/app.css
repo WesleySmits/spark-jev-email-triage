@@ -95,6 +95,20 @@ body {
   font: var(--text-meta);
 }
 
+.message-queue__footer button {
+  border: 0;
+  background: transparent;
+  color: var(--accent-ink);
+  padding: var(--s2) 0;
+  cursor: pointer;
+  font: var(--text-control);
+}
+
+.message-queue__footer button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
 :focus-visible {
   outline: var(--focus-width) solid var(--focus);
   outline-offset: var(--focus-offset);

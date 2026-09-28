@@ -33,7 +33,13 @@ export function InboxViewBar({
   scope,
   loading,
   onChange,
-}: Readonly<{ scope: InboxScope; loading: boolean; onChange: ChangeView }>) {
+  compact = false,
+}: Readonly<{
+  scope: InboxScope
+  loading: boolean
+  onChange: ChangeView
+  compact?: boolean | undefined
+}>) {
   const { view } = scope
   const retry = (scope.incomplete?.length ?? 0) > 0
   const canLoad = scope.bounded
@@ -56,12 +62,14 @@ export function InboxViewBar({
           onClick={() => void onChange({ view: 'other' }, 'view-other')}
         />
       </div>
-      <span className="inbox-view__note" role="status">
-        {loading
-          ? 'Loading…'
-          : `Showing ${String(scope.loaded)} loaded ${kind} messages · ${String(scope.readable)} readable mailboxes`}
-      </span>
-      {canLoad && (
+      {!compact && (
+        <span className="inbox-view__note" role="status">
+          {loading
+            ? 'Loading…'
+            : `Showing ${String(scope.loaded)} loaded ${kind} messages · ${String(scope.readable)} readable mailboxes`}
+        </span>
+      )}
+      {!compact && canLoad && (
         <button
           type="button"
           data-inbox-read-focus="load-older"
@@ -72,5 +80,34 @@ export function InboxViewBar({
         </button>
       )}
     </nav>
+  )
+}
+
+/** The next-page action belongs after the loaded rows in a compact queue. */
+export function InboxLoadOlder({
+  scope,
+  loading,
+  onChange,
+  searchActive = false,
+}: Readonly<{
+  scope: InboxScope
+  loading: boolean
+  onChange: ChangeView
+  searchActive?: boolean | undefined
+}>) {
+  if (!scope.bounded || searchActive) return null
+  const kind = scope.view === 'unread' ? 'unread' : 'read'
+  const retry = (scope.incomplete?.length ?? 0) > 0
+  return (
+    <div className="message-queue__footer">
+      <button
+        type="button"
+        data-inbox-read-focus="load-older"
+        disabled={loading}
+        onClick={() => void onChange({ view: scope.view, cursor: scope.cursor }, 'load-older')}
+      >
+        {retry ? 'Retry older' : 'Load older'} {kind} messages
+      </button>
+    </div>
   )
 }

@@ -56,12 +56,66 @@ type QueueHeaderProps = Readonly<{
    * machine-readable time.
    */
   scope?: QueueHeaderScope | undefined
+  /** Keep the reach warning visible while moving its full explanation behind Details. */
+  compactScope?: boolean | undefined
+  scopeCompactLabel?: string | undefined
   /** View controls under the scope, when this queue can load another selection. */
   controls?: ReactNode
   /** One optional action beside the title. The caller owns what it does. */
   action?: QueueHeaderAction | undefined
   className?: string | undefined
 }>
+
+function reachText(scope: QueueHeaderScope) {
+  const warnings = [
+    scope.unread && 'mailbox unavailable',
+    scope.bounded && 'more mail may remain',
+  ].filter(Boolean)
+  return warnings.length > 0 ? warnings.join(' · ') : 'reading complete'
+}
+
+function ScopeDetails({
+  scope,
+  compact,
+  label,
+}: Readonly<{ scope: QueueHeaderScope; compact: boolean; label?: string | undefined }>) {
+  if (compact) {
+    return (
+      <details className="queue-header__reach">
+        <summary>
+          <span className="queue-header__reach-label" role={scope.unread ? 'status' : undefined}>
+            {label ?? scope.summary} · {reachText(scope)}
+          </span>
+          <span className="queue-header__reach-action">Details</span>
+        </summary>
+        <div className="queue-header__reach-detail">
+          <p>{scope.summary}</p>
+          <p>{scope.detail}</p>
+          {scope.unread && <p role="status">{scope.unread}</p>}
+          <time dateTime={scope.refreshed.dateTime}>{scope.refreshed.label}</time>
+        </div>
+      </details>
+    )
+  }
+  return (
+    <p
+      className={
+        scope.bounded ? 'queue-header__scope queue-header__scope--bounded' : 'queue-header__scope'
+      }
+    >
+      <span className="queue-header__scope-summary">{scope.summary}</span>
+      <span className="queue-header__scope-detail">{scope.detail}</span>
+      {scope.unread && (
+        <span className="queue-header__scope-unread" role="status">
+          {scope.unread}
+        </span>
+      )}
+      <time className="queue-header__scope-refreshed" dateTime={scope.refreshed.dateTime}>
+        {scope.refreshed.label}
+      </time>
+    </p>
+  )
+}
 
 /**
  * The title block above the queue: title, count, scope and one optional action.
@@ -91,6 +145,8 @@ export function QueueHeader({
   count,
   context,
   scope,
+  compactScope = false,
+  scopeCompactLabel,
   controls,
   action,
   className,
@@ -107,26 +163,7 @@ export function QueueHeader({
           <span className="queue-header__count">{count}</span>
         </div>
         {context && <p className="queue-header__context">{context}</p>}
-        {scope && (
-          <p
-            className={
-              scope.bounded
-                ? 'queue-header__scope queue-header__scope--bounded'
-                : 'queue-header__scope'
-            }
-          >
-            <span className="queue-header__scope-summary">{scope.summary}</span>
-            <span className="queue-header__scope-detail">{scope.detail}</span>
-            {scope.unread && (
-              <span className="queue-header__scope-unread" role="status">
-                {scope.unread}
-              </span>
-            )}
-            <time className="queue-header__scope-refreshed" dateTime={scope.refreshed.dateTime}>
-              {scope.refreshed.label}
-            </time>
-          </p>
-        )}
+        {scope && <ScopeDetails scope={scope} compact={compactScope} label={scopeCompactLabel} />}
         {controls}
       </div>
       {action && (
