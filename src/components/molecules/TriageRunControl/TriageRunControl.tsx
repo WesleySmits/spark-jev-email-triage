@@ -510,7 +510,7 @@ function RunActions(props: RunActionsProps) {
     return (
       <div className="triage-run__actions">
         <Button variant="secondary" onClick={onResetCampaign}>
-          Nieuwe triage starten
+          Nieuwe triage voorbereiden
         </Button>
       </div>
     )
