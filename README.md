@@ -116,7 +116,7 @@ or `/health` response does not prove Spark readiness. See
 ## Setup
 
 For live mail, follow the [supported local start procedure](docs/runbook.md#supported-local-start-procedure):
-Node.js 24, pnpm 12.5.1, and the Spark Desktop CLI on the same Mac and in the
+Node.js 24, pnpm 12.15.0, and the Spark Desktop CLI on the same Mac and in the
 same logged-in user session as Spark. The procedure checks provider readiness
 before starting the app on loopback. Linux/container builds do not provide a
 working Spark integration.
