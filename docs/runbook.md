@@ -30,7 +30,7 @@ claiming live compatibility; Linux mock tests cannot establish that result.
 
    ```sh
    corepack enable
-   pnpm --version                         # 12.5.1, from packageManager
+   pnpm --version                         # 12.15.0, from packageManager
    pnpm install --frozen-lockfile
    pnpm readback:spark
    ```
