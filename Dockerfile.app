@@ -1,4 +1,4 @@
-FROM node:24-alpine AS build
+FROM node:24.22.3-alpine AS build
 
 WORKDIR /app
 
@@ -8,7 +8,7 @@ RUN corepack enable && pnpm install --frozen-lockfile
 COPY . ./
 RUN pnpm build
 
-FROM node:24-alpine
+FROM node:24.22.3-alpine
 
 WORKDIR /app
 ENV NODE_ENV=production
